@@ -1,0 +1,29 @@
+libpri 1.0.8 
+ -- fix compile warnings for gcc4
+libpri 1.0.7
+ -- No Changes
+libpri 1.0.6
+ -- Dependencies from .depend were valid from static libary only, not dynamic. 'mkdep'
+    has been fixed to support the dynamic library version.
+libpri 1.0.4
+ -- Makefile fix for SELinux
+libpri 1.0.3
+ -- Fix Endian to compile for FreeBSD
+
+...
+libpri 0.3.0
+ -- Fix talking to switch
+ -- Add pri dump
+ -- Add test application
+ -- Fix strncpy stuff
+libpri 0.1.2
+ -- Added PRI_EVENT_HANGUP_ACK so you can know when the disconnect was
+    acknowledged
+
+libpri 0.1.1
+ -- Added PRI_DEBUG_Q931_ANOMALY flag so that certain non-error-related
+    messages would not be output unless specifically desired.
+
+libpri 0.1.0
+ -- Initial release
+
