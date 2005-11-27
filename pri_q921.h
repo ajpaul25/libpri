@@ -30,15 +30,15 @@
 #include <endian.h>
 #elif defined(__FreeBSD__)
 #include <sys/endian.h>
-#define __BYTE_ORDER _BYTE_ORDER
-#define __BIG_ENDIAN _BIG_ENDIAN
-#define __LITTLE_ENDIAN _LITTLE_ENDIAN
 #endif
 
 /* Timer values */
 
 #define T_WAIT_MIN	2000
 #define T_WAIT_MAX	10000
+#define T_200		1000		/* 1 second between SABME's */
+#define T_203		10000		/* 10 seconds with no packets max */
+#define N_200		3		/* 3 retries */
 
 #define Q921_FRAMETYPE_MASK	0x3
 
@@ -78,7 +78,7 @@ typedef struct q921_header {
 	u_int8_t	tei:7;		/* Terminal Endpoint Identifier (0) */
 #endif
 	u_int8_t	data[0];	/* Further data */
-} __attribute__ ((packed)) q921_header;
+} q921_header;
 
 /* A Supervisory Format frame */
 typedef struct q921_s {
@@ -98,7 +98,7 @@ typedef struct q921_s {
 #endif
 	u_int8_t data[0];		/* Any further data */
 	u_int8_t fcs[2];		/* At least an FCS */
-} __attribute__ ((packed)) q921_s;
+} q921_s;
 
 /* An Unnumbered Format frame */
 typedef struct q921_u {
@@ -116,7 +116,7 @@ typedef struct q921_u {
 #endif
 	u_int8_t data[0];		/* Any further data */
 	u_int8_t fcs[2];		/* At least an FCS */
-} __attribute__ ((packed)) q921_u;
+} q921_u;
 
 /* An Information frame */
 typedef struct q921_i {
@@ -161,7 +161,7 @@ typedef enum q921_state {
 } q921_state;
 
 /* Dumps a *known good* Q.921 packet */
-extern void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx);
+extern void q921_dump(q921_h *h, int len, int showraw, int txrx);
 
 /* Bring up the D-channel */
 extern void q921_start(struct pri *pri, int now);

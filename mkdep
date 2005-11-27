@@ -1,4 +1,4 @@
-#!/bin/bash -
+#!/bin/sh -
 #
 #	$OpenBSD: mkdep.gcc.sh,v 1.8 1998/09/02 06:40:07 deraadt Exp $
 #	$NetBSD: mkdep.gcc.sh,v 1.9 1994/12/23 07:34:59 jtc Exp $
@@ -100,22 +100,10 @@ if [ $append = 1 ]; then
 		rm -rf $DTMP
 		exit 1
 	fi
-	cat $TMP | sed -e 's/\.o:/.lo:/g' >>$D
-	if [ $? != 0 ]; then
-		echo 'mkdep: append failed.'
-		rm -rf $DTMP
-		exit 1
-	fi
 else
-	cat $TMP > $D
+	mv $TMP $D
 	if [ $? != 0 ]; then
-		echo 'mkdep: overwrite failed.'
-		rm -rf $DTMP
-		exit 1
-	fi
-	cat $TMP | sed -e 's/\.o:/.lo:/g' >>$D
-	if [ $? != 0 ]; then
-		echo 'mkdep: append failed.'
+		echo 'mkdep: rename failed.'
 		rm -rf $DTMP
 		exit 1
 	fi
