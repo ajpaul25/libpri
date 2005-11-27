@@ -1,9 +1,9 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@digium.com>
+ * Written by Mark Spencer <markster@linux-support.net>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001, Linux Support Services, Inc.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,22 +42,11 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#if defined(__linux__)
 #include <linux/zaptel.h>
-#elif defined(__FreeBSD__) || defined(SOLARIS)
-#include <zaptel.h>
-#endif
-#ifndef SOLARIS
 #include <zap.h>
-#endif
 #include <pthread.h>
 #include <sys/select.h>
 #include "libpri.h"
-#include "pri_q931.h"
-
-#ifndef AF_LOCAL
-#define AF_LOCAL AF_UNIX
-#endif
 
 #define DEBUG_LEVEL	PRI_DEBUG_ALL
 
@@ -85,39 +74,13 @@ static void event1(struct pri *pri, pri_event *e)
 			sprintf(dest, "60%02d", x + 1);
 			if (!(calls[x] = pri_new_call(pri))) {
 				perror("pri_new_call");
-				continue;
-			}
-#if 0
-			{
-				struct pri_sr *sr;
-				sr = pri_sr_new();
-				pri_sr_set_channel(sr, x+1, 0, 0);
-				pri_sr_set_bearer(sr, 0, PRI_LAYER_1_ULAW);
-				pri_sr_set_called(sr, dest, PRI_NATIONAL_ISDN, 1);
-				pri_sr_set_caller(sr, num, name, PRI_NATIONAL_ISDN, PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN);
-				pri_sr_set_redirecting(sr, num, PRI_NATIONAL_ISDN, PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN, PRI_REDIR_UNCONDITIONAL);
-				if (pri_setup(pri, calls[x], sr))
-					perror("pri_setup");
-				pri_sr_free(sr);
-			}
-#else
-			if (pri_call(pri, calls[x], PRI_TRANS_CAP_DIGITAL, x + 1, 1, 1, num, 
+			} else if (pri_call(pri, calls[x], PRI_TRANS_CAP_DIGITAL, x + 1, 1, 1, num, 
 				PRI_NATIONAL_ISDN, name, PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN,
 				dest, PRI_NATIONAL_ISDN, PRI_LAYER_1_ULAW)) {
 					perror("pri_call");
 			}
-#endif
 		}
 		printf("Setup %d calls!\n", TEST_CALLS);
-		break;
-	case PRI_EVENT_RINGING:
-		printf("PRI 1: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
-		q931_facility(pri, e->ringing.call);
-		pri_answer(pri, e->ringing.call, e->ringing.channel, 0);
-		break;
-	case PRI_EVENT_HANGUP_REQ:
-		printf("PRI 1: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
-		pri_hangup(pri, e->hangup.call, e->hangup.cause);
 		break;
 	default:
 		printf("PRI 1: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
@@ -128,19 +91,6 @@ static void event2(struct pri *pri, pri_event *e)
 {
 	/* CPE */
 	switch(e->gen.e) {
-	case PRI_EVENT_RING:
-		printf("PRI 2: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
-		pri_proceeding(pri, e->ring.call, e->ring.channel, 0);
-		pri_acknowledge(pri, e->ring.call, e->ring.channel, 0);
-		break;
-	case PRI_EVENT_ANSWER:
-		printf("PRI 2: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
-		pri_hangup(pri, e->answer.call, PRI_CAUSE_NORMAL_UNSPECIFIED);
-		break;
-	case PRI_EVENT_HANGUP:
-		printf("PRI 2: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
-		pri_hangup(pri, e->hangup.call, e->hangup.cause);
-		break;
 	case PRI_EVENT_DCHAN_UP:
 	default:
 		printf("PRI 2: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
@@ -209,7 +159,7 @@ static void *dchan(void *data)
 	fd_set fds;
 	int res;
 	for(;;) {
-		if ((next = pri_schedule_next(pri))) {
+		if (next == pri_schedule_next(pri)) {
 			gettimeofday(&tv, NULL);
 			tv.tv_sec = next->tv_sec - tv.tv_sec;
 			tv.tv_usec = next->tv_usec - tv.tv_usec;
