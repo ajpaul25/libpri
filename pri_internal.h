@@ -44,9 +44,6 @@ enum q931_mode;
 
 struct pri {
 	int fd;				/* File descriptor for D-Channel */
-	pri_io_cb read_func;		/* Read data callback */
-	pri_io_cb write_func;		/* Write data callback */
-	void *userdata;
 	struct pri *subchannel;	/* Sub-channel if appropriate */
 	struct pri *master;		/* Master channel if appropriate */
 	struct pri_sched pri_sched[MAX_SCHED];	/* Scheduled events */
@@ -106,9 +103,6 @@ struct pri {
 	unsigned int q931_txcount;
 	unsigned int q931_rxcount;
 #endif
-
-	unsigned char last_invoke;	/* Last ROSE invoke ID */
-	unsigned char sendfacility;
 };
 
 struct pri_sr {
@@ -124,122 +118,11 @@ struct pri_sr {
 	int calledplan;
 	int userl1;
 	int numcomplete;
-	char *redirectingnum;
-	int redirectingplan;
-	int redirectingpres;
-	int redirectingreason;
-	int justsignalling;
-	char *useruserinfo;
 };
 
 /* Internal switch types */
-#define PRI_SWITCH_GR303_EOC_PATH	19
-#define PRI_SWITCH_GR303_TMC_SWITCHING	20
-
-struct apdu_event {
-	int message;			/* What message to send the ADPU in */
-	void (*callback)(void *data);	/* Callback function for when response is received */
-	void *data;			/* Data to callback */
-	unsigned char apdu[255];			/* ADPU to send */
-	int apdu_len; 			/* Length of ADPU */
-	int sent;  			/* Have we been sent already? */
-	struct apdu_event *next;	/* Linked list pointer */
-};
-
-/* q931_call datastructure */
-
-struct q931_call {
-	struct pri *pri;	/* PRI */
-	int cr;				/* Call Reference */
-	int forceinvert;	/* Force inversion of call number even if 0 */
-	q931_call *next;
-	/* Slotmap specified (bitmap of channels 31/24-1) (Channel Identifier IE) (-1 means not specified) */
-	int slotmap;
-	/* An explicit channel (Channel Identifier IE) (-1 means not specified) */
-	int channelno;
-	/* An explicit DS1 (-1 means not specified) */
-	int ds1no;
-	/* Whether or not the ds1 is explicitly identified or implicit.  If implicit
-	   the bchan is on the same span as the current active dchan (NFAS) */
-	int ds1explicit;
-	/* Channel flags (0 means none retrieved) */
-	int chanflags;
-	
-	int alive;			/* Whether or not the call is alive */
-	int acked;			/* Whether setup has been acked or not */
-	int sendhangupack;	/* Whether or not to send a hangup ack */
-	int proc;			/* Whether we've sent a call proceeding / alerting */
-	
-	int ri;				/* Restart Indicator (Restart Indicator IE) */
-
-	/* Bearer Capability */
-	int transcapability;
-	int transmoderate;
-	int transmultiple;
-	int userl1;
-	int userl2;
-	int userl3;
-	int rateadaption;
-	
-	int sentchannel;
-	int justsignalling;		/* for a signalling-only connection */
-
-	int progcode;			/* Progress coding */
-	int progloc;			/* Progress Location */	
-	int progress;			/* Progress indicator */
-	int progressmask;		/* Progress Indicator bitmask */
-	
-	int notify;				/* Notification */
-	
-	int causecode;			/* Cause Coding */
-	int causeloc;			/* Cause Location */
-	int cause;				/* Cause of clearing */
-	
-	int peercallstate;		/* Call state of peer as reported */
-	int ourcallstate;		/* Our call state */
-	int sugcallstate;		/* Status call state */
-	
-	int callerplan;
-	int callerplanani;
-	int callerpres;			/* Caller presentation */
-	char callerani[256];	/* Caller */
-	char callernum[256];
-	char callername[256];
-
-	char digitbuf[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
-
-	int ani2;               /* ANI II */
-	
-	int calledplan;
-	int nonisdn;
-	char callednum[256];	/* Called Number */
-	int complete;			/* no more digits coming */
-	int newcall;			/* if the received message has a new call reference value */
-
-	int retranstimer;		/* Timer for retransmitting DISC */
-	int t308_timedout;		/* Whether t308 timed out once */
-
-	int redirectingplan;
-	int redirectingpres;
-	int redirectingreason;	      
-	char redirectingnum[256];	/* Number of redirecting party */
-	char redirectingname[256];	/* Name of redirecting party */
-
-	/* Filled in cases of multiple diversions */
-	int origcalledplan;
-	int origcalledpres;
-	int origredirectingreason;	/* Original reason for redirect (in cases of multiple redirects) */
-	char origcalledname[256];	/* Original name of person being called */
-	char origcallednum[256];	/* Orignal number of person being called */
-
-	int useruserprotocoldisc;
-	char useruserinfo[256];
-	char callingsubaddr[256];	/* Calling parties sub address */
-	
-	long aoc_units;				/* Advice of Charge Units */
-
-	struct apdu_event *apdus;	/* APDU queue for call */
-};
+#define PRI_SWITCH_GR303_EOC_PATH	10
+#define PRI_SWITCH_GR303_TMC_SWITCHING	11
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
 
@@ -249,10 +132,8 @@ extern void pri_schedule_del(struct pri *pri, int ev);
 
 extern pri_event *pri_mkerror(struct pri *pri, char *errstr);
 
-extern void pri_message(struct pri *pri, char *fmt, ...);
+extern void pri_message(char *fmt, ...);
 
-extern void pri_error(struct pri *pri, char *fmt, ...);
-
-void libpri_copy_string(char *dst, const char *src, size_t size);
+extern void pri_error(char *fmt, ...);
 
 #endif

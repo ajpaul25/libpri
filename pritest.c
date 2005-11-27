@@ -1,9 +1,9 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@digium.com>
+ * Written by Mark Spencer <markster@linux-support.net>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001, Linux Support Services, Inc.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify

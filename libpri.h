@@ -37,8 +37,6 @@
 #define PRI_DEBUG_Q931_DUMP		(1 << 5)	/* Show interpreted Q.931 frames */
 #define PRI_DEBUG_Q931_STATE	(1 << 6)	/* Debug Q.931 state machine changes */
 #define	PRI_DEBUG_Q931_ANOMALY 	(1 << 7)	/* Show unexpected events */
-#define PRI_DEBUG_APDU			(1 << 8)	/* Debug of APDU components such as ROSE */
-#define PRI_DEBUG_AOC			(1 << 9)	/* Debug of Advice of Charge ROSE Messages */
 
 #define PRI_DEBUG_ALL			(0xffff)	/* Everything */
 
@@ -48,52 +46,36 @@
 #define PRI_SWITCH_DMS100		2	/* DMS 100 */
 #define PRI_SWITCH_LUCENT5E		3	/* Lucent 5E */
 #define PRI_SWITCH_ATT4ESS		4	/* AT&T 4ESS */
-#define PRI_SWITCH_EUROISDN_E1		5	/* Standard EuroISDN (CTR4, ETSI 300-102) */
-#define PRI_SWITCH_EUROISDN_T1		6	/* T1 EuroISDN variant (ETSI 300-102) */
+#define PRI_SWITCH_EUROISDN_E1	5	/* Standard EuroISDN (CTR4, ETSI 300-102) */
+#define PRI_SWITCH_EUROISDN_T1	6	/* T1 EuroISDN variant (ETSI 300-102) */
 #define PRI_SWITCH_NI1			7	/* National ISDN 1 */
 #define PRI_SWITCH_GR303_EOC		8	/* GR-303 Embedded Operations Channel */
 #define PRI_SWITCH_GR303_TMC		9	/* GR-303 Timeslot Management Channel */
-#define PRI_SWITCH_QSIG			10	/* QSIG Switch */
-/* Switchtypes 11 - 20 are reserved for internal use */
+/* Switchtypes 10 - 20 are reserved for internal use */
 
 
 /* PRI D-Channel Events */
-#define PRI_EVENT_DCHAN_UP		 1	/* D-channel is up */
-#define PRI_EVENT_DCHAN_DOWN 	 2	/* D-channel is down */
-#define PRI_EVENT_RESTART		 3	/* B-channel is restarted */
-#define PRI_EVENT_CONFIG_ERR 	 4	/* Configuration Error Detected */
-#define PRI_EVENT_RING			 5	/* Incoming call */
-#define PRI_EVENT_HANGUP		 6	/* Call got hung up */
-#define PRI_EVENT_RINGING		 7	/* Call is ringing (alerting) */
-#define PRI_EVENT_ANSWER		 8	/* Call has been answered */
-#define PRI_EVENT_HANGUP_ACK	 9	/* Call hangup has been acknowledged */
+#define PRI_EVENT_DCHAN_UP	 	1	/* D-channel is up */
+#define PRI_EVENT_DCHAN_DOWN 	2	/* D-channel is down */
+#define PRI_EVENT_RESTART	 	3	/* B-channel is restarted */
+#define PRI_EVENT_CONFIG_ERR 	4	/* Configuration Error Detected */
+#define PRI_EVENT_RING		 	5	/* Incoming call */
+#define PRI_EVENT_HANGUP	 	6	/* Call got hung up */
+#define PRI_EVENT_RINGING	 	7	/* Call is ringing (alerting) */
+#define PRI_EVENT_ANSWER	 	8	/* Call has been answered */
+#define PRI_EVENT_HANGUP_ACK	9	/* Call hangup has been acknowledged */
 #define PRI_EVENT_RESTART_ACK	10	/* Restart complete on a given channel */
-#define PRI_EVENT_FACNAME		11	/* Caller*ID Name received on Facility */
+#define PRI_EVENT_FACNAME	11	/* Caller*ID Name received on Facility */
 #define PRI_EVENT_INFO_RECEIVED 12	/* Additional info (keypad) received */
 #define PRI_EVENT_PROCEEDING	13	/* When we get CALL_PROCEEDING or PROGRESS */
-#define PRI_EVENT_SETUP_ACK		14	/* When we get SETUP_ACKNOWLEDGE */
+#define PRI_EVENT_SETUP_ACK	14	/* When we get SETUP_ACKNOWLEDGE */
 #define PRI_EVENT_HANGUP_REQ	15	/* Requesting the higher layer to hangup */
-#define PRI_EVENT_NOTIFY		16	/* Notification received */
-#define PRI_EVENT_PROGRESS		17	/* When we get CALL_PROCEEDING or PROGRESS */
-#define PRI_EVENT_KEYPAD_DIGIT		18	/* When we receive during ACTIVE state */
+#define PRI_EVENT_NOTIFY	16	/* Notification received */
+#define PRI_EVENT_PROGRESS	17	/* When we get CALL_PROCEEDING or PROGRESS */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
 #define PRI_STATE_UP		1
-
-#define PRI_PROGRESS_MASK
-
-/* Progress indicator values */
-#define PRI_PROG_CALL_NOT_E2E_ISDN						(1 << 0)
-#define PRI_PROG_CALLED_NOT_ISDN						(1 << 1)
-#define PRI_PROG_CALLER_NOT_ISDN						(1 << 2)
-#define PRI_PROG_INBAND_AVAILABLE						(1 << 3)
-#define PRI_PROG_DELAY_AT_INTERF						(1 << 4)
-#define PRI_PROG_INTERWORKING_WITH_PUBLIC				(1 << 5)
-#define PRI_PROG_INTERWORKING_NO_RELEASE				(1 << 6)
-#define PRI_PROG_INTERWORKING_NO_RELEASE_PRE_ANSWER		(1 << 7)
-#define PRI_PROG_INTERWORKING_NO_RELEASE_POST_ANSWER	(1 << 8)
-#define PRI_PROG_CALLER_RETURNED_TO_ISDN					(1 << 9)
 
 /* Numbering plan identifier */
 #define PRI_NPI_UNKNOWN					0x0
@@ -191,8 +173,7 @@
 #define PRI_TRANS_CAP_DIGITAL					0x08
 #define PRI_TRANS_CAP_RESTRICTED_DIGITAL		0x09
 #define PRI_TRANS_CAP_3_1K_AUDIO				0x10
-#define PRI_TRANS_CAP_7K_AUDIO					0x11	/* Depriciated ITU Q.931 (05/1998)*/
-#define PRI_TRANS_CAP_DIGITAL_W_TONES			0x11
+#define PRI_TRANS_CAP_7K_AUDIO					0x11
 #define PRI_TRANS_CAP_VIDEO						0x18
 
 #define PRI_LAYER_1_ITU_RATE_ADAPT	0x21
@@ -271,20 +252,14 @@ typedef struct pri_event_ringing {
 	int e;
 	int channel;
 	int cref;
-	int progress;
-	int progressmask;
 	q931_call *call;
-	char useruserinfo[260];		/* User->User info */
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
 	int e;
 	int channel;
 	int cref;
-	int progress;
-	int progressmask;
 	q931_call *call;
-	char useruserinfo[260];		/* User->User info */
 } pri_event_answer;
 
 typedef struct pri_event_facname {
@@ -296,38 +271,25 @@ typedef struct pri_event_facname {
 	q931_call *call;
 } pri_event_facname;
 
-#define PRI_CALLINGPLANANI
-#define PRI_CALLINGPLANRDNIS
 typedef struct pri_event_ring {
 	int e;
 	int channel;				/* Channel requested */
 	int callingpres;			/* Presentation of Calling CallerID */
-	int callingplanani;			/* Dialing plan of Calling entity ANI */
 	int callingplan;			/* Dialing plan of Calling entity */
-	char callingani[256];		/* Calling ANI */
 	char callingnum[256];		/* Calling number */
 	char callingname[256];		/* Calling name (if provided) */
 	int calledplan;				/* Dialing plan of Called number */
 	int ani2;                   /* ANI II */
 	char callednum[256];		/* Called number */
-	char redirectingnum[256];	/* Redirecting number */
-	char redirectingname[256];	/* Redirecting name */
-	int redirectingreason;		/* Reason for redirect */
-	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
-	char useruserinfo[260];		/* User->User info */
+	char redirectingnum[256];		/* Redirecting number */
+	char useruserinfo[256];			/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
 	int cref;					/* Call Reference Number */
 	int ctype;					/* Call type (see PRI_TRANS_CAP_* */
-	int layer1;					/* User layer 1 */
+	int layer1;				/* User layer 1 */
 	int complete;				/* Have we seen "Complete" i.e. no more number? */
 	q931_call *call;			/* Opaque call pointer */
-	char callingsubaddr[256];	/* Calling parties subaddress */
-	int progress;
-	int progressmask;
-	char origcalledname[256];
-	char origcallednum[256];
-	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
-	int origredirectingreason;
+	char callingsubaddr[256];		/* Calling parties subaddress */
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -336,8 +298,6 @@ typedef struct pri_event_hangup {
 	int cause;
 	int cref;
 	q931_call *call;			/* Opaque call pointer */
-	long aoc_units;				/* Advise of Charge number of charged units */
-	char useruserinfo[260];		/* User->User info */
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -345,15 +305,9 @@ typedef struct pri_event_restart_ack {
 	int channel;
 } pri_event_restart_ack;
 
-#define PRI_PROGRESS_CAUSE
 typedef struct pri_event_proceeding {
 	int e;
 	int channel;
-	int cref;
-	int progress;
-	int progressmask;
-	int cause;
-	q931_call *call;
 } pri_event_proceeding;
  
 typedef struct pri_event_setup_ack {
@@ -366,13 +320,6 @@ typedef struct pri_event_notify {
 	int channel;
 	int info;
 } pri_event_notify;
-
-typedef struct pri_event_keypad_digit {
-	int e;
-	int channel;
-	q931_call *call;
-	char digits[64];
-} pri_event_keypad_digit;
 
 typedef union {
 	int e;
@@ -388,15 +335,11 @@ typedef union {
 	pri_event_proceeding  proceeding;	/* Call proceeding & Progress */
 	pri_event_setup_ack   setup_ack;	/* SETUP_ACKNOWLEDGE structure */
 	pri_event_notify notify;		/* Notification */
-	pri_event_keypad_digit digit;			/* Digits that come during a call */
 } pri_event;
 
 struct pri;
 struct pri_sr;
 
-#define PRI_IO_FUNCS
-/* Type declaration for callbacks to read or write a HDLC frame as below */
-typedef int (*pri_io_cb)(struct pri *pri, void *buf, int buflen);
 
 /* Create a D-channel on a given file descriptor.  The file descriptor must be a
    channel operating in HDLC mode with FCS computed by the fd's driver.  Also it
@@ -404,27 +347,11 @@ typedef int (*pri_io_cb)(struct pri *pri, void *buf, int buflen);
    must be one of PRI_NETWORK or PRI_CPE.  switchtype should be PRI_SWITCH_* */
 extern struct pri *pri_new(int fd, int nodetype, int switchtype);
 
-/* Create D-channel just as above with user defined I/O callbacks and data */
-extern struct pri *pri_new_cb(int fd, int nodetype, int switchtype, pri_io_cb io_read, pri_io_cb io_write, void *userdata);
-
-/* Retrieve the user data associated with the D channel */
-extern void *pri_get_userdata(struct pri *pri);
-
-/* Set the user data associated with the D channel */
-extern void pri_set_userdata(struct pri *pri, void *userdata);
-
 /* Set Network Specific Facility for PRI */
 extern void pri_set_nsf(struct pri *pri, int nsf);
 
 /* Set debug parameters on PRI -- see above debug definitions */
 extern void pri_set_debug(struct pri *pri, int debug);
-
-/* Get debug parameters on PRI -- see above debug definitions */
-extern int pri_get_debug(struct pri *pri);
-
-#define PRI_FACILITY_ENABLE
-/* Enable transmission support of Facility IEs on the pri */
-extern void pri_facility_enable(struct pri *pri);
 
 /* Run PRI on the given D-channel, taking care of any events that
    need to be handled.  If block is set, it will block until an event
@@ -437,7 +364,7 @@ pri_event *pri_check_event(struct pri *pri);
 /* Give a name to a given event ID */
 extern char *pri_event2str(int id);
 
-/* Give a name to a node type */
+/* Give a name toa  node type */
 extern char *pri_node2str(int id);
 
 /* Give a name to a switch type */
@@ -445,6 +372,9 @@ extern char *pri_switch2str(int id);
 
 /* Print an event */
 extern void pri_dump_event(struct pri *pri, pri_event *e);
+
+/* Turn an event ID into a string */
+extern char *pri_event2str(int e);
 
 /* Turn presentation into a string */
 extern char *pri_pres2str(int pres);
@@ -490,9 +420,6 @@ extern int pri_hangup(struct pri *pri, q931_call *call, int cause);
 #define PRI_DESTROYCALL
 extern void pri_destroycall(struct pri *pri, q931_call *call);
 
-#define PRI_RESTART
-extern int pri_restart(struct pri *pri);
-
 extern int pri_reset(struct pri *pri, int channel);
 
 /* Create a new call */
@@ -521,40 +448,19 @@ extern int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int
 extern int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 extern int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 extern int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
-extern int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
-#define PRI_USER_USER_TX
-/* Set the user user field.  Warning!  don't send binary data accross this field */
-extern void pri_sr_set_useruser(struct pri_sr *sr, char *userchars);
-
-extern void pri_call_set_useruser(q931_call *sr, char *userchars);
 
 extern int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
-
-/* Set a call has a call indpendent signalling connection (i.e. no bchan) */
-extern int pri_sr_set_connection_call_independent(struct pri_sr *req);
-
-/* Send an MWI indication to a remote location.  If activate is non zero, activates, if zero, decativates */
-extern int pri_mwi_activate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called, int calledplan);
-
-/* Send an MWI deactivate request to a remote location */
-extern int pri_mwi_deactivate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called, int calledplan);
-
-#define PRI_2BCT
-/* Attempt to pass the channels back to the NET side if compatable and
- * suscribed.  Sometimes called 2 bchannel transfer (2BCT) */
-int pri_channel_bridge(q931_call *call1, q931_call *call2);
-
+	 
 /* Override message and error stuff */
-#define PRI_NEW_SET_API
-extern void pri_set_message(void (*__pri_error)(struct pri *pri, char *));
-extern void pri_set_error(void (*__pri_error)(struct pri *pri, char *));
+extern void pri_set_message(void (*__pri_error)(char *));
+extern void pri_set_error(void (*__pri_error)(char *));
 
 /* Set overlap mode */
 #define PRI_SET_OVERLAPDIAL
 extern void pri_set_overlapdial(struct pri *pri,int state);
 
-#define PRI_DUMP_INFO_STR
-extern char *pri_dump_info_str(struct pri *pri);
+#define PRI_DUMP_INFO
+extern void pri_dump_info(struct pri *pri);
 
 /* Get file descriptor */
 extern int pri_fd(struct pri *pri);
@@ -575,9 +481,6 @@ extern void pri_enslave(struct pri *master, struct pri *slave);
 #define PRI_ENSLAVE_SUPPORT
 #define PRI_SETUP_CALL
 #define PRI_RECEIVE_SUBADDR
-#define PRI_REDIRECTING_REASON
-#define PRI_AOC_UNITS
-#define PRI_ANI
 
 /* Send notification */
 extern int pri_notify(struct pri *pri, q931_call *c, int channel, int info);

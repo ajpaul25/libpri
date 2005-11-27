@@ -27,22 +27,17 @@
 # Uncomment if you want libpri to count number of Q921/Q931 sent/received
 #LIBPRI_COUNTERS=-DLIBPRI_COUNTERS
 
-CC=gcc
-
 OSARCH=$(shell uname -s)
-PROC?=$(shell uname -m)
+PROC=$(shell uname -m)
 
 TOBJS=testpri.o
 T2OBJS=testprilib.o
 STATIC_LIBRARY=libpri.a
 DYNAMIC_LIBRARY=libpri.so.1.0
-STATIC_OBJS=copy_string.o pri.o q921.o prisched.o q931.o pri_facility.o
-DYNAMIC_OBJS=copy_string.lo pri.lo q921.lo prisched.lo q931.lo pri_facility.lo
+STATIC_OBJS=pri.o q921.o prisched.o q931.o
+DYNAMIC_OBJS=pri.lo q921.lo prisched.lo q931.lo
 CFLAGS=-Wall -Werror -Wstrict-prototypes -Wmissing-prototypes -g $(ALERTING) $(LIBPRI_COUNTERS)
-INSTALL_PREFIX?=
-INSTALL_BASE=/usr
-SOFLAGS = -Wl,-hlibpri.so.1
-LDCONFIG = /sbin/ldconfig
+INSTALL_PREFIX=
 ifeq (${OSARCH},Linux)
 LDCONFIG_FLAGS=-n
 else
@@ -50,13 +45,6 @@ ifeq (${OSARCH},FreeBSD)
 LDCONFIG_FLAGS=-m
 CFLAGS += -I../zaptel -I../zapata
 endif
-endif
-ifeq (${OSARCH},SunOS)
-CFLAGS += -DSOLARIS -I../zaptel-solaris
-LDCONFIG = 
-LDCONFIG_FLAGS = \# # Trick to comment out the period in the command below
-SOSLINK = ln -sf libpri.so.1.0 libpri.so.1
-#INSTALL_PREFIX = /opt/asterisk  # Uncomment out to install in standard Solaris location for 3rd party code
 endif
 
 #The problem with sparc is the best stuff is in newer versions of gcc (post 3.0) only.
@@ -70,37 +58,24 @@ endif
 all: depend $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
 
 update:
-	@if [ -d CVS ]; then \
-		echo "Updating from CVS..." ; \
-		cvs -q -z3 update -Pd; \
-	else \
-		echo "Not CVS";  \
-	fi
+	@echo "Updating from CVS"
+	@cvs update -d
 
 install: $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
-	mkdir -p $(INSTALL_PREFIX)$(INSTALL_BASE)/lib
-	mkdir -p $(INSTALL_PREFIX)$(INSTALL_BASE)/include
-ifneq (${OSARCH},SunOS)
-	install -m 644 libpri.h $(INSTALL_PREFIX)$(INSTALL_BASE)/include
-	install -m 755 $(DYNAMIC_LIBRARY) $(INSTALL_PREFIX)$(INSTALL_BASE)/lib
-	if [ -x /usr/sbin/sestatus ] && ( /usr/sbin/sestatus | grep "SELinux status:" | grep -q "enabled"); then  restorecon -v $(INSTALL_PREFIX)$(INSTALL_BASE)/lib/$(DYNAMIC_LIBRARY); fi
-	( cd $(INSTALL_PREFIX)$(INSTALL_BASE)/lib ; ln -sf libpri.so.1 libpri.so )
-	install -m 644 $(STATIC_LIBRARY) $(INSTALL_PREFIX)$(INSTALL_BASE)/lib
-	if test $$(id -u) = 0; then $(LDCONFIG); fi
-else
-	install -f $(INSTALL_PREFIX)$(INSTALL_BASE)/include -m 644 libpri.h
-	install -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib -m 755 $(DYNAMIC_LIBRARY)
-	( cd $(INSTALL_PREFIX)$(INSTALL_BASE)/lib ; ln -sf libpri.so.1 libpri.so ; $(SOSLINK) )
-	install -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib -m 644 $(STATIC_LIBRARY)
-endif
+	mkdir -p $(INSTALL_PREFIX)/usr/lib
+	mkdir -p $(INSTALL_PREFIX)/usr/include
+	install -m 644 libpri.h $(INSTALL_PREFIX)/usr/include
+	install -m 755 $(DYNAMIC_LIBRARY) $(INSTALL_PREFIX)/usr/lib
+	( cd $(INSTALL_PREFIX)/usr/lib ; ln -sf libpri.so.1 libpri.so )
+	install -m 644 $(STATIC_LIBRARY) $(INSTALL_PREFIX)/usr/lib
+	/sbin/ldconfig
 
 uninstall:
 	@echo "Removing Libpri"
-	rm -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib/libpri.so.1.0
-	rm -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib/libpri.so.1
-	rm -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib/libpri.so
-	rm -f $(INSTALL_PREFIX)$(INSTALL_BASE)/lib/libpri.a
-	rm -f $(INSTALL_PREFIX)$(INSTALL_BASE)/include/libpri.h
+	rm -f $(INSTALL_PREFIX)/usr/lib/libpri.so.1.0
+	rm -f $(INSTALL_PREFIX)/usr/lib/libpri.so
+	rm -f $(INSTALL_PREFIX)/usr/lib/libpri.a
+	rm -f $(INSTALL_PREFIX)/usr/include/libpri.h
 
 pritest: pritest.o
 	$(CC) -o pritest pritest.o -L. -lpri -lzap $(CFLAGS)
@@ -112,11 +87,9 @@ testprilib: testprilib.o
 	$(CC) -o testprilib testprilib.o -L. -lpri -lpthread $(CFLAGS)
 
 pridump: pridump.o
-	$(CC) -o pridump pridump.o -L. -lpri $(CFLAGS)
+	$(CC) -o pridump pridump.o -L. -lpri -lzap $(CFLAGS)
 
-ifneq ($(wildcard .depend),)
 include .depend
-endif
 
 %.lo : %.c
 	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
@@ -126,10 +99,9 @@ $(STATIC_LIBRARY): $(STATIC_OBJS)
 	ranlib $(STATIC_LIBRARY)
 
 $(DYNAMIC_LIBRARY): $(DYNAMIC_OBJS)
-	$(CC) -shared $(SOFLAGS) -o $@ $(DYNAMIC_OBJS)
-	$(LDCONFIG) $(LDCONFIG_FLAGS) .
+	$(CC) -shared -Wl,-soname,libpri.so.1 -o $@ $(DYNAMIC_OBJS)
+	/sbin/ldconfig $(LDCONFIG_FLAGS) .
 	ln -sf libpri.so.1 libpri.so
-	$(SOSLINK)
 
 clean:
 	rm -f *.o *.so *.lo *.so.1 *.so.1.0
@@ -140,4 +112,4 @@ clean:
 depend: .depend
 
 .depend: 
-	CC=$(CC) ./mkdep ${CFLAGS} `ls *.c`
+	./mkdep ${CFLAGS} `ls *.c`

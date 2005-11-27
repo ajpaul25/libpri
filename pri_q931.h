@@ -81,7 +81,7 @@ typedef struct q931_h {
 #endif
 	u_int8_t contents[0];
 	u_int8_t crv[3];
-} __attribute__ ((packed)) q931_h;
+} q931_h;
 
 
 /* Message type header */
@@ -94,14 +94,14 @@ typedef struct q931_mh {
 	u_int8_t f:1;
 #endif
 	u_int8_t data[0];
-} __attribute__ ((packed)) q931_mh;
+} q931_mh;
 
 /* Information element format */
 typedef struct q931_ie {
 	u_int8_t ie;
 	u_int8_t len;
 	u_int8_t data[0];
-} __attribute__ ((packed)) q931_ie;
+} q931_ie;
 
 #define Q931_RES_HAVEEVENT (1 << 0)
 #define Q931_RES_INERRROR  (1 << 1)
@@ -208,7 +208,6 @@ typedef struct q931_ie {
 #define Q931_IE_INFO_REQUEST            0x32
 #define Q931_IE_SIGNAL					0x34
 #define Q931_IE_SWITCHHOOK				0x36
-#define Q931_IE_GENERIC_DIGITS			(0x37 | Q931_CODESET(6))
 #define Q931_IE_FEATURE_ACTIVATE		0x38
 #define Q931_IE_FEATURE_IND				0x39
 #define Q931_IE_ORIGINAL_CALLED_NUMBER 	0x73
@@ -267,8 +266,6 @@ extern int q931_hangup(struct pri *pri, q931_call *call, int cause);
 
 extern int q931_restart(struct pri *pri, int channel);
 
-extern int q931_facility(struct pri *pri, q931_call *call);
-
 extern int q931_call_getcrv(struct pri *pri, q931_call *call, int *callmode);
 
 extern int q931_call_setcrv(struct pri *pri, q931_call *call, int crv, int callmode);
@@ -276,7 +273,7 @@ extern int q931_call_setcrv(struct pri *pri, q931_call *call, int crv, int callm
 extern q931_call *q931_new_call(struct pri *pri);
 
 extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);
-extern void q931_dump(struct pri *pri, q931_h *h, int len, int txrx);
+extern void q931_dump(q931_h *h, int len, int txrx);
 
 extern void __q931_destroycall(struct pri *pri, q931_call *c);
 	
