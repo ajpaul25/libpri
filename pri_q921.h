@@ -26,19 +26,14 @@
 #define _PRI_Q921_H
 
 #include <sys/types.h>
-#if defined(__linux__)
 #include <endian.h>
-#elif defined(__FreeBSD__)
-#include <sys/endian.h>
-#define __BYTE_ORDER _BYTE_ORDER
-#define __BIG_ENDIAN _BIG_ENDIAN
-#define __LITTLE_ENDIAN _LITTLE_ENDIAN
-#endif
 
 /* Timer values */
 
 #define T_WAIT_MIN	2000
 #define T_WAIT_MAX	10000
+#define T_200		1000		/* 1 second between SABME's */
+#define T_203		10000		/* 10 seconds with no packets max */
 
 #define Q921_FRAMETYPE_MASK	0x3
 
@@ -47,17 +42,8 @@
 #define Q921_FRAMETYPE_S	0x1
 
 #define Q921_TEI_GROUP				127
-#define Q921_TEI_GR303_EOC_PATH			0
-#define Q921_TEI_GR303_EOC_OPS			4
-#define Q921_TEI_GR303_TMC_SWITCHING		0
-#define Q921_TEI_GR303_TMC_CALLPROC		0
 
-#define Q921_SAPI_CALL_CTRL		0
-#define Q921_SAPI_GR303_EOC		1
-#define Q921_SAPI_GR303_TMC_SWITCHING	1
-#define Q921_SAPI_GR303_TMC_CALLPROC	0
-
-
+#define Q921_SAPI_CALL_CTRL			0
 #define Q921_SAPI_PACKET_MODE		1
 #define Q921_SAPI_X25_LAYER3      	16
 #define Q921_SAPI_LAYER2_MANAGEMENT	63
@@ -78,7 +64,7 @@ typedef struct q921_header {
 	u_int8_t	tei:7;		/* Terminal Endpoint Identifier (0) */
 #endif
 	u_int8_t	data[0];	/* Further data */
-} __attribute__ ((packed)) q921_header;
+} q921_header;
 
 /* A Supervisory Format frame */
 typedef struct q921_s {
@@ -98,7 +84,7 @@ typedef struct q921_s {
 #endif
 	u_int8_t data[0];		/* Any further data */
 	u_int8_t fcs[2];		/* At least an FCS */
-} __attribute__ ((packed)) q921_s;
+} q921_s;
 
 /* An Unnumbered Format frame */
 typedef struct q921_u {
@@ -116,7 +102,7 @@ typedef struct q921_u {
 #endif
 	u_int8_t data[0];		/* Any further data */
 	u_int8_t fcs[2];		/* At least an FCS */
-} __attribute__ ((packed)) q921_u;
+} q921_u;
 
 /* An Information frame */
 typedef struct q921_i {
@@ -147,11 +133,10 @@ typedef union {
 typedef struct q921_frame {
 	struct q921_frame *next;	/* Next in list */
 	int len;					/* Length of header + body */
-	int transmitted;			/* Have we been transmitted */
 	q921_i h;
 } q921_frame;
 
-#define Q921_INC(j) (j) = (((j) + 1) % 128)
+#define Q921_INC(j) (j) = ((j) + 1) % 128
 
 typedef enum q921_state {
 	Q921_LINK_CONNECTION_RELEASED,	/* Also known as TEI_ASSIGNED */
@@ -161,10 +146,10 @@ typedef enum q921_state {
 } q921_state;
 
 /* Dumps a *known good* Q.921 packet */
-extern void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx);
+extern void q921_dump(q921_h *h, int len, int showraw, int txrx);
 
 /* Bring up the D-channel */
-extern void q921_start(struct pri *pri, int now);
+extern void q921_start(struct pri *pri);
 
 extern void q921_reset(struct pri *pri);
 
