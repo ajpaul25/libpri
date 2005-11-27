@@ -1,9 +1,9 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@digium.com>
+ * Written by Mark Spencer <markster@linux-support.net>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001, Linux Support Services, Inc.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,11 +40,7 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#if defined(__linux__)
 #include <linux/zaptel.h>
-#elif defined(__FreeBSD__)
-#include <zaptel.h>
-#endif
 #include <zap.h>
 #include "libpri.h"
 
@@ -52,8 +48,6 @@
 #define PRI_DEF_SWITCHTYPE	PRI_SWITCH_NI2
 
 #define MAX_CHAN		32
-#define	DCHANNEL_TIMESLOT	16
-
 
 static int offset = 0;
 
@@ -120,10 +114,6 @@ static int str2switch(char *swtype)
 		return PRI_SWITCH_ATT4ESS;
 	if (!strcasecmp(swtype, "euroisdn"))
 		return PRI_SWITCH_EUROISDN_E1;
-	if (!strcasecmp(swtype, "gr303eoc"))
-		return PRI_SWITCH_GR303_EOC;
-	if (!strcasecmp(swtype, "gr303tmc"))
-		return PRI_SWITCH_GR303_TMC;
 	return -1;
 }
 
@@ -172,50 +162,10 @@ static void launch_channel(int channo)
 	
 }
 
-static int get_free_channel(int channo)
-{
-	channo--;
-	if((channo>MAX_CHAN)||(channo<0)) {
-		fprintf(stderr, "Invalid Bchannel RANGE <%d", channo);
-		return 0;
-	};
-	
-	while(chans[channo].pid) {
-		channo--;
-	}
-
-	return channo;
-}
-
-/* place here criteria for completion of destination number */
-static int number_incommplete(char *number)
-{
-  return strlen(number) < 3;
-}
-
 static void start_channel(struct pri *pri, pri_event *e)
 {
 	int channo = e->ring.channel;
-	int		flag = 1;
-	pri_event_ring	*ring = &e->ring;
 
-	if(channo == -1) {
-		channo = e->ring.channel = get_free_channel(MAX_CHAN);
-
-		if(channo == DCHANNEL_TIMESLOT)
-			channo = e->ring.channel = get_free_channel(MAX_CHAN);
-		  
-		
-		fprintf(stdout, "Any channel selected: %d\n", channo);
-
-		if(!channo) {
-		  pri_release(pri, ring->call, PRI_CAUSE_REQUESTED_CHAN_UNAVAIL);
-		  fprintf(stdout, "Abort call due to no avl B channels\n");
-		  return;
-		}
-
-		flag = 0;
-	}
 	/* Make sure it's a valid number */
 	if ((channo >= MAX_CHAN) || (channo < 0)) { 
 		fprintf(stderr, "--!! Channel %d is out of range\n", channo);
@@ -235,11 +185,7 @@ static void start_channel(struct pri *pri, pri_event *e)
 	chans[channo].call = e->ring.call;
 
 	/* Answer the line */
-	if(flag) {
-		pri_answer(pri, chans[channo].call, channo, 1);
-	} else {
-		pri_need_more_info(pri, chans[channo].call, channo, 1);
-	}
+	pri_answer(pri, chans[channo].call, channo, 1);
 
 	/* Launch a process to handle it */
 	launch_channel(channo);
@@ -277,14 +223,6 @@ static void handle_pri_event(struct pri *pri, pri_event *e)
 	case PRI_EVENT_HANGUP_ACK:
 		/* Ignore */
 		break;
-	case PRI_EVENT_INFO_RECEIVED:
-		fprintf(stdout, "number is: %s\n", e->ring.callednum);
-		if(!number_incommplete(e->ring.callednum)) {
-			fprintf(stdout, "final number is: %s\n", e->ring.callednum);
-			pri_answer(pri, e->ring.call, 0, 1);
-		}
-		
-		break;
 	default:
 		fprintf(stderr, "--!! Unknown PRI event %d\n", e->e);
 	}
@@ -303,7 +241,6 @@ static int run_pri(int dfd, int swtype, int node)
 		fprintf(stderr, "Unable to create PRI\n");
 		return -1;
 	}
-	pri_set_debug(pri, -1);
 	for (;;) {
 		
 		/* Run the D-Channel */
