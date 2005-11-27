@@ -1,9 +1,9 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@digium.com>
+ * Written by Mark Spencer <markster@linux-support.net>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001, Linux Support Services, Inc.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,11 +40,7 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#if defined(__linux__)
 #include <linux/zaptel.h>
-#elif defined(__FreeBSD__)
-#include <zaptel.h>
-#endif
 #include <zap.h>
 #include "libpri.h"
 
@@ -120,10 +116,6 @@ static int str2switch(char *swtype)
 		return PRI_SWITCH_ATT4ESS;
 	if (!strcasecmp(swtype, "euroisdn"))
 		return PRI_SWITCH_EUROISDN_E1;
-	if (!strcasecmp(swtype, "gr303eoc"))
-		return PRI_SWITCH_GR303_EOC;
-	if (!strcasecmp(swtype, "gr303tmc"))
-		return PRI_SWITCH_GR303_TMC;
 	return -1;
 }
 
@@ -303,7 +295,6 @@ static int run_pri(int dfd, int swtype, int node)
 		fprintf(stderr, "Unable to create PRI\n");
 		return -1;
 	}
-	pri_set_debug(pri, -1);
 	for (;;) {
 		
 		/* Run the D-Channel */
