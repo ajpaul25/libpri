@@ -274,7 +274,6 @@ typedef struct pri_event_ringing {
 	int progress;
 	int progressmask;
 	q931_call *call;
-	char useruserinfo[260];		/* User->User info */
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -284,7 +283,6 @@ typedef struct pri_event_answer {
 	int progress;
 	int progressmask;
 	q931_call *call;
-	char useruserinfo[260];		/* User->User info */
 } pri_event_answer;
 
 typedef struct pri_event_facname {
@@ -297,7 +295,6 @@ typedef struct pri_event_facname {
 } pri_event_facname;
 
 #define PRI_CALLINGPLANANI
-#define PRI_CALLINGPLANRDNIS
 typedef struct pri_event_ring {
 	int e;
 	int channel;				/* Channel requested */
@@ -313,8 +310,7 @@ typedef struct pri_event_ring {
 	char redirectingnum[256];	/* Redirecting number */
 	char redirectingname[256];	/* Redirecting name */
 	int redirectingreason;		/* Reason for redirect */
-	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
-	char useruserinfo[260];		/* User->User info */
+	char useruserinfo[256];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
 	int cref;					/* Call Reference Number */
 	int ctype;					/* Call type (see PRI_TRANS_CAP_* */
@@ -326,7 +322,6 @@ typedef struct pri_event_ring {
 	int progressmask;
 	char origcalledname[256];
 	char origcallednum[256];
-	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
 	int origredirectingreason;
 } pri_event_ring;
 
@@ -337,7 +332,6 @@ typedef struct pri_event_hangup {
 	int cref;
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
-	char useruserinfo[260];		/* User->User info */
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -490,9 +484,6 @@ extern int pri_hangup(struct pri *pri, q931_call *call, int cause);
 #define PRI_DESTROYCALL
 extern void pri_destroycall(struct pri *pri, q931_call *call);
 
-#define PRI_RESTART
-extern int pri_restart(struct pri *pri);
-
 extern int pri_reset(struct pri *pri, int channel);
 
 /* Create a new call */
@@ -522,11 +513,6 @@ extern int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 extern int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 extern int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
 extern int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
-#define PRI_USER_USER_TX
-/* Set the user user field.  Warning!  don't send binary data accross this field */
-extern void pri_sr_set_useruser(struct pri_sr *sr, char *userchars);
-
-extern void pri_call_set_useruser(q931_call *sr, char *userchars);
 
 extern int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 

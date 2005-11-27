@@ -361,7 +361,7 @@ static FUNC_SEND(transmit_channel_id)
 		return 0;
 	}
 
-	if (((pri->switchtype != PRI_SWITCH_QSIG) && (call->ds1no > 0)) || call->ds1explicit) {
+	if ((call->ds1no > 0) || call->ds1explicit) {
 		/* Note that we are specifying the identifier */
 		ie->data[pos++] |= 0x40;
 		/* We need to use the Channel Identifier Present thingy.  Just specify it and we're done */
@@ -969,27 +969,6 @@ static FUNC_RECV(receive_user_user)
 	return 0;
 }
 
-static FUNC_SEND(transmit_user_user)
-{        
-	int datalen = strlen(call->useruserinfo);
-	if (datalen > 0) {
-		/* Restricted to 35 characters */
-		if (msgtype == Q931_USER_INFORMATION) {
-			if (datalen > 260)
-				datalen = 260;
-		} else {
-			if (datalen > 35)
-				datalen = 35;
-		}
-		ie->data[0] = 4; /* IA5 characters */
-		memcpy(&ie->data[1], call->useruserinfo, datalen);
-		call->useruserinfo[0] = '\0';
-		return datalen + 3;
-	}
-
-	return 0;
-}
-
 static char *prog2str(int prog)
 {
 	static struct msgtype progs[] = {
@@ -1057,8 +1036,7 @@ static FUNC_RECV(receive_display)
 static FUNC_SEND(transmit_display)
 {
 	int i;
-	if ((pri->switchtype != PRI_SWITCH_NI1) && (pri->switchtype != PRI_SWITCH_QSIG) 
-			&& *call->callername) {
+	if ((pri->switchtype != PRI_SWITCH_NI1) && *call->callername) {
 		i = 0;
 		if(pri->switchtype != PRI_SWITCH_EUROISDN_E1) {
 			ie->data[0] = 0xb1;
@@ -1948,7 +1926,7 @@ struct ie ies[] = {
 	{ 1, Q931_IE_KEYPAD_FACILITY, "Keypad Facility", dump_keypad_facility, receive_keypad_facility },
 	{ 0, Q931_IE_SIGNAL, "Signal", dump_signal },
 	{ 1, Q931_IE_SWITCHHOOK, "Switch-hook" },
-	{ 1, Q931_IE_USER_USER, "User-User", dump_user_user, receive_user_user, transmit_user_user },
+	{ 1, Q931_IE_USER_USER, "User-User", dump_user_user, receive_user_user },
 	{ 1, Q931_IE_ESCAPE_FOR_EXT, "Escape for Extension" },
 	{ 1, Q931_IE_CALL_STATUS, "Call Status" },
 	{ 1, Q931_IE_CHANGE_STATUS, "Change Status" },
@@ -2525,7 +2503,7 @@ int q931_call_proceeding(struct pri *pri, q931_call *c, int channel, int info)
 	return send_message(pri, c, Q931_CALL_PROCEEDING, call_proceeding_ies);
 }
 #ifndef ALERTING_NO_PROGRESS
-static int alerting_ies[] = { Q931_PROGRESS_INDICATOR, Q931_IE_USER_USER,  -1 };
+static int alerting_ies[] = { Q931_PROGRESS_INDICATOR, -1 };
 #else
 static int alerting_ies[] = { -1 };
 #endif
@@ -2648,7 +2626,7 @@ int q931_connect(struct pri *pri, q931_call *c, int channel, int nonisdn)
 	return send_message(pri, c, Q931_CONNECT, connect_ies);
 }
 
-static int release_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
+static int release_ies[] = { Q931_CAUSE, -1 };
 
 int q931_release(struct pri *pri, q931_call *c, int cause)
 {
@@ -2696,7 +2674,7 @@ int q931_restart(struct pri *pri, int channel)
 	return send_message(pri, c, Q931_RESTART, restart_ies);
 }
 
-static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
+static int disconnect_ies[] = { Q931_CAUSE, -1 };
 
 int q931_disconnect(struct pri *pri, q931_call *c, int cause)
 {
@@ -2716,7 +2694,7 @@ int q931_disconnect(struct pri *pri, q931_call *c, int cause)
 		return 0;
 }
 
-static int setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_NETWORK_SPEC_FAC, Q931_DISPLAY, Q931_IE_USER_USER,
+static int setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_NETWORK_SPEC_FAC, Q931_DISPLAY,
 	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_SENDING_COMPLETE, Q931_IE_ORIGINATING_LINE_INFO, Q931_IE_GENERIC_DIGITS, -1 };
 
 static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1 };
@@ -2794,9 +2772,6 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 	} else
 		return -1;
 
-	if (req->useruserinfo)
-		libpri_copy_string(c->useruserinfo, req->useruserinfo, sizeof(c->useruserinfo));
-
 	if (req->nonisdn && (pri->switchtype == PRI_SWITCH_NI2))
 		c->progressmask = PRI_PROG_CALLER_NOT_ISDN;
 	else
@@ -2821,7 +2796,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 	
 }
 
-static int release_complete_ies[] = { Q931_IE_USER_USER, -1 };
+static int release_complete_ies[] = { -1 };
 
 static int q931_release_complete(struct pri *pri, q931_call *c, int cause)
 {
@@ -3042,7 +3017,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 	case Q931_CONNECT:
 	case Q931_ALERTING:
 	case Q931_PROGRESS:
-		c->useruserinfo[0] = '\0';
 		c->cause = -1;
 	case Q931_CALL_PROCEEDING:
 		c->progress = -1;
@@ -3062,13 +3036,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		if (c->retranstimer)
 			pri_schedule_del(pri, c->retranstimer);
 		c->retranstimer = 0;
-		c->useruserinfo[0] = '\0';
 		break;
 	case Q931_RELEASE_COMPLETE:
 		if (c->retranstimer)
 			pri_schedule_del(pri, c->retranstimer);
 		c->retranstimer = 0;
-		c->useruserinfo[0] = '\0';
 	case Q931_STATUS:
 		c->cause = -1;
 		c->causecode = -1;
@@ -3238,8 +3210,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.ring.callingpres = c->callerpres;
 		pri->ev.ring.callingplan = c->callerplan;
 		pri->ev.ring.callingplanani = c->callerplanani;
-		pri->ev.ring.callingplanrdnis = c->redirectingplan;
-		pri->ev.ring.callingplanorigcalled = c->origcalledplan;
 		pri->ev.ring.ani2 = c->ani2;
 		libpri_copy_string(pri->ev.ring.callingani, c->callerani, sizeof(pri->ev.ring.callingani));
 		libpri_copy_string(pri->ev.ring.callingnum, c->callernum, sizeof(pri->ev.ring.callingnum));
@@ -3252,7 +3222,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
                 libpri_copy_string(pri->ev.ring.redirectingnum, c->redirectingnum, sizeof(pri->ev.ring.redirectingnum));
                 libpri_copy_string(pri->ev.ring.redirectingname, c->redirectingname, sizeof(pri->ev.ring.redirectingname));
                 libpri_copy_string(pri->ev.ring.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
 		pri->ev.ring.redirectingreason = c->redirectingreason;
 		pri->ev.ring.origredirectingreason = c->origredirectingreason;
 		pri->ev.ring.flexible = ! (c->chanflags & FLAG_EXCLUSIVE);
@@ -3278,8 +3247,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.ringing.call = c;
 		pri->ev.ringing.progress = c->progress;
 		pri->ev.ringing.progressmask = c->progressmask;
-                libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT:
 		if (c->newcall) {
@@ -3298,8 +3265,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.answer.call = c;
 		pri->ev.answer.progress = c->progress;
 		pri->ev.answer.progressmask = c->progressmask;
-                libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
 		q931_connect_acknowledge(pri, c);
 		if (c->justsignalling) {  /* Make sure WE release when we initiatie a signalling only connection */
 			q931_release(pri, c, PRI_CAUSE_NORMAL_CLEARING);
@@ -3413,8 +3378,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.hangup.cref = c->cr;          		
 		pri->ev.hangup.cause = c->cause;      		
 		pri->ev.hangup.call = c;              		
-                libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
 		/* Free resources */
 		if (c->alive) {
 			pri->ev.e = PRI_EVENT_HANGUP;
@@ -3448,8 +3411,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.hangup.cause = c->cause;
 		pri->ev.hangup.call = c;
 		pri->ev.hangup.aoc_units = c->aoc_units;
-                libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
 		/* Don't send release complete if they send us release 
 		   while we sent it, assume a NULL state */
 		if (c->newcall)
