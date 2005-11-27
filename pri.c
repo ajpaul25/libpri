@@ -1,24 +1,12 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@digium.com>
+ * Written by Mark Spencer <markster@linux-suppot.net>
  *
- * Copyright (C) 2001-2005, Digium
+ * This program is confidential
+ *
+ * Copyright (C) 2001, Linux Support Services, Inc.
  * All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
  *
  */
 
@@ -31,13 +19,10 @@
 #include <stdlib.h>
 #include <sys/select.h>
 #include <stdarg.h>
-#include "compat.h"
 #include "libpri.h"
 #include "pri_internal.h"
-#include "pri_facility.h"
 #include "pri_q921.h"
 #include "pri_q931.h"
-#include "pri_timers.h"
 
 char *pri_node2str(int node)
 {
@@ -72,131 +57,18 @@ char *pri_switch2str(int sw)
 		return "GR303 EOC";
 	case PRI_SWITCH_GR303_TMC:
 		return "GR303 TMC";
-	case PRI_SWITCH_QSIG:
-		return "Q.SIG switch";
 	default:
 		return "Unknown switchtype";
 	}
 }
 
-static void pri_default_timers(struct pri *pri, int switchtype)
-{
-	int defaulttimers[20][PRI_MAX_TIMERS] = PRI_TIMERS_ALL;
-	int x;
-
-	for (x = 0; x<PRI_MAX_TIMERS; x++) {
-		pri->timers[x] = defaulttimers[switchtype][x];
-	}
-}
-
-int pri_set_timer(struct pri *pri, int timer, int value)
-{
-	if (timer < 0 || timer > PRI_MAX_TIMERS || value < 0)
-		return -1;
-
-	pri->timers[timer] = value;
-	return 0;
-}
-
-int pri_get_timer(struct pri *pri, int timer)
-{
-	if (timer < 0 || timer > PRI_MAX_TIMERS)
-		return -1;
-	return pri->timers[timer];
-}
-
-int pri_timer2idx(char *timer)
-{
-	if (!strcasecmp(timer, "N200"))
-		return PRI_TIMER_N200;
-	else if (!strcasecmp(timer, "N201"))
-		return PRI_TIMER_N201;
-	else if (!strcasecmp(timer, "N202"))
-		return PRI_TIMER_N202;
-	else if (!strcasecmp(timer, "K"))
-		return PRI_TIMER_K;
-	else if (!strcasecmp(timer, "T200"))
-		return PRI_TIMER_T200;
-	else if (!strcasecmp(timer, "T202"))
-		return PRI_TIMER_T202;
-	else if (!strcasecmp(timer, "T203"))
-		return PRI_TIMER_T203;
-	else if (!strcasecmp(timer, "T300"))
-		return PRI_TIMER_T300;
-	else if (!strcasecmp(timer, "T301"))
-		return PRI_TIMER_T301;
-	else if (!strcasecmp(timer, "T302"))
-		return PRI_TIMER_T302;
-	else if (!strcasecmp(timer, "T303"))
-		return PRI_TIMER_T303;
-	else if (!strcasecmp(timer, "T304"))
-		return PRI_TIMER_T304;
-	else if (!strcasecmp(timer, "T305"))
-		return PRI_TIMER_T305;
-	else if (!strcasecmp(timer, "T306"))
-		return PRI_TIMER_T306;
-	else if (!strcasecmp(timer, "T307"))
-		return PRI_TIMER_T307;
-	else if (!strcasecmp(timer, "T308"))
-		return PRI_TIMER_T308;
-	else if (!strcasecmp(timer, "T309"))
-		return PRI_TIMER_T309;
-	else if (!strcasecmp(timer, "T310"))
-		return PRI_TIMER_T310;
-	else if (!strcasecmp(timer, "T313"))
-		return PRI_TIMER_T313;
-	else if (!strcasecmp(timer, "T314"))
-		return PRI_TIMER_T314;
-	else if (!strcasecmp(timer, "T316"))
-		return PRI_TIMER_T316;
-	else if (!strcasecmp(timer, "T317"))
-		return PRI_TIMER_T317;
-	else if (!strcasecmp(timer, "T318"))
-		return PRI_TIMER_T318;
-	else if (!strcasecmp(timer, "T319"))
-		return PRI_TIMER_T319;
-	else if (!strcasecmp(timer, "T320"))
-		return PRI_TIMER_T320;
-	else if (!strcasecmp(timer, "T321"))
-		return PRI_TIMER_T321;
-	else if (!strcasecmp(timer, "T322"))
-		return PRI_TIMER_T322;
-	else
-		return -1;
-}
-
-static int __pri_read(struct pri *pri, void *buf, int buflen)
-{
-	int res = read(pri->fd, buf, buflen);
-	if (res < 0) {
-		if (errno != EAGAIN)
-			pri_error(pri, "Read on %d failed: %s\n", pri->fd, strerror(errno));
-		return 0;
-	}
-	return res;
-}
-
-static int __pri_write(struct pri *pri, void *buf, int buflen)
-{
-	int res = write(pri->fd, buf, buflen);
-	if (res < 0) {
-		if (errno != EAGAIN)
-			pri_error(pri, "Write to %d failed: %s\n", pri->fd, strerror(errno));
-		return 0;
-	}
-	return res;
-}
-
-static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata)
+static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *master)
 {
 	struct pri *p;
 	p = malloc(sizeof(struct pri));
 	if (p) {
 		memset(p, 0, sizeof(struct pri));
 		p->fd = fd;
-		p->read_func = rd;
-		p->write_func = wr;
-		p->userdata = userdata;
 		p->localtype = node;
 		p->switchtype = switchtype;
 		p->cref = 1;
@@ -206,7 +78,6 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 		p->protodisc = Q931_PROTOCOL_DISCRIMINATOR;
 		p->master = master;
 		p->callpool = &p->localpool;
-		pri_default_timers(p, switchtype);
 #ifdef LIBPRI_COUNTERS
 		p->q921_rxcount = 0;
 		p->q921_txcount = 0;
@@ -217,7 +88,7 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 			p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 			p->sapi = Q921_SAPI_GR303_EOC;
 			p->tei = Q921_TEI_GR303_EOC_OPS;
-			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_EOC_PATH, p, NULL, NULL, NULL);
+			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_EOC_PATH, p);
 			if (!p->subchannel) {
 				free(p);
 				p = NULL;
@@ -226,7 +97,7 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 			p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 			p->sapi = Q921_SAPI_GR303_TMC_CALLPROC;
 			p->tei = Q921_TEI_GR303_TMC_CALLPROC;
-			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_TMC_SWITCHING, p, NULL, NULL, NULL);
+			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_TMC_SWITCHING, p);
 			if (!p->subchannel) {
 				free(p);
 				p = NULL;
@@ -247,50 +118,9 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 	return p;
 }
 
-void pri_call_set_useruser(q931_call *c, char *userchars)
+struct pri *pri_new(int fd, int node, int switchtype)
 {
-	if (userchars)
-		libpri_copy_string(c->useruserinfo, userchars, sizeof(c->useruserinfo));
-}
-
-void pri_sr_set_useruser(struct pri_sr *sr, char *userchars)
-{
-	sr->useruserinfo = userchars;
-}
-
-int pri_restart(struct pri *pri)
-{
-	/* Restart Q.921 layer */
-	if (pri) {
-		q921_reset(pri);
-		q921_start(pri, pri->localtype == PRI_CPE);	
-	}
-	return 0;
-}
-
-struct pri *pri_new(int fd, int nodetype, int switchtype)
-{
-	return __pri_new(fd, nodetype, switchtype, NULL, __pri_read, __pri_write, NULL);
-}
-
-struct pri *pri_new_cb(int fd, int nodetype, int switchtype, pri_io_cb io_read, pri_io_cb io_write, void *userdata)
-{
-	if (!io_read)
-		io_read = __pri_read;
-	if (!io_write)
-		io_write = __pri_write;
-	return __pri_new(fd, nodetype, switchtype, NULL, io_read, io_write, userdata);
-}
-
-void *pri_get_userdata(struct pri *pri)
-{
-	return pri ? pri->userdata : NULL;
-}
-
-void pri_set_userdata(struct pri *pri, void *userdata)
-{
-	if (pri)
-		pri->userdata = userdata;
+	return __pri_new(fd, node, switchtype, NULL);
 }
 
 void pri_set_nsf(struct pri *pri, int nsf)
@@ -310,30 +140,6 @@ char *pri_event2str(int id)
 		return "Restart channel";
 	case PRI_EVENT_RING:
 		return "Ring";
-	case PRI_EVENT_HANGUP:
-		return "Hangup";
-	case PRI_EVENT_RINGING:
-		return "Ringing";
-	case PRI_EVENT_ANSWER:
-		return "Answer";
-	case PRI_EVENT_HANGUP_ACK:
-		return "Hangup ACK";
-	case PRI_EVENT_RESTART_ACK:
-		return "Restart ACK";
-	case PRI_EVENT_FACNAME:
-		return "FacName";
-	case PRI_EVENT_INFO_RECEIVED:
-		return "Info Received";
-	case PRI_EVENT_PROCEEDING:
-		return "Proceeding";
-	case PRI_EVENT_SETUP_ACK:
-		return "Setup ACK";
-	case PRI_EVENT_HANGUP_REQ:
-		return "Hangup Req";
-	case PRI_EVENT_NOTIFY:
-		return "Notify";
-	case PRI_EVENT_PROGRESS:
-		return "Progress";
 	case PRI_EVENT_CONFIG_ERR:
 		return "Configuration Error";
 	default:
@@ -346,7 +152,12 @@ pri_event *pri_check_event(struct pri *pri)
 	char buf[1024];
 	int res;
 	pri_event *e;
-	res = pri->read_func ? pri->read_func(pri, buf, sizeof(buf)) : 0;
+	res = read(pri->fd, buf, sizeof(buf));
+	if (res < 0) {
+		if (errno != EAGAIN)
+			pri_error("Read on %d failed: %s\n", pri->fd, strerror(errno));
+		return NULL;
+	}
 	if (!res)
 		return NULL;
 	/* Receive the q921 packet */
@@ -385,7 +196,7 @@ pri_event *pri_mkerror(struct pri *pri, char *errstr)
 {
 	/* Return a configuration error */
 	pri->ev.err.e = PRI_EVENT_CONFIG_ERR;
-	libpri_copy_string(pri->ev.err.err, errstr, sizeof(pri->ev.err.err));
+	strncpy(pri->ev.err.err, errstr, sizeof(pri->ev.err.err) - 1);
 	return &pri->ev;
 }
 
@@ -422,25 +233,6 @@ void pri_set_debug(struct pri *pri, int debug)
 	pri->debug = debug;
 	if (pri->subchannel)
 		pri_set_debug(pri->subchannel, debug);
-}
-
-int pri_get_debug(struct pri *pri)
-{
-	if (!pri)
-		return -1;
-	if (pri->subchannel)
-		return pri_get_debug(pri->subchannel);
-	return pri->debug;
-}
-
-void pri_facility_enable(struct pri *pri)
-{
-	if (!pri)
-		return;
-	pri->sendfacility = 1;
-	if (pri->subchannel)
-		pri_facility_enable(pri->subchannel);
-	return;
 }
 
 int pri_acknowledge(struct pri *pri, q931_call *call, int channel, int info)
@@ -516,31 +308,6 @@ int pri_disconnect(struct pri *pri, q931_call *call, int cause)
 }
 #endif
 
-int pri_channel_bridge(q931_call *call1, q931_call *call2)
-{
-	if (!call1 || !call2)
-		return -1;
-
-	/* Check switchtype compatibility */
-	if (call1->pri->switchtype != PRI_SWITCH_LUCENT5E ||
-			call2->pri->switchtype != PRI_SWITCH_LUCENT5E)
-		return -1;
-
-	/* Check for bearer capability */
-	if (call1->transcapability != call2->transcapability)
-		return -1;
-	/* Check to see if calls are on the same PRI dchannel
-	 * Currently only support calls on the same dchannel
-	 */
-	if (call1->pri != call2->pri)
-		return -1;
-	
-	if (eect_initiate_transfer(call1->pri, call1, call2))
-		return -1;
-
-	return 0;
-}
-
 int pri_hangup(struct pri *pri, q931_call *call, int cause)
 {
 	if (!pri || !call)
@@ -569,26 +336,26 @@ void pri_dump_event(struct pri *pri, pri_event *e)
 {
 	if (!pri || !e)
 		return;
-	pri_message(pri, "Event type: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
+	pri_message("Event type: %s (%d)\n", pri_event2str(e->gen.e), e->gen.e);
 	switch(e->gen.e) {
 	case PRI_EVENT_DCHAN_UP:
 	case PRI_EVENT_DCHAN_DOWN:
 		break;
 	case PRI_EVENT_CONFIG_ERR:
-		pri_message(pri, "Error: %s", e->err.err);
+		pri_message("Error: %s", e->err.err);
 		break;
 	case PRI_EVENT_RESTART:
-		pri_message(pri, "Restart on channel %d\n", e->restart.channel);
+		pri_message("Restart on channel %d\n", e->restart.channel);
 	case PRI_EVENT_RING:
-		pri_message(pri, "Calling number: %s (%s, %s)\n", e->ring.callingnum, pri_plan2str(e->ring.callingplan), pri_pres2str(e->ring.callingpres));
-		pri_message(pri, "Called number: %s (%s)\n", e->ring.callednum, pri_plan2str(e->ring.calledplan));
-		pri_message(pri, "Channel: %d (%s) Reference number: %d\n", e->ring.channel, e->ring.flexible ? "Flexible" : "Not Flexible", e->ring.cref);
+		pri_message("Calling number: %s (%s, %s)\n", e->ring.callingnum, pri_plan2str(e->ring.callingplan), pri_pres2str(e->ring.callingpres));
+		pri_message("Called number: %s (%s)\n", e->ring.callednum, pri_plan2str(e->ring.calledplan));
+		pri_message("Channel: %d (%s) Reference number: %d\n", e->ring.channel, e->ring.flexible ? "Flexible" : "Not Flexible", e->ring.cref);
 		break;
 	case PRI_EVENT_HANGUP:
-		pri_message(pri, "Hangup, reference number: %d, reason: %s\n", e->hangup.cref, pri_cause2str(e->hangup.cause));
+		pri_message("Hangup, reference number: %d, reason: %s\n", e->hangup.cref, pri_cause2str(e->hangup.cause));
 		break;
 	default:
-		pri_message(pri, "Don't know how to dump events of type %d\n", e->gen.e);
+		pri_message("Don't know how to dump events of type %d\n", e->gen.e);
 	}
 }
 
@@ -598,71 +365,10 @@ static void pri_sr_init(struct pri_sr *req)
 	
 }
 
-int pri_sr_set_connection_call_independent(struct pri_sr *req)
-{
-	if (!req)
-		return -1;
-
-	req->justsignalling = 1; /* have to set justsignalling for all those pesky IEs we need to setup */
-	return 0;
-}
-
-/* Don't call any other pri functions on this */
-int pri_mwi_activate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called,
-					int calledplan)
-{
-	struct pri_sr req;
-	if (!pri || !c)
-		return -1;
-
-	pri_sr_init(&req);
-	pri_sr_set_connection_call_independent(&req);
-
-	req.caller = caller;
-	req.callerplan = callerplan;
-	req.callername = callername;
-	req.callerpres = callerpres;
-	req.called = called;
-	req.calledplan = calledplan;
-
-	if (mwi_message_send(pri, c, &req, 1) < 0) {
-		pri_message(pri, "Unable to send MWI activate message\n");
-		return -1;
-	}
-	/* Do more stuff when we figure out that the CISC stuff works */
-	return q931_setup(pri, c, &req);
-}
-
-int pri_mwi_deactivate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called,
-					int calledplan)
-{
-	struct pri_sr req;
-	if (!pri || !c)
-		return -1;
-
-	pri_sr_init(&req);
-	pri_sr_set_connection_call_independent(&req);
-
-	req.caller = caller;
-	req.callerplan = callerplan;
-	req.callername = callername;
-	req.callerpres = callerpres;
-	req.called = called;
-	req.calledplan = calledplan;
-
-	if(mwi_message_send(pri, c, &req, 0) < 0) {
-		pri_message(pri, "Unable to send MWI deactivate message\n");
-		return -1;
-	}
-
-	return q931_setup(pri, c, &req);
-}
-	
 int pri_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 {
 	if (!pri || !c)
 		return -1;
-
 	return q931_setup(pri, c, req);
 }
 
@@ -688,20 +394,20 @@ int pri_call(struct pri *pri, q931_call *c, int transmode, int channel, int excl
 	return q931_setup(pri, c, &req);
 }	
 
-static void (*__pri_error)(struct pri *pri, char *stuff);
-static void (*__pri_message)(struct pri *pri, char *stuff);
+static void (*__pri_error)(char *stuff);
+static void (*__pri_message)(char *stuff);
 
-void pri_set_message(void (*func)(struct pri *pri, char *stuff))
+void pri_set_message(void (*func)(char *stuff))
 {
 	__pri_message = func;
 }
 
-void pri_set_error(void (*func)(struct pri *pri, char *stuff))
+void pri_set_error(void (*func)(char *stuff))
 {
 	__pri_error = func;
 }
 
-void pri_message(struct pri *pri, char *fmt, ...)
+void pri_message(char *fmt, ...)
 {
 	char tmp[1024];
 	va_list ap;
@@ -709,12 +415,12 @@ void pri_message(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_message)
-		__pri_message(pri, tmp);
+		__pri_message(tmp);
 	else
 		fputs(tmp, stdout);
 }
 
-void pri_error(struct pri *pri, char *fmt, ...)
+void pri_error(char *fmt, ...)
 {
 	char tmp[1024];
 	va_list ap;
@@ -722,7 +428,7 @@ void pri_error(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_error)
-		__pri_error(pri, tmp);
+		__pri_error(tmp);
 	else
 		fputs(tmp, stderr);
 }
@@ -771,12 +477,6 @@ char *pri_dump_info_str(struct pri *pri)
 	len += sprintf(buf + len, "Retrans: %d\n", pri->retrans);
 	len += sprintf(buf + len, "Busy: %d\n", pri->busy);
 	len += sprintf(buf + len, "Overlap Dial: %d\n", pri->overlapdial);
-	len += sprintf(buf + len, "T200 Timer: %d\n", pri->timers[PRI_TIMER_T200]);
-	len += sprintf(buf + len, "T203 Timer: %d\n", pri->timers[PRI_TIMER_T203]);
-	len += sprintf(buf + len, "T305 Timer: %d\n", pri->timers[PRI_TIMER_T305]);
-	len += sprintf(buf + len, "T308 Timer: %d\n", pri->timers[PRI_TIMER_T308]);
-	len += sprintf(buf + len, "T313 Timer: %d\n", pri->timers[PRI_TIMER_T313]);
-	len += sprintf(buf + len, "N200 Counter: %d\n", pri->timers[PRI_TIMER_N200]);
 
 	return strdup(buf);
 }
@@ -840,14 +540,5 @@ int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int cal
 	sr->callername = callername;
 	sr->callerplan = callerplan;
 	sr->callerpres = callerpres;
-	return 0;
-}
-
-int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason)
-{
-	sr->redirectingnum = num;
-	sr->redirectingplan = plan;
-	sr->redirectingpres = pres;
-	sr->redirectingreason = reason;
 	return 0;
 }
