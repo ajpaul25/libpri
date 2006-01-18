@@ -129,7 +129,7 @@ struct pri_sr {
 	int redirectingpres;
 	int redirectingreason;
 	int justsignalling;
-	const char *useruserinfo;
+	char *useruserinfo;
 };
 
 /* Internal switch types */
@@ -206,7 +206,7 @@ struct q931_call {
 	char callernum[256];
 	char callername[256];
 
-	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
+	char digitbuf[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 
 	int ani2;               /* ANI II */
 	

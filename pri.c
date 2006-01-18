@@ -247,13 +247,13 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 	return p;
 }
 
-void pri_call_set_useruser(q931_call *c, const char *userchars)
+void pri_call_set_useruser(q931_call *c, char *userchars)
 {
 	if (userchars)
 		libpri_copy_string(c->useruserinfo, userchars, sizeof(c->useruserinfo));
 }
 
-void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars)
+void pri_sr_set_useruser(struct pri_sr *sr, char *userchars)
 {
 	sr->useruserinfo = userchars;
 }
@@ -469,14 +469,6 @@ int pri_information(struct pri *pri, q931_call *call, char digit)
 	if (!pri || !call)
 		return -1;
 	return q931_information(pri, call, digit);
-}
-
-int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits)
-{
-	if (!pri || !call || !digits || !digits[0])
-		return -1;
-
-	return q931_keypad_facility(pri, call, digits);
 }
 
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
