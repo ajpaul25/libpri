@@ -247,13 +247,13 @@ static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *maste
 	return p;
 }
 
-void pri_call_set_useruser(q931_call *c, const char *userchars)
+void pri_call_set_useruser(q931_call *c, char *userchars)
 {
 	if (userchars)
 		libpri_copy_string(c->useruserinfo, userchars, sizeof(c->useruserinfo));
 }
 
-void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars)
+void pri_sr_set_useruser(struct pri_sr *sr, char *userchars)
 {
 	sr->useruserinfo = userchars;
 }
@@ -471,14 +471,6 @@ int pri_information(struct pri *pri, q931_call *call, char digit)
 	return q931_information(pri, call, digit);
 }
 
-int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits)
-{
-	if (!pri || !call || !digits || !digits[0])
-		return -1;
-
-	return q931_keypad_facility(pri, call, digits);
-}
-
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
 {
 	if (!pri || !call)
@@ -529,6 +521,11 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	if (!call1 || !call2)
 		return -1;
 
+	/* Check switchtype compatibility */
+	if (call1->pri->switchtype != PRI_SWITCH_LUCENT5E ||
+			call2->pri->switchtype != PRI_SWITCH_LUCENT5E)
+		return -1;
+
 	/* Check for bearer capability */
 	if (call1->transcapability != call2->transcapability)
 		return -1;
@@ -538,13 +535,10 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	if (call1->pri != call2->pri)
 		return -1;
 	
-	if (call1->pri->switchtype == PRI_SWITCH_LUCENT5E)
-		return eect_initiate_transfer(call1->pri, call1, call2);
+	if (eect_initiate_transfer(call1->pri, call1, call2))
+		return -1;
 
-	if (call1->pri->switchtype == PRI_SWITCH_DMS100)
-		return rlt_initiate_transfer(call1->pri, call1, call2);
-
-	return -1;
+	return 0;
 }
 
 int pri_hangup(struct pri *pri, q931_call *call, int cause)

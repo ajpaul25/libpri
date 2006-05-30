@@ -43,13 +43,12 @@ INSTALL_PREFIX=$(DESTDIR)
 INSTALL_BASE=/usr
 SOFLAGS = -Wl,-hlibpri.so.1.0
 LDCONFIG = /sbin/ldconfig
-ifneq (,$(findstring X$(OSARCH)X, XLinuxX XGNU/kFreeBSDX))
+ifneq (,$(findstring $(OSARCH), Linux GNU/kFreeBSD))
 LDCONFIG_FLAGS=-n
 else
 ifeq (${OSARCH},FreeBSD)
 LDCONFIG_FLAGS=-m
 CFLAGS += -I../zaptel -I../zapata
-INSTALL_BASE=/usr/local
 endif
 endif
 ifeq (${OSARCH},SunOS)
