@@ -142,10 +142,10 @@
 
 /* Causes for disconnection */
 #define PRI_CAUSE_UNALLOCATED					1
-#define PRI_CAUSE_NO_ROUTE_TRANSIT_NET			2	/* !Q.SIG */
+#define PRI_CAUSE_NO_ROUTE_TRANSIT_NET			2
 #define PRI_CAUSE_NO_ROUTE_DESTINATION			3
 #define PRI_CAUSE_CHANNEL_UNACCEPTABLE			6
-#define PRI_CAUSE_CALL_AWARDED_DELIVERED		7	/* !Q.SIG */
+#define PRI_CAUSE_CALL_AWARDED_DELIVERED		7
 #define PRI_CAUSE_NORMAL_CLEARING				16
 #define PRI_CAUSE_USER_BUSY						17
 #define PRI_CAUSE_NO_USER_RESPONSE				18
@@ -154,29 +154,27 @@
 #define PRI_CAUSE_NUMBER_CHANGED				22
 #define PRI_CAUSE_DESTINATION_OUT_OF_ORDER		27
 #define PRI_CAUSE_INVALID_NUMBER_FORMAT			28
-#define PRI_CAUSE_FACILITY_REJECTED				29	/* !Q.SIG */
+#define PRI_CAUSE_FACILITY_REJECTED				29
 #define PRI_CAUSE_RESPONSE_TO_STATUS_ENQUIRY	30
 #define PRI_CAUSE_NORMAL_UNSPECIFIED			31
 #define PRI_CAUSE_NORMAL_CIRCUIT_CONGESTION		34
-#define PRI_CAUSE_NETWORK_OUT_OF_ORDER			38	/* !Q.SIG */
+#define PRI_CAUSE_NETWORK_OUT_OF_ORDER			38
 #define PRI_CAUSE_NORMAL_TEMPORARY_FAILURE		41
-#define PRI_CAUSE_SWITCH_CONGESTION				42	/* !Q.SIG */
-#define PRI_CAUSE_ACCESS_INFO_DISCARDED			43	/* !Q.SIG */
+#define PRI_CAUSE_SWITCH_CONGESTION				42
+#define PRI_CAUSE_ACCESS_INFO_DISCARDED			43
 #define PRI_CAUSE_REQUESTED_CHAN_UNAVAIL		44
-#define PRI_CAUSE_PRE_EMPTED					45	/* !Q.SIG */
-#define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50	/* !Q.SIG */
-#define PRI_CAUSE_OUTGOING_CALL_BARRED     		52	/* !Q.SIG */
-#define PRI_CAUSE_INCOMING_CALL_BARRED     		54	/* !Q.SIG */
+#define PRI_CAUSE_PRE_EMPTED					45
+#define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50
+#define PRI_CAUSE_OUTGOING_CALL_BARRED     		52
+#define PRI_CAUSE_INCOMING_CALL_BARRED     		54
 #define PRI_CAUSE_BEARERCAPABILITY_NOTAUTH		57
 #define PRI_CAUSE_BEARERCAPABILITY_NOTAVAIL     58
-#define PRI_CAUSE_SERVICEOROPTION_NOTAVAIL		63	/* Q.SIG */
 #define PRI_CAUSE_BEARERCAPABILITY_NOTIMPL		65
-#define PRI_CAUSE_CHAN_NOT_IMPLEMENTED     		66	/* !Q.SIG */
-#define PRI_CAUSE_FACILITY_NOT_IMPLEMENTED      69	/* !Q.SIG */
+#define PRI_CAUSE_CHAN_NOT_IMPLEMENTED     		66
+#define PRI_CAUSE_FACILITY_NOT_IMPLEMENTED      69
 #define PRI_CAUSE_INVALID_CALL_REFERENCE		81
-#define PRI_CAUSE_IDENTIFIED_CHANNEL_NOTEXIST	82	/* Q.SIG */
 #define PRI_CAUSE_INCOMPATIBLE_DESTINATION		88
-#define PRI_CAUSE_INVALID_MSG_UNSPECIFIED  		95	/* !Q.SIG */
+#define PRI_CAUSE_INVALID_MSG_UNSPECIFIED  		95
 #define PRI_CAUSE_MANDATORY_IE_MISSING			96
 #define PRI_CAUSE_MESSAGE_TYPE_NONEXIST			97
 #define PRI_CAUSE_WRONG_MESSAGE					98
@@ -184,9 +182,9 @@
 #define PRI_CAUSE_INVALID_IE_CONTENTS			100
 #define PRI_CAUSE_WRONG_CALL_STATE				101
 #define PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE		102
-#define PRI_CAUSE_MANDATORY_IE_LENGTH_ERROR		103	/* !Q.SIG */
+#define PRI_CAUSE_MANDATORY_IE_LENGTH_ERROR		103
 #define PRI_CAUSE_PROTOCOL_ERROR				111
-#define PRI_CAUSE_INTERWORKING					127	/* !Q.SIG */
+#define PRI_CAUSE_INTERWORKING					127
 
 /* Transmit capabilities */
 #define PRI_TRANS_CAP_SPEECH					0x0
@@ -465,10 +463,6 @@ extern int pri_acknowledge(struct pri *pri, q931_call *call, int channel, int in
 /* Send a digit in overlap mode */
 extern int pri_information(struct pri *pri, q931_call *call, char digit);
 
-#define PRI_KEYPAD_FACILITY_TX
-/* Send a keypad facility string of digits */
-extern int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits);
-
 /* Answer the incomplete(call without called number) call on the given channel.
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 extern int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisdn);
@@ -531,9 +525,9 @@ extern int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, 
 extern int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
-extern void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);
+extern void pri_sr_set_useruser(struct pri_sr *sr, char *userchars);
 
-extern void pri_call_set_useruser(q931_call *sr, const char *userchars);
+extern void pri_call_set_useruser(q931_call *sr, char *userchars);
 
 extern int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 

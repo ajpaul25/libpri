@@ -42,7 +42,11 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <zaptel/zaptel.h>
+#if defined(__linux__)
+#include <linux/zaptel.h>
+#elif defined(__FreeBSD__) || defined(SOLARIS)
+#include <zaptel.h>
+#endif
 #ifndef SOLARIS
 #include <zap.h>
 #endif
@@ -143,7 +147,7 @@ static void event2(struct pri *pri, pri_event *e)
 	}
 }
 
-static void testmsg(struct pri *pri, char *s)
+static void testmsg(char *s)
 {
 	char *c;
 	static int keeplast = 0;
@@ -169,7 +173,7 @@ static void testmsg(struct pri *pri, char *s)
 		keeplast = 0;
 }
 
-static void testerr(struct pri *pri, char *s)
+static void testerr(char *s)
 {
 	char *c;
 	static int keeplast = 0;
@@ -260,7 +264,6 @@ int main(int argc, char *argv[])
 	}
 	first = pri;
 	pri_set_debug(pri, DEBUG_LEVEL);
-	pri_facility_enable(pri);
 	if (pthread_create(&tmp, NULL, dchan, pri)) {
 		perror("thread(0)");
 		exit(1);
@@ -270,7 +273,6 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	pri_set_debug(pri, DEBUG_LEVEL);
-	pri_facility_enable(pri);
 	if (pthread_create(&tmp, NULL, dchan, pri)) {
 		perror("thread(1)");
 		exit(1);

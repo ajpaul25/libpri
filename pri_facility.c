@@ -32,132 +32,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-
-static char *asn1id2text(int id)
-{
-	static char data[32];
-	static char *strings[] = {
-		"none",
-		"Boolean",
-		"Integer",
-		"Bit String",
-		"Octet String",
-		"NULL",
-		"Object Identifier",
-		"Object Descriptor",
-		"External Reference",
-		"Real Number",
-		"Enumerated",
-		"Embedded PDV",
-		"UTF-8 String",
-		"Relative Object ID",
-		"Reserved (0e)",
-		"Reserved (0f)",
-		"Sequence",
-		"Set",
-		"Numeric String",
-		"Printable String",
-		"Tele-Text String",
-		"IA-5 String",
-		"UTC Time",
-		"Generalized Time",
-	};
-	if (id > 0 && id <= 0x18) {
-		return strings[id];
-	} else {
-		sprintf(data, "Unknown (%02x)", id);
-		return data;
-	}
-}
-
-static int asn1_dumprecursive(struct pri *pri, void *comp_ptr, int len, int level)
-{
-	unsigned char *vdata = (unsigned char *)comp_ptr;
-	struct rose_component *comp;
-	int i = 0;
-	int j, k, l;
-	int clen = 0;
-
-	while (len > 0) {
-		GET_COMPONENT(comp, i, vdata, len);
-		pri_message(pri, "%*s%02X %04X", 2 * level, "", comp->type, comp->len);
-		if ((comp->type == 0) && (comp->len == 0))
-			return clen + 2;
-		if ((comp->type & ASN1_PC_MASK) == ASN1_PRIMITIVE) {
-			for (j = 0; j < comp->len; ++j)
-				pri_message(pri, " %02X", comp->data[j]);
-		}
-		if ((comp->type & ASN1_CLAN_MASK) == ASN1_UNIVERSAL) {
-			switch (comp->type & ASN1_TYPE_MASK) {
-			case 0:
-				pri_message(pri, " (none)");
-				break;
-			case ASN1_BOOLEAN:
-				pri_message(pri, " (BOOLEAN: %d)", comp->data[0]);
-				break;
-			case ASN1_INTEGER:
-				for (k = l = 0; k < comp->len; ++k)
-					l = (l << 8) | comp->data[k];
-				pri_message(pri, " (INTEGER: %d)", l);
-				break;
-			case ASN1_BITSTRING:
-				pri_message(pri, " (BITSTRING:");
-				for (k = 0; k < comp->len; ++k)
-				pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_OCTETSTRING:
-				pri_message(pri, " (OCTETSTRING:");
-				for (k = 0; k < comp->len; ++k)
-					pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_NULL:
-				pri_message(pri, " (NULL)");
-				break;
-			case ASN1_OBJECTIDENTIFIER:
-				pri_message(pri, " (OBJECTIDENTIFIER:");
-				for (k = 0; k < comp->len; ++k)
-					pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_ENUMERATED:
-				for (k = l = 0; k < comp->len; ++k)
-					l = (l << 8) | comp->data[k];
-				pri_message(pri, " (ENUMERATED: %d)", l);
-				break;
-			case ASN1_SEQUENCE:
-				pri_message(pri, " (SEQUENCE)");
-				break;
-			default:
-				pri_message(pri, " (component %02x - %s)", comp->type, asn1id2text(comp->type & ASN1_TYPE_MASK));
-				break;
-			}
-		}
-		else if ((comp->type & ASN1_CLAN_MASK) == ASN1_CONTEXT_SPECIFIC) {
-			pri_message(pri, " (CONTEXT SPECIFIC [%d])", comp->type & ASN1_TYPE_MASK);
-		}
-		else {
-			pri_message(pri, " (component %02x)", comp->type);
-		}
-		pri_message(pri, "\n");
-		if ((comp->type & ASN1_PC_MASK) == ASN1_CONSTRUCTOR)
-			j = asn1_dumprecursive(pri, comp->data, (comp->len ? comp->len : INT_MAX), level+1);
-		else
-			j = comp->len;
-		j += 2;
-		len -= j;
-		vdata += j;
-		clen += j;
-	}
-	return clen;
-}
-
-int asn1_dump(struct pri *pri, void *comp, int len)
-{
-	return asn1_dumprecursive(pri, comp, len, 0);
-}
 
 static unsigned char get_invokeid(struct pri *pri)
 {
@@ -172,44 +46,28 @@ struct addressingdataelements_presentednumberunscreened {
 	int  pres;
 };
 
-#define PRI_CHECKOVERFLOW(size) \
-		if (msgptr - message + (size) >= sizeof(message)) { \
-			*msgptr = '\0'; \
-			pri_message(pri, "%s", message); \
-			msgptr = message; \
-		}
-
 static void dump_apdu(struct pri *pri, unsigned char *c, int len) 
 {
 	#define MAX_APDU_LENGTH	255
-	static char hexs[16] = "0123456789ABCDEF";
 	int i;
 	char message[(2 + MAX_APDU_LENGTH * 3 + 6 + MAX_APDU_LENGTH + 3)] = "";	/* please adjust here, if you make changes below! */
-	char *msgptr;
 	
-	msgptr = message;
-	*msgptr++ = ' ';
-	*msgptr++ = '[';
+	if (len > MAX_APDU_LENGTH)
+		return;
+	
+	snprintf(message, sizeof(message)-1, " [");	
+	for (i=0; i<len; i++)
+		snprintf((char *)(message+strlen(message)), sizeof(message)-strlen(message)-1, " %02x", c[i]);
+	snprintf((char *)(message+strlen(message)), sizeof(message)-strlen(message)-1, " ] - [");
 	for (i=0; i<len; i++) {
-		PRI_CHECKOVERFLOW(3);
-		*msgptr++ = ' ';
-		*msgptr++ = hexs[(c[i] >> 4) & 0x0f];
-		*msgptr++ = hexs[(c[i]) & 0x0f];
+		if (c[i] < 20 || c[i] >= 128)
+			snprintf((char *)(message+strlen(message)), sizeof(message)-strlen(message)-1, "°");
+		else
+			snprintf((char *)(message+strlen(message)), sizeof(message)-strlen(message)-1, "%c", c[i]);
 	}
-	PRI_CHECKOVERFLOW(6);
-	strcpy(msgptr, " ] - [");
-	msgptr += strlen(msgptr);
-	for (i=0; i<len; i++) {
-		PRI_CHECKOVERFLOW(1);
-		*msgptr++ = ((c[i] < ' ') || (c[i] > '~')) ? '.' : c[i];
-	}
-	PRI_CHECKOVERFLOW(2);
-	*msgptr++ = ']';
-	*msgptr++ = '\n';
-	*msgptr = '\0';
-	pri_message(pri, "%s", message);
+	snprintf((char *)(message+strlen(message)), sizeof(message)-strlen(message)-1, "]\n");
+	pri_message(pri, message);
 }
-#undef PRI_CHECKOVERFLOW
 
 int redirectingreason_from_q931(struct pri *pri, int redirectingreason)
 {
@@ -706,11 +564,9 @@ static int rose_diverting_leg_information2_encode(struct pri *pri, q931_call *ca
 	unsigned char buffer[256];
 	int len = 253;
 	
-#if 0	/* This is not required by specifications */
 	if (!strlen(call->callername)) {
 		return -1;
 	}
-#endif
 
 	buffer[i] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
 	i++;
@@ -838,84 +694,6 @@ static int rose_diverting_leg_information2_encode(struct pri *pri, q931_call *ca
 	return 0;
 }
 
-/* Send the rltThirdParty: Invoke */
-int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
-{
-	int i = 0;
-	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	const unsigned char rlt_3rd_pty = RLT_THIRD_PARTY;
-	q931_call *callwithid = NULL, *apdubearer = NULL;
-	int compsp = 0;
-
-	if (c2->transferable) {
-		apdubearer = c1;
-		callwithid = c2;
-	} else if (c1->transferable) {
-		apdubearer = c2;
-		callwithid = c1;
-	} else
-		return -1;
-
-	buffer[i++] = (Q932_PROTOCOL_ROSE);
-	buffer[i++] = (0x80 | RLT_SERVICE_ID); /* Service Identifier octet */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID is set to the operation ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_3rd_pty);
-
-	/* Operation Tag */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_3rd_pty);
-
-	/* Additional RLT invoke info - Octet 12 */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	ASN1_ADD_WORDCOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, callwithid->rlt_call_id & 0xFFFFFF); /* Length is 3 octets */
-	/* Reason for redirect - unused, set to 129 */
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(apdubearer, Q931_FACILITY, buffer, i, NULL, NULL))
-		return -1;
-
-	if (q931_facility(apdubearer->pri, apdubearer)) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", apdubearer->cr);
-		return -1;
-	}
-	return 0;
-}
-
-static int add_dms100_transfer_ability_apdu(struct pri *pri, q931_call *c)
-{
-	int i = 0;
-	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	const unsigned char rlt_op_ind = RLT_OPERATION_IND;
-	int compsp = 0;
-
-	buffer[i++] = (Q932_PROTOCOL_ROSE);  /* Note to self: DON'T set the EXT bit */
-	buffer[i++] = (0x80 | RLT_SERVICE_ID); /* Service Identifier octet */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID is set to the operation ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_op_ind);
-	
-	/* Operation Tag - basically the same as the invoke ID tag */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_op_ind);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(c, Q931_SETUP, buffer, i, NULL, NULL))
-		return -1;
-	else
-		return 0;
-}
-
 /* Sending callername information functions */
 static int add_callername_facility_ies(struct pri *pri, q931_call *c, int cpe)
 {
@@ -971,7 +749,7 @@ static int add_callername_facility_ies(struct pri *pri, q931_call *c, int cpe)
 	}
 
 
-	/* Now the APDU that contains the information that needs sent.
+	/* Now the ADPu that contains the information that needs sent.
 	 * We can reuse the buffer since the queue function doesn't
 	 * need it. */
 
@@ -1025,7 +803,7 @@ static void mwi_activate_encode_cb(void *data)
 	return;
 }
 
-int mwi_message_send(struct pri* pri, q931_call *call, struct pri_sr *req, int activate)
+extern int mwi_message_send(struct pri* pri, q931_call *call, struct pri_sr *req, int activate)
 {
 	int i = 0;
 	unsigned char buffer[255] = "";
@@ -1075,7 +853,7 @@ int mwi_message_send(struct pri* pri, q931_call *call, struct pri_sr *req, int a
 /* End MWI */
 
 /* EECT functions */
-int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
+extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 {
 	/* Did all the tests to see if we're on the same PRI and
 	 * are on a compatible switchtype */
@@ -1125,7 +903,7 @@ int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 
 	res = pri_call_apdu_queue(c1, Q931_FACILITY, buffer, i, NULL, NULL);
 	if (res) {
-		pri_message(pri, "Could not queue APDU in facility message\n");
+		pri_message(pri, "Could not queue ADPU in facility message\n");
 		return -1;
 	}
 
@@ -1332,7 +1110,7 @@ static int aoc_aoce_charging_unit_encode(struct pri *pri, q931_call *c, long cha
 	/* code below is untested */
 	res = pri_call_apdu_queue(c, Q931_FACILITY, buffer, i, NULL, NULL);
 	if (res) {
-		pri_message(pri, "Could not queue APDU in facility message\n");
+		pri_message(pri, "Could not queue ADPU in facility message\n");
 		return -1;
 	}
 
@@ -1348,201 +1126,7 @@ static int aoc_aoce_charging_unit_encode(struct pri *pri, q931_call *c, long cha
 }
 /* End AOC */
 
-int rose_reject_decode(struct pri *pri, q931_call *call, unsigned char *data, int len)
-{
-	int i = 0;
-	int problemtag = -1;
-	int problem = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	char *problemtagstr, *problemstr;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		GET_COMPONENT(comp, i, vdata, len);
-		problemtag = comp->type;
-		problem = comp->data[0];
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (problemtag) {
-			case 0x80:
-				problemtagstr = "General problem";
-				break;
-			case 0x81:
-				problemtagstr = "Invoke problem";
-				break;
-			case 0x82:
-				problemtagstr = "Return result problem";
-				break;
-			case 0x83:
-				problemtagstr = "Return error problem";
-				break;
-			default:
-				problemtagstr = "Unknown";
-			}
-
-			switch (problem) {
-			case 0x00:
-				problemstr = "Unrecognized component";
-				break;
-			case 0x01:
-				problemstr = "Mistyped component";
-				break;
-			case 0x02:
-				problemstr = "Badly structured component";
-				break;
-			default:
-				problemstr = "Unknown";
-			}
-
-			pri_error(pri, "ROSE REJECT:\n");
-			pri_error(pri, "\tINVOKE ID: 0x%X\n", invokeidvalue);
-			pri_error(pri, "\tPROBLEM TYPE: %s (0x%x)\n", problemtagstr, problemtag);
-			pri_error(pri, "\tPROBLEM: %s (0x%x)\n", problemstr, problem);
-
-			return 0;
-		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
-		}
-
-	} while(0);
-	
-	return -1;
-}
-int rose_return_error_decode(struct pri *pri, q931_call *call, unsigned char *data, int len)
-{
-	int i = 0;
-	int errorvalue = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	char *invokeidstr, *errorstr;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if second component in return error is 0x%x\n");
-		ASN1_GET_INTEGER(comp, errorvalue);
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (invokeidvalue) {
-			case RLT_OPERATION_IND:
-				invokeidstr = "RLT_OPERATION_IND";
-				break;
-			case RLT_THIRD_PARTY:
-				invokeidstr = "RLT_THIRD_PARTY";
-				break;
-			default:
-				invokeidstr = "Unknown";
-			}
-
-			switch (errorvalue) {
-			case 0x10:
-				errorstr = "RLT Bridge Fail";
-				break;
-			case 0x11:
-				errorstr = "RLT Call ID Not Found";
-				break;
-			case 0x12:
-				errorstr = "RLT Not Allowed";
-				break;
-			case 0x13:
-				errorstr = "RLT Switch Equip Congs";
-				break;
-			default:
-				errorstr = "Unknown";
-			}
-
-			pri_error(pri, "ROSE RETURN ERROR:\n");
-			pri_error(pri, "\tOPERATION: %s\n", invokeidstr);
-			pri_error(pri, "\tERROR: %s\n", errorstr);
-
-			return 0;
-		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
-		}
-
-	} while(0);
-	
-	return -1;
-}
-
-int rose_return_result_decode(struct pri *pri, q931_call *call, unsigned char *data, int len)
-{
-	int i = 0;
-	int operationidvalue = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (invokeidvalue) {
-			case RLT_THIRD_PARTY:
-				if (pri->debug & PRI_DEBUG_APDU) pri_message(pri, "Successfully completed RLT transfer!\n");
-				return 0;
-			case RLT_OPERATION_IND:
-				if (pri->debug & PRI_DEBUG_APDU) pri_message(pri, "Received RLT_OPERATION_IND\n");
-				/* Have to take out the rlt_call_id */
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_SEQUENCE, "Protocol error detected in parsing RLT_OPERATION_IND return result!\n");
-
-				/* Traverse the contents of this sequence */
-				/* First is the Operation Value */
-				SUB_COMPONENT(comp, i);
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_INTEGER, "RLT_OPERATION_IND should be of type ASN1_INTEGER!\n");
-				ASN1_GET_INTEGER(comp, operationidvalue);
-
-				if (operationidvalue != RLT_OPERATION_IND) {
-					pri_message(pri, "Invalid Operation ID value (0x%x) in return result!\n", operationidvalue);
-					return -1;
-				}
-
-				/*  Next is the Call ID */
-				NEXT_COMPONENT(comp, i);
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_TAG_0, "Error check failed on Call ID!\n");
-				ASN1_GET_INTEGER(comp, call->rlt_call_id);
-				/* We have enough data to transfer the call */
-				call->transferable = 1;
-
-				return 0;
-				
-			default:
-				pri_message(pri, "Could not parse invoke of type 0x%x!\n", invokeidvalue);
-				return -1;
-			}
-		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
-		}
-
-	} while(0);
-	
-	return -1;
-}
-
-int rose_invoke_decode(struct pri *pri, q931_call *call, unsigned char *data, int len)
+extern int rose_invoke_decode(struct pri *pri, q931_call *call, unsigned char *data, int len)
 {
 	int i = 0;
 	int operation_tag;
@@ -1661,7 +1245,7 @@ int rose_invoke_decode(struct pri *pri, q931_call *call, unsigned char *data, in
 	return -1;
 }
 
-int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data)
+extern int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data)
 {
 	struct apdu_event *cur = NULL;
 	struct apdu_event *new_event = NULL;
@@ -1695,7 +1279,7 @@ int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_l
 	return 0;
 }
 
-int pri_call_apdu_queue_cleanup(q931_call *call)
+extern int pri_call_apdu_queue_cleanup(q931_call *call)
 {
 	struct apdu_event *cur_event = NULL, *free_event = NULL;
 
@@ -1713,7 +1297,7 @@ int pri_call_apdu_queue_cleanup(q931_call *call)
 	return 0;
 }
 
-int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
+extern int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 {
 	if (!pri->sendfacility)
 		return 0;
@@ -1725,7 +1309,6 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 		return 0;
 	}
 
-#if 0
 	if (pri->localtype == PRI_NETWORK) {
 		switch (pri->switchtype) {
 			case PRI_SWITCH_NI2:
@@ -1745,16 +1328,6 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 		}
 		return 0;
 	}
-#else
-	if (pri->switchtype == PRI_SWITCH_NI2)
-		add_callername_facility_ies(pri, call, (pri->localtype == PRI_CPE));
-#endif
-
-	if ((pri->switchtype == PRI_SWITCH_DMS100) && (pri->localtype == PRI_CPE)) {
-		add_dms100_transfer_ability_apdu(pri, call);
-	}
-
-
 
 	return 0;
 }

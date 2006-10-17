@@ -27,9 +27,6 @@
 
 #include <sys/time.h>
 
-#define DBGHEAD __FILE__ ":%d %s: "
-#define DBGINFO __LINE__,__PRETTY_FUNCTION__
-
 struct pri_sched {
 	struct timeval when;
 	void (*callback)(void *data);
@@ -132,8 +129,7 @@ struct pri_sr {
 	int redirectingpres;
 	int redirectingreason;
 	int justsignalling;
-	const char *useruserinfo;
-	int transferable;
+	char *useruserinfo;
 };
 
 /* Internal switch types */
@@ -210,7 +206,7 @@ struct q931_call {
 	char callernum[256];
 	char callername[256];
 
-	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
+	char digitbuf[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 
 	int ani2;               /* ANI II */
 	
@@ -243,9 +239,6 @@ struct q931_call {
 	long aoc_units;				/* Advice of Charge Units */
 
 	struct apdu_event *apdus;	/* APDU queue for call */
-
-	int transferable;
-	unsigned int rlt_call_id;	/* RLT call id */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);

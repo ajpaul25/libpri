@@ -104,7 +104,7 @@
 #define ASN1_CLAN_MASK			0xc0
 #define ASN1_UNIVERSAL			0x00
 #define ASN1_APPLICATION		0x40
-#define ASN1_CONTEXT_SPECIFIC		0x80
+#define ASN1_CONTEXT_SPECIFIC	0x80
 #define ASN1_PRIVATE			0xc0
 
 /* ASN.1 Length masks */
@@ -135,11 +135,6 @@
 #define Q932_TON_SUBSCRIBER				0x04
 #define Q932_TON_ABBREVIATED			0x06
 
-/* RLT related Operations */
-#define RLT_SERVICE_ID		0x3e
-#define RLT_OPERATION_IND	0x01
-#define RLT_THIRD_PARTY		0x02
-
 struct rose_component {
 	u_int8_t type;
 	u_int8_t len;
@@ -151,7 +146,7 @@ struct rose_component {
 		break; \
 	(component) = (struct rose_component*)&((ptr)[idx]); \
 	if ((idx)+(component)->len+2 > (length)) { \
-		if ((component)->len != ASN1_LEN_INDEF) \
+		if ((component)->len != 128) \
 			pri_message(pri, "Length (%d) of 0x%X component is too long\n", (component)->len, (component)->type); \
 	}
 /*
@@ -174,7 +169,6 @@ struct rose_component {
 #define CHECK_COMPONENT(component, comptype, message) \
 	if ((component)->type && ((component)->type & ASN1_TYPE_MASK) != (comptype)) { \
 		pri_message(pri, (message), (component)->type); \
-		asn1_dump(pri, (component), (component)->len+2); \
 		break; \
 	}
 	
@@ -235,48 +229,35 @@ struct rose_component {
 		(stack)[(stackpointer)]->len = (unsigned char *)&((data)[(idx)]) - (unsigned char *)(stack)[(stackpointer)] - 2; \
 	} while (0)
 
-/* Decoder for the invoke ROSE component */
-int rose_invoke_decode(struct pri *pri, struct q931_call *call, unsigned char *data, int len);
+/* Decoder for the invoke part of a ROSE request */
+extern int rose_invoke_decode(struct pri *pri, struct q931_call *call, unsigned char *data, int len);
 
-/* Decoder for the return result ROSE component */
-int rose_return_result_decode(struct pri *pri, struct q931_call *call, unsigned char *data, int len);
+extern int asn1_copy_string(char * buf, int buflen, struct rose_component *comp);
 
-/* Decoder for the return error ROSE component */
-int rose_return_error_decode(struct pri *pri, struct q931_call *call, unsigned char *data, int len);
-
-/* Decoder for the reject ROSE component */
-int rose_reject_decode(struct pri *pri, struct q931_call *call, unsigned char *data, int len);
-
-int asn1_copy_string(char * buf, int buflen, struct rose_component *comp);
-
-int asn1_string_encode(unsigned char asn1_type, void *data, int len, int max_len, void *src, int src_len);
+extern int asn1_string_encode(unsigned char asn1_type, void *data, int len, int max_len, void *src, int src_len);
 
 /* Get Name types from ASN.1 */
-int asn1_name_decode(void * data, int len, char *namebuf, int buflen);
+extern int asn1_name_decode(void * data, int len, char *namebuf, int buflen);
 
-int typeofnumber_from_q931(struct pri *pri, int ton);
+extern int typeofnumber_from_q931(struct pri *pri, int ton);
 
-int redirectingreason_from_q931(struct pri *pri, int redirectingreason);
+extern int redirectingreason_from_q931(struct pri *pri, int redirectingreason);
 
 /* Queues an MWI apdu on a the given call */
-int mwi_message_send(struct pri *pri, q931_call *call, struct pri_sr *req, int activate);
+extern int mwi_message_send(struct pri *pri, q931_call *call, struct pri_sr *req, int activate);
 
 /* starts a 2BCT */
-int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
+extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
-int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
-
-/* Use this function to queue a facility-IE born APDU onto a call
+/* Use this function to queue a facility-IE born ADPU onto a call
  * call is the call to use, messagetype is any one of the Q931 messages,
  * apdu is the apdu data, apdu_len is the length of the apdu data  */
-int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data);
+extern int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data);
 
 /* Used by q931.c to cleanup the apdu queue upon destruction of a call */
-int pri_call_apdu_queue_cleanup(q931_call *call);
+extern int pri_call_apdu_queue_cleanup(q931_call *call);
 
-/* Adds the "standard" APDUs to a call */
-int pri_call_add_standard_apdus(struct pri *pri, q931_call *call);
-
-int asn1_dump(struct pri *pri, void *comp, int len);
+/* Adds the "standard" ADPUs to a call */
+extern int pri_call_add_standard_apdus(struct pri *pri, q931_call *call);
 
 #endif /* _PRI_FACILITY_H */
