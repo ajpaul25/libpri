@@ -40,7 +40,11 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <zaptel/zaptel.h>
+#if defined(__linux__)
+#include <linux/zaptel.h>
+#elif defined(__FreeBSD__)
+#include <zaptel.h>
+#endif
 #include <zap.h>
 #include "libpri.h"
 

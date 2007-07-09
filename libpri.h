@@ -142,10 +142,10 @@
 
 /* Causes for disconnection */
 #define PRI_CAUSE_UNALLOCATED					1
-#define PRI_CAUSE_NO_ROUTE_TRANSIT_NET			2	/* !Q.SIG */
+#define PRI_CAUSE_NO_ROUTE_TRANSIT_NET			2
 #define PRI_CAUSE_NO_ROUTE_DESTINATION			3
 #define PRI_CAUSE_CHANNEL_UNACCEPTABLE			6
-#define PRI_CAUSE_CALL_AWARDED_DELIVERED		7	/* !Q.SIG */
+#define PRI_CAUSE_CALL_AWARDED_DELIVERED		7
 #define PRI_CAUSE_NORMAL_CLEARING				16
 #define PRI_CAUSE_USER_BUSY						17
 #define PRI_CAUSE_NO_USER_RESPONSE				18
@@ -154,29 +154,27 @@
 #define PRI_CAUSE_NUMBER_CHANGED				22
 #define PRI_CAUSE_DESTINATION_OUT_OF_ORDER		27
 #define PRI_CAUSE_INVALID_NUMBER_FORMAT			28
-#define PRI_CAUSE_FACILITY_REJECTED				29	/* !Q.SIG */
+#define PRI_CAUSE_FACILITY_REJECTED				29
 #define PRI_CAUSE_RESPONSE_TO_STATUS_ENQUIRY	30
 #define PRI_CAUSE_NORMAL_UNSPECIFIED			31
 #define PRI_CAUSE_NORMAL_CIRCUIT_CONGESTION		34
-#define PRI_CAUSE_NETWORK_OUT_OF_ORDER			38	/* !Q.SIG */
+#define PRI_CAUSE_NETWORK_OUT_OF_ORDER			38
 #define PRI_CAUSE_NORMAL_TEMPORARY_FAILURE		41
-#define PRI_CAUSE_SWITCH_CONGESTION				42	/* !Q.SIG */
-#define PRI_CAUSE_ACCESS_INFO_DISCARDED			43	/* !Q.SIG */
+#define PRI_CAUSE_SWITCH_CONGESTION				42
+#define PRI_CAUSE_ACCESS_INFO_DISCARDED			43
 #define PRI_CAUSE_REQUESTED_CHAN_UNAVAIL		44
-#define PRI_CAUSE_PRE_EMPTED					45	/* !Q.SIG */
-#define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50	/* !Q.SIG */
-#define PRI_CAUSE_OUTGOING_CALL_BARRED     		52	/* !Q.SIG */
-#define PRI_CAUSE_INCOMING_CALL_BARRED     		54	/* !Q.SIG */
+#define PRI_CAUSE_PRE_EMPTED					45
+#define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50
+#define PRI_CAUSE_OUTGOING_CALL_BARRED     		52
+#define PRI_CAUSE_INCOMING_CALL_BARRED     		54
 #define PRI_CAUSE_BEARERCAPABILITY_NOTAUTH		57
 #define PRI_CAUSE_BEARERCAPABILITY_NOTAVAIL     58
-#define PRI_CAUSE_SERVICEOROPTION_NOTAVAIL		63	/* Q.SIG */
 #define PRI_CAUSE_BEARERCAPABILITY_NOTIMPL		65
-#define PRI_CAUSE_CHAN_NOT_IMPLEMENTED     		66	/* !Q.SIG */
-#define PRI_CAUSE_FACILITY_NOT_IMPLEMENTED      69	/* !Q.SIG */
+#define PRI_CAUSE_CHAN_NOT_IMPLEMENTED     		66
+#define PRI_CAUSE_FACILITY_NOT_IMPLEMENTED      69
 #define PRI_CAUSE_INVALID_CALL_REFERENCE		81
-#define PRI_CAUSE_IDENTIFIED_CHANNEL_NOTEXIST	82	/* Q.SIG */
 #define PRI_CAUSE_INCOMPATIBLE_DESTINATION		88
-#define PRI_CAUSE_INVALID_MSG_UNSPECIFIED  		95	/* !Q.SIG */
+#define PRI_CAUSE_INVALID_MSG_UNSPECIFIED  		95
 #define PRI_CAUSE_MANDATORY_IE_MISSING			96
 #define PRI_CAUSE_MESSAGE_TYPE_NONEXIST			97
 #define PRI_CAUSE_WRONG_MESSAGE					98
@@ -184,9 +182,9 @@
 #define PRI_CAUSE_INVALID_IE_CONTENTS			100
 #define PRI_CAUSE_WRONG_CALL_STATE				101
 #define PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE		102
-#define PRI_CAUSE_MANDATORY_IE_LENGTH_ERROR		103	/* !Q.SIG */
+#define PRI_CAUSE_MANDATORY_IE_LENGTH_ERROR		103
 #define PRI_CAUSE_PROTOCOL_ERROR				111
-#define PRI_CAUSE_INTERWORKING					127	/* !Q.SIG */
+#define PRI_CAUSE_INTERWORKING					127
 
 /* Transmit capabilities */
 #define PRI_TRANS_CAP_SPEECH					0x0
@@ -257,24 +255,20 @@ typedef struct q931_call q931_call;
 typedef struct pri_event_generic {
 	/* Events with no additional information fall in this category */
 	int e;
-	struct pri *pri;
 } pri_event_generic;
 
 typedef struct pri_event_error {
 	int e;
-	struct pri *pri;
 	char err[256];
 } pri_event_error;
 
 typedef struct pri_event_restart {
 	int e;
-	struct pri *pri;
 	int channel;
 } pri_event_restart;
 
 typedef struct pri_event_ringing {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -285,7 +279,6 @@ typedef struct pri_event_ringing {
 
 typedef struct pri_event_answer {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -296,9 +289,6 @@ typedef struct pri_event_answer {
 
 typedef struct pri_event_facname {
 	int e;
- 	struct pri *pri;
-	int callingpres;			/* Presentation of Calling CallerID */
-	int callingplan;			/* Dialing plan of Calling entity */
 	char callingname[256];
 	char callingnum[256];
 	int channel;
@@ -310,9 +300,7 @@ typedef struct pri_event_facname {
 #define PRI_CALLINGPLANRDNIS
 typedef struct pri_event_ring {
 	int e;
-	struct pri *pri;
 	int channel;				/* Channel requested */
-	int cref;					/* Call Reference Number */
 	int callingpres;			/* Presentation of Calling CallerID */
 	int callingplanani;			/* Dialing plan of Calling entity ANI */
 	int callingplan;			/* Dialing plan of Calling entity */
@@ -328,6 +316,7 @@ typedef struct pri_event_ring {
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
+	int cref;					/* Call Reference Number */
 	int ctype;					/* Call type (see PRI_TRANS_CAP_* */
 	int layer1;					/* User layer 1 */
 	int complete;				/* Have we seen "Complete" i.e. no more number? */
@@ -343,10 +332,9 @@ typedef struct pri_event_ring {
 
 typedef struct pri_event_hangup {
 	int e;
-	struct pri *pri;
 	int channel;				/* Channel requested */
-	int cref;
 	int cause;
+	int cref;
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
@@ -354,14 +342,12 @@ typedef struct pri_event_hangup {
 
 typedef struct pri_event_restart_ack {
 	int e;
-	struct pri *pri;
 	int channel;
 } pri_event_restart_ack;
 
 #define PRI_PROGRESS_CAUSE
 typedef struct pri_event_proceeding {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -372,21 +358,18 @@ typedef struct pri_event_proceeding {
  
 typedef struct pri_event_setup_ack {
 	int e;
- 	struct pri *pri;
 	int channel;
 	q931_call *call;
 } pri_event_setup_ack;
 
 typedef struct pri_event_notify {
 	int e;
- 	struct pri *pri;
 	int channel;
 	int info;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {
 	int e;
- 	struct pri *pri;
 	int channel;
 	q931_call *call;
 	char digits[64];
@@ -421,7 +404,6 @@ typedef int (*pri_io_cb)(struct pri *pri, void *buf, int buflen);
    must be NON-BLOCKING! Frames received on the fd should include FCS.  Nodetype 
    must be one of PRI_NETWORK or PRI_CPE.  switchtype should be PRI_SWITCH_* */
 extern struct pri *pri_new(int fd, int nodetype, int switchtype);
-extern struct pri *pri_new_bri(int fd, int nodetype, int switchtype);
 
 /* Create D-channel just as above with user defined I/O callbacks and data */
 extern struct pri *pri_new_cb(int fd, int nodetype, int switchtype, pri_io_cb io_read, pri_io_cb io_write, void *userdata);
@@ -480,10 +462,6 @@ extern int pri_acknowledge(struct pri *pri, q931_call *call, int channel, int in
 
 /* Send a digit in overlap mode */
 extern int pri_information(struct pri *pri, q931_call *call, char digit);
-
-#define PRI_KEYPAD_FACILITY_TX
-/* Send a keypad facility string of digits */
-extern int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits);
 
 /* Answer the incomplete(call without called number) call on the given channel.
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
@@ -547,9 +525,9 @@ extern int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, 
 extern int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
-extern void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);
+extern void pri_sr_set_useruser(struct pri_sr *sr, char *userchars);
 
-extern void pri_call_set_useruser(q931_call *sr, const char *userchars);
+extern void pri_call_set_useruser(q931_call *sr, char *userchars);
 
 extern int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 
@@ -616,7 +594,7 @@ extern int pri_timer2idx(char *timer);
 #define PRI_TIMER_N200	0	/* Maximum numer of q921 retransmissions */
 #define PRI_TIMER_N201	1	/* Maximum numer of octets in an information field */
 #define PRI_TIMER_N202	2	/* Maximum numer of transmissions of the TEI identity request message */
-#define PRI_TIMER_K		3	/* Maximum number of outstanding I-frames */
+#define PRI_TIMER_K	3	/* Maximum number of outstanding I-frames */
 
 #define PRI_TIMER_T200	4	/* time between SABME's */
 #define PRI_TIMER_T201	5	/* minimum time between retransmissions of the TEI Identity check messages */
@@ -643,8 +621,5 @@ extern int pri_timer2idx(char *timer);
 #define PRI_TIMER_T320	25
 #define PRI_TIMER_T321	26
 #define PRI_TIMER_T322	27
-
-#define PRI_TIMER_TM20	28	/* maximum time avaiting XID response */
-#define PRI_TIMER_NM20	29	/* number of XID retransmits */
 
 #endif

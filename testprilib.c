@@ -42,7 +42,11 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <zaptel/zaptel.h>
+#if defined(__linux__)
+#include <linux/zaptel.h>
+#elif defined(__FreeBSD__) || defined(SOLARIS)
+#include <zaptel.h>
+#endif
 #ifndef SOLARIS
 #include <zap.h>
 #endif
@@ -64,7 +68,7 @@ static struct pri *first, *cur;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
-#define TEST_CALLS 1
+#define TEST_CALLS 32
 
 static void event1(struct pri *pri, pri_event *e)
 {
@@ -143,7 +147,7 @@ static void event2(struct pri *pri, pri_event *e)
 	}
 }
 
-static void testmsg(struct pri *pri, char *s)
+static void testmsg(char *s)
 {
 	char *c;
 	static int keeplast = 0;
@@ -169,7 +173,7 @@ static void testmsg(struct pri *pri, char *s)
 		keeplast = 0;
 }
 
-static void testerr(struct pri *pri, char *s)
+static void testerr(char *s)
 {
 	char *c;
 	static int keeplast = 0;
@@ -232,9 +236,9 @@ static void *dchan(void *data)
 		}
 		if (e) {
 			if (first == pri) {
-				event1(e->gen.pri, e);
+				event1(pri, e);
 			} else {
-				event2(e->gen.pri, e);
+				event2(pri, e);
 			}
 		}
 		pthread_mutex_unlock(&lock);
@@ -254,23 +258,21 @@ int main(int argc, char *argv[])
 		perror("socketpair");
 		exit(1);
 	}
-	if (!(pri = pri_new_bri(pair[0], PRI_NETWORK, PRI_DEF_SWITCHTYPE))) {
+	if (!(pri = pri_new(pair[0], PRI_NETWORK, PRI_DEF_SWITCHTYPE))) {
 		perror("pri(0)");
 		exit(1);
 	}
 	first = pri;
 	pri_set_debug(pri, DEBUG_LEVEL);
-	pri_facility_enable(pri);
 	if (pthread_create(&tmp, NULL, dchan, pri)) {
 		perror("thread(0)");
 		exit(1);
 	}
-	if (!(pri = pri_new_bri(pair[1], PRI_CPE, PRI_DEF_SWITCHTYPE))) {
+	if (!(pri = pri_new(pair[1], PRI_CPE, PRI_DEF_SWITCHTYPE))) {
 		perror("pri(1)");
 		exit(1);
 	}
 	pri_set_debug(pri, DEBUG_LEVEL);
-	pri_facility_enable(pri);
 	if (pthread_create(&tmp, NULL, dchan, pri)) {
 		perror("thread(1)");
 		exit(1);
