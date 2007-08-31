@@ -878,16 +878,8 @@ extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 		0x08,
 	};
 
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
+	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_ROSE);
 	/* Interpretation component */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);
 
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
 	ASN1_PUSH(compstk, compsp, comp);
