@@ -879,7 +879,6 @@ extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	};
 
 	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_ROSE);
-	/* Interpretation component */
 
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
 	ASN1_PUSH(compstk, compsp, comp);
