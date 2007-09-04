@@ -865,7 +865,7 @@ extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	int i = 0;
 	int res = 0;
 	unsigned char buffer[255] = "";
-	unsigned short call_reference = c2->cr;
+	short call_reference = c2->cr;
 	struct rose_component *comp = NULL, *compstk[10];
 	int compsp = 0;
 	static unsigned char op_tag[] = {
