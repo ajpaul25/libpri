@@ -859,9 +859,6 @@ extern int mwi_message_send(struct pri* pri, q931_call *call, struct pri_sr *req
 /* EECT functions */
 extern int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 {
-	/* Did all the tests to see if we're on the same PRI and
-	 * are on a compatible switchtype */
-	/* TODO */
 	int i = 0;
 	int res = 0;
 	unsigned char buffer[255] = "";
