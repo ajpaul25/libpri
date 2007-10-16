@@ -243,10 +243,6 @@ typedef struct q931_ie {
 /* EuroISDN  */
 #define Q931_SENDING_COMPLETE		0xa1
 
-
-/* Q.SIG specific */
-#define QSIG_IE_TRANSIT_COUNT		0x31
-
 extern int q931_receive(struct pri *pri, q931_h *h, int len);
 
 extern int q931_alerting(struct pri *pri, q931_call *call, int channel, int info);
@@ -260,8 +256,6 @@ extern int q931_call_proceeding(struct pri *pri, q931_call *call, int channel, i
 extern int q931_setup_ack(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
 extern int q931_information(struct pri *pri, q931_call *call, char digit);
-
-extern int q931_keypad_facility(struct pri *pri, q931_call *call, char *digits);
 
 extern int q931_connect(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
@@ -285,7 +279,5 @@ extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);
 extern void q931_dump(struct pri *pri, q931_h *h, int len, int txrx);
 
 extern void __q931_destroycall(struct pri *pri, q931_call *c);
-
-extern void q931_dl_indication(struct pri *pri, int event);
-
+	
 #endif

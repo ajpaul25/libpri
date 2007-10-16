@@ -32,6 +32,8 @@ CC=gcc
 OSARCH=$(shell uname -s)
 PROC?=$(shell uname -m)
 
+TOBJS=testpri.o
+T2OBJS=testprilib.o
 STATIC_LIBRARY=libpri.a
 DYNAMIC_LIBRARY=libpri.so.1.0
 STATIC_OBJS=copy_string.o pri.o q921.o prisched.o q931.o pri_facility.o
@@ -41,13 +43,12 @@ INSTALL_PREFIX=$(DESTDIR)
 INSTALL_BASE=/usr
 SOFLAGS = -Wl,-hlibpri.so.1.0
 LDCONFIG = /sbin/ldconfig
-ifneq (,$(findstring X$(OSARCH)X, XLinuxX XGNU/kFreeBSDX))
+ifneq (,$(findstring $(OSARCH), Linux GNU/kFreeBSD))
 LDCONFIG_FLAGS=-n
 else
 ifeq (${OSARCH},FreeBSD)
 LDCONFIG_FLAGS=-m
 CFLAGS += -I../zaptel -I../zapata
-INSTALL_BASE=/usr/local
 endif
 endif
 ifeq (${OSARCH},SunOS)
@@ -72,6 +73,9 @@ update:
 	@if [ -d .svn ]; then \
 		echo "Updating from Subversion..." ; \
 		svn update -q; \
+	elif [ -d CVS ]; then \
+		echo "Updating from CVS..." ; \
+		cvs -q -z3 update -Pd; \
 	else \
 		echo "Not under version control";  \
 	fi
@@ -133,11 +137,11 @@ $(DYNAMIC_LIBRARY): $(DYNAMIC_OBJS)
 
 clean:
 	rm -f *.o *.so *.lo *.so.1 *.so.1.0
-	rm -f testprilib $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
+	rm -f testpri testprilib $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
 	rm -f pritest pridump
 	rm -f .depend
 
 depend: .depend
 
 .depend: 
-	CC="$(CC)" ./mkdep ${CFLAGS} `ls *.c`
+	CC=$(CC) ./mkdep ${CFLAGS} `ls *.c`

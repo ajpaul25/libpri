@@ -187,7 +187,7 @@ static int __pri_write(struct pri *pri, void *buf, int buflen)
 	return res;
 }
 
-struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei)
+static struct pri *__pri_new(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata)
 {
 	struct pri *p;
 	p = malloc(sizeof(struct pri));
@@ -200,19 +200,13 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 		p->localtype = node;
 		p->switchtype = switchtype;
 		p->cref = 1;
-		p->sapi = (tei == Q921_TEI_GROUP) ? Q921_SAPI_LAYER2_MANAGEMENT : Q921_SAPI_CALL_CTRL;
-		p->tei = tei;
+		p->sapi = Q921_SAPI_CALL_CTRL;
+		p->tei = 0;
 		p->nsf = PRI_NSF_NONE;
 		p->protodisc = Q931_PROTOCOL_DISCRIMINATOR;
 		p->master = master;
 		p->callpool = &p->localpool;
-		p->ev.gen.pri = p;
 		pri_default_timers(p, switchtype);
-		if (master) {
-			pri_set_debug(p, master->debug);
-			if (master->sendfacility)
-				pri_facility_enable(p);
-		}
 #ifdef LIBPRI_COUNTERS
 		p->q921_rxcount = 0;
 		p->q921_txcount = 0;
@@ -223,7 +217,7 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 			p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 			p->sapi = Q921_SAPI_GR303_EOC;
 			p->tei = Q921_TEI_GR303_EOC_OPS;
-			p->subchannel = __pri_new_tei(-1, node, PRI_SWITCH_GR303_EOC_PATH, p, NULL, NULL, NULL, Q921_TEI_GR303_EOC_PATH);
+			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_EOC_PATH, p, NULL, NULL, NULL);
 			if (!p->subchannel) {
 				free(p);
 				p = NULL;
@@ -232,7 +226,7 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 			p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 			p->sapi = Q921_SAPI_GR303_TMC_CALLPROC;
 			p->tei = Q921_TEI_GR303_TMC_CALLPROC;
-			p->subchannel = __pri_new_tei(-1, node, PRI_SWITCH_GR303_TMC_SWITCHING, p, NULL, NULL, NULL, Q921_TEI_GR303_TMC_SWITCHING);
+			p->subchannel = __pri_new(-1, node, PRI_SWITCH_GR303_TMC_SWITCHING, p, NULL, NULL, NULL);
 			if (!p->subchannel) {
 				free(p);
 				p = NULL;
@@ -253,13 +247,13 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	return p;
 }
 
-void pri_call_set_useruser(q931_call *c, const char *userchars)
+void pri_call_set_useruser(q931_call *c, char *userchars)
 {
 	if (userchars)
 		libpri_copy_string(c->useruserinfo, userchars, sizeof(c->useruserinfo));
 }
 
-void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars)
+void pri_sr_set_useruser(struct pri_sr *sr, char *userchars)
 {
 	sr->useruserinfo = userchars;
 }
@@ -276,12 +270,7 @@ int pri_restart(struct pri *pri)
 
 struct pri *pri_new(int fd, int nodetype, int switchtype)
 {
-	return __pri_new_tei(fd, nodetype, switchtype, NULL, __pri_read, __pri_write, NULL, Q921_TEI_PRI);
-}
-
-struct pri *pri_new_bri(int fd, int nodetype, int switchtype)
-{
-	return __pri_new_tei(fd, nodetype, switchtype, NULL, __pri_read, __pri_write, NULL, Q921_TEI_GROUP);
+	return __pri_new(fd, nodetype, switchtype, NULL, __pri_read, __pri_write, NULL);
 }
 
 struct pri *pri_new_cb(int fd, int nodetype, int switchtype, pri_io_cb io_read, pri_io_cb io_write, void *userdata)
@@ -290,7 +279,7 @@ struct pri *pri_new_cb(int fd, int nodetype, int switchtype, pri_io_cb io_read, 
 		io_read = __pri_read;
 	if (!io_write)
 		io_write = __pri_write;
-	return __pri_new_tei(fd, nodetype, switchtype, NULL, io_read, io_write, userdata, Q921_TEI_PRI);
+	return __pri_new(fd, nodetype, switchtype, NULL, io_read, io_write, userdata);
 }
 
 void *pri_get_userdata(struct pri *pri)
@@ -482,14 +471,6 @@ int pri_information(struct pri *pri, q931_call *call, char digit)
 	return q931_information(pri, call, digit);
 }
 
-int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits)
-{
-	if (!pri || !call || !digits || !digits[0])
-		return -1;
-
-	return q931_keypad_facility(pri, call, digits);
-}
-
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
 {
 	if (!pri || !call)
@@ -557,20 +538,6 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 		case PRI_SWITCH_LUCENT5E:
 		case PRI_SWITCH_ATT4ESS:
 			if (eect_initiate_transfer(call1->pri, call1, call2))
-				return -1;
-			else
-				return 0;
-			break;
-		case PRI_SWITCH_DMS100:
-			if (rlt_initiate_transfer(call1->pri, call1, call2))
-				return -1;
-			else
-				return 0;
-			break;
-		case PRI_SWITCH_QSIG:
-			call1->bridged_call = call2;
-			call2->bridged_call = call1;
-			if (anfpr_initiate_transfer(call1->pri, call1, call2))
 				return -1;
 			else
 				return 0;
@@ -814,7 +781,6 @@ char *pri_dump_info_str(struct pri *pri)
 	len += sprintf(buf + len, "T203 Timer: %d\n", pri->timers[PRI_TIMER_T203]);
 	len += sprintf(buf + len, "T305 Timer: %d\n", pri->timers[PRI_TIMER_T305]);
 	len += sprintf(buf + len, "T308 Timer: %d\n", pri->timers[PRI_TIMER_T308]);
-	len += sprintf(buf + len, "T309 Timer: %d\n", pri->timers[PRI_TIMER_T309]);
 	len += sprintf(buf + len, "T313 Timer: %d\n", pri->timers[PRI_TIMER_T313]);
 	len += sprintf(buf + len, "N200 Counter: %d\n", pri->timers[PRI_TIMER_N200]);
 
