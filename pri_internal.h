@@ -61,7 +61,6 @@ struct pri {
 	int localtype;		/* Local network type (unknown, network, cpe) */
 	int remotetype;		/* Remote network type (unknown, network, cpe) */
 
-	int bri;
 	int sapi;
 	int tei;
 	int protodisc;
@@ -85,9 +84,6 @@ struct pri {
 	/* Various timers */
 	int sabme_timer;	/* SABME retransmit */
 	int t203_timer;		/* Max idle time */
-	int t202_timer;
-	int n202_counter;
-	int ri;
 	int t200_timer;		/* T-200 retransmission timer */
 	/* All ISDN Timer values */
 	int timers[MAX_TIMERS];
@@ -251,9 +247,6 @@ struct q931_call {
 
 	int transferable;
 	unsigned int rlt_call_id;	/* RLT call id */
-
-	/* Bridged call info */
-	q931_call *bridged_call;        /* Pointer to other leg of bridged call */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
@@ -269,7 +262,5 @@ extern void pri_message(struct pri *pri, char *fmt, ...);
 extern void pri_error(struct pri *pri, char *fmt, ...);
 
 void libpri_copy_string(char *dst, const char *src, size_t size);
-
-struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
 
 #endif
