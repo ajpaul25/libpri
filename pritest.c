@@ -40,7 +40,11 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <zaptel/zaptel.h>
+#if defined(__linux__)
+#include <linux/zaptel.h>
+#elif defined(__FreeBSD__)
+#include <zaptel.h>
+#endif
 #include <zap.h>
 #include "libpri.h"
 
@@ -294,7 +298,7 @@ static int run_pri(int dfd, int swtype, int node)
 	fd_set rfds, efds;
 	int res,x;
 
-	pri = pri_new_bri(dfd, 1, node, swtype);
+	pri = pri_new(dfd, node, swtype);
 	if (!pri) {
 		fprintf(stderr, "Unable to create PRI\n");
 		return -1;
