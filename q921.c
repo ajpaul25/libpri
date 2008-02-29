@@ -110,7 +110,7 @@ static void q921_send_tei(struct pri *pri, int message, int ri, int ai, int isre
 	f->data[2] = ri & 0xff;
 	f->data[3] = message;
 	f->data[4] = (ai << 1) | 1;
-//	if (pri->debug & PRI_DEBUG_Q921_STATE)
+	if (pri->debug & PRI_DEBUG_Q921_STATE)
 		pri_message(pri, "Sending TEI management message %d, TEI=%d\n", message, ai);
 	q921_transmit(pri, (q921_h *)f, 8);
 	free(f);
@@ -821,6 +821,18 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 		}
 		pri->q921_state = Q921_TEI_ASSIGNED;
+		break;
+	case Q921_TEI_IDENTITY_CHECK_REQUEST:
+		/* We're assuming one TEI per PRI in TE PTMP mode */
+
+		/* If no subchannel (TEI) ignore */
+		if (!pri->subchannel)
+			return NULL;
+
+		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
+		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei))
+			q921_send_tei(pri, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, pri->subchannel->tei, 0);
+
 		break;
 	}
 	return NULL;	/* Do we need to return something??? */
