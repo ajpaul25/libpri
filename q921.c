@@ -380,35 +380,35 @@ static void t200_expire(void *vpri)
 		pri->v_na = pri->v_r;
 		pri->solicitfbit = 1;
 		pri->retrans++;
-      /* Up to three retransmissions */
-      if (pri->retrans < pri->timers[PRI_TIMER_N200]) {
-         /* Reschedule t200_timer */
-         if (pri->debug & PRI_DEBUG_Q921_DUMP)
-            pri_message(pri, "-- Retransmitting %d bytes\n", pri->txqueue->len);
-		if (pri->busy) 
-			q921_rr(pri, 1, 1);
-		else {
-			if (!pri->txqueue->transmitted) 
-				pri_error(pri, "!! Not good - head of queue has not been transmitted yet\n");
-			q921_transmit(pri, (q921_h *)&pri->txqueue->h, pri->txqueue->len);
+		/* Up to three retransmissions */
+		if (pri->retrans < pri->timers[PRI_TIMER_N200]) {
+			/* Reschedule t200_timer */
+			if (pri->debug & PRI_DEBUG_Q921_DUMP)
+				pri_message(pri, "-- Retransmitting %d bytes\n", pri->txqueue->len);
+			if (pri->busy) 
+				q921_rr(pri, 1, 1);
+			else {
+				if (!pri->txqueue->transmitted) 
+					pri_error(pri, "!! Not good - head of queue has not been transmitted yet\n");
+				q921_transmit(pri, (q921_h *)&pri->txqueue->h, pri->txqueue->len);
+			}
+			if (pri->debug & PRI_DEBUG_Q921_DUMP)
+			      pri_message(pri, "-- Rescheduling retransmission (%d)\n", pri->retrans);
+			pri->t200_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T200], t200_expire, pri);
+		} else {
+			if (pri->debug & PRI_DEBUG_Q921_STATE)
+			      pri_message(pri, "-- Timeout occured, restarting PRI\n");
+			if (pri->debug & PRI_DEBUG_Q921_STATE && pri->q921_state != Q921_LINK_CONNECTION_RELEASED)
+			     pri_message(pri, DBGHEAD "q921_state now is Q921_LINK_CONNECTION_RELEASED\n",DBGINFO);
+			pri->q921_state = Q921_LINK_CONNECTION_RELEASED;
+			     pri->t200_timer = 0;
+			q921_dchannel_down(pri);
+			q921_start(pri, 1);
+			pri->schedev = 1;
 		}
-         if (pri->debug & PRI_DEBUG_Q921_DUMP)
-               pri_message(pri, "-- Rescheduling retransmission (%d)\n", pri->retrans);
-         pri->t200_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T200], t200_expire, pri);
-      } else {
-         if (pri->debug & PRI_DEBUG_Q921_STATE)
-               pri_message(pri, "-- Timeout occured, restarting PRI\n");
-	if (pri->debug & PRI_DEBUG_Q921_STATE && pri->q921_state != Q921_LINK_CONNECTION_RELEASED)
-		pri_message(pri, DBGHEAD "q921_state now is Q921_LINK_CONNECTION_RELEASED\n",DBGINFO);
-         pri->q921_state = Q921_LINK_CONNECTION_RELEASED;
-      	pri->t200_timer = 0;
-         q921_dchannel_down(pri);
-         q921_start(pri, 1);
-         pri->schedev = 1;
-      }
 	} else if (pri->solicitfbit) {
-         if (pri->debug & PRI_DEBUG_Q921_DUMP)
-            pri_message(pri, "-- Retrying poll with f-bit\n");
+		if (pri->debug & PRI_DEBUG_Q921_DUMP)
+			pri_message(pri, "-- Retrying poll with f-bit\n");
 		pri->retrans++;
 		if (pri->retrans < pri->timers[PRI_TIMER_N200]) {
 			pri->solicitfbit = 1;
@@ -772,7 +772,8 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	struct pri *sub;
 	int tei;
 	pri_event *ev;
-	pri_message(pri, "Received MDL message\n");
+	if (pri->debug & PRI_DEBUG_Q921_STATE)
+		pri_message(pri, "Received MDL message\n");
 	if (h->data[0] != 0x0f) {
 		pri_error(pri, "Received MDL with unsupported management entity %02x\n", h->data[0]);
 		return NULL;
@@ -837,7 +838,10 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
 		/* XXX: Assuming multiframe mode has been disconnected already */
-		if (tei == pri->subchannel->tei) {
+		if (!pri->subchannel)
+			return NULL;
+
+		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei)) {
 			ev = q921_dchannel_down(pri->subchannel);
 			__pri_free_tei(pri, tei);
 			q921_tei_request(pri);
@@ -1077,9 +1081,7 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 		/* If it's not us, try any subchannels we have */
 		if (pri->subchannel)
 			return q921_receive(pri->subchannel, h, len + 2);
-		else 
-		{
-			pri_error(pri, "Message for SAPI/TEI=%d/%d IS NOT HANDLED\n", h->h.sapi, h->h.tei);
+		else {
 			return NULL;
 		}
 
