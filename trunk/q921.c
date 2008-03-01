@@ -771,7 +771,6 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	int ri;
 	struct pri *sub;
 	int tei;
-	pri_event *ev;
 	if (pri->debug & PRI_DEBUG_Q921_STATE)
 		pri_message(pri, "Received MDL message\n");
 	if (h->data[0] != 0x0f) {
@@ -815,7 +814,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		}
 		if (pri->subchannel && (pri->subchannel->tei == tei)) {
 			pri_error(pri, "TEI already assigned (new is %d, current is %d)\n", tei, pri->subchannel->tei);
-			ev = q921_dchannel_down(pri->subchannel);
+			q921_dchannel_down(pri->subchannel);
 			__pri_free_tei(pri->subchannel);
 			pri->subchannel = NULL;
 			q921_start(pri, pri->localtype == PRI_CPE);
@@ -848,7 +847,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 
 		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei)) {
-			ev = q921_dchannel_down(pri->subchannel);
+			q921_dchannel_down(pri->subchannel);
 			__pri_free_tei(pri->subchannel);
 			pri->subchannel = NULL;
 			q921_start(pri, pri->localtype == PRI_CPE);
