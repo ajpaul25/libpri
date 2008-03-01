@@ -813,9 +813,15 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			pri_schedule_del(pri, pri->t202_timer);
 			pri->t202_timer = 0;
 		}
-		if (pri->subchannel) {
+		if (pri->subchannel && (pri->subchannel->tei == tei)) {
 			pri_error(pri, "TEI already assigned (new is %d, current is %d)\n", tei, pri->subchannel->tei);
+			ev = q921_dchannel_down(pri->subchannel);
+			__pri_free_tei(pri->subchannel);
+			pri->subchannel = NULL;
+			q921_start(pri, pri->localtype == PRI_CPE);
+			return NULL;
 		}
+
 		pri_message(pri, "TEI assiged to %d\n", tei);
 		pri->subchannel = __pri_new_tei(-1, pri->localtype, pri->switchtype, pri, NULL, NULL, NULL, tei, 1);
 		if (!pri->subchannel) {
@@ -843,8 +849,9 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei)) {
 			ev = q921_dchannel_down(pri->subchannel);
-			__pri_free_tei(pri, tei);
-			q921_tei_request(pri);
+			__pri_free_tei(pri->subchannel);
+			pri->subchannel = NULL;
+			q921_start(pri, pri->localtype == PRI_CPE);
 		}
 	}
 	return NULL;	/* Do we need to return something??? */
