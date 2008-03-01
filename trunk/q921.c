@@ -70,7 +70,7 @@ static int q921_transmit(struct pri *pri, q921_h *h, int len)
 {
 	int res;
 
-	while (pri->master)
+	if (pri->master)
 		pri = pri->master;
 
 #ifdef RANDOM_DROPS
@@ -771,6 +771,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	int ri;
 	struct pri *sub;
 	int tei;
+	pri_event *ev;
 	pri_message(pri, "Received MDL message\n");
 	if (h->data[0] != 0x0f) {
 		pri_error(pri, "Received MDL with unsupported management entity %02x\n", h->data[0]);
@@ -834,6 +835,13 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			q921_send_tei(pri, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, pri->subchannel->tei, 0);
 
 		break;
+	case Q921_TEI_IDENTITY_REMOVE:
+		/* XXX: Assuming multiframe mode has been disconnected already */
+		if (tei == pri->subchannel->tei) {
+			ev = q921_dchannel_down(pri->subchannel);
+			__pri_free_tei(pri, tei);
+			q921_tei_request(pri);
+		}
 	}
 	return NULL;	/* Do we need to return something??? */
 }

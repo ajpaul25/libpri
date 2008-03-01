@@ -2326,7 +2326,10 @@ static q931_call *q931_getcall(struct pri *pri, int cr, int outboundnew)
 	struct pri *master;
 
 	/* Find the master  - He has the call pool */
-	for (master = pri; master->master; master = master->master);
+	if (pri->master)
+		master = pri->master;
+	else
+		master = pri;
 	
 	cur = *master->callpool;
 	prev = NULL;
