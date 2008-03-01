@@ -188,13 +188,10 @@ static int __pri_write(struct pri *pri, void *buf, int buflen)
 }
 
 /* Pass in the master for this function */
-void __pri_free_tei(struct pri * p, int tei)
+void __pri_free_tei(struct pri * p)
 {
-	pri_error(NULL, "Removing TEI %d\n", tei);
-	if (p->subchannel && (tei == p->subchannel->tei)) {
-		free(p->subchannel);
-		p->subchannel = NULL;
-	}
+	pri_error(NULL, "Freeing TEI %d\n", p->tei);
+	free (p);
 }
 
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri)
