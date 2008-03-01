@@ -272,6 +272,6 @@ void libpri_copy_string(char *dst, const char *src, size_t size);
 
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
 
-void __pri_free_tei(struct pri *p, int tei);
+void __pri_free_tei(struct pri *p);
 
 #endif
