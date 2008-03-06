@@ -787,7 +787,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	case Q921_TEI_IDENTITY_REQUEST:
 		if (tei != 127) {
 			pri_error(pri, "Received TEI identity request with invalid TEI %d\n", tei);
-			q921_send_tei(pri, Q921_TEI_IDENTITY_DENIED, ri, tei, 0);
+			q921_send_tei(pri, Q921_TEI_IDENTITY_DENIED, ri, tei, 1);
 		}
 		/* Go to master */
 		for (sub = pri; sub->master; sub = sub->master);
@@ -801,7 +801,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			pri_error(pri, "Unable to allocate D-channel for new TEI %d\n", tei);
 			return NULL;
 		}
-		q921_send_tei(pri, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 0);
+		q921_send_tei(pri, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 1);
 		break;
 	case Q921_TEI_IDENTITY_ASSIGNED:
 		if (ri != pri->ri) {
@@ -838,7 +838,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
 		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei))
-			q921_send_tei(pri, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, pri->subchannel->tei, 0);
+			q921_send_tei(pri, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, pri->subchannel->tei, 1);
 
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
