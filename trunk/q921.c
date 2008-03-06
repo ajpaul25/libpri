@@ -95,7 +95,7 @@ static int q921_transmit(struct pri *pri, q921_h *h, int len)
 	return 0;
 }
 
-static void q921_send_tei(struct pri *pri, int message, int ri, int ai, int isreq)
+static void q921_send_tei(struct pri *pri, int message, int ri, int ai, int iscommand)
 {
 	q921_u *f;
 
@@ -103,7 +103,7 @@ static void q921_send_tei(struct pri *pri, int message, int ri, int ai, int isre
 		return;
 
 	Q921_INIT(pri, *f);
-	f->h.c_r = isreq;
+	f->h.c_r = (pri->localtype == PRI_NETWORK) ? iscommand : !iscommand;
 	f->ft = Q921_FRAMETYPE_U;
 	f->data[0] = 0x0f;	/* Management entity */
 	f->data[1] = (ri >> 8) & 0xff;
