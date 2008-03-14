@@ -766,6 +766,15 @@ void q921_reset(struct pri *pri)
 	q921_discard_retransmissions(pri);
 }
 
+static void q921_tei_release_and_reacquire(struct pri *master)
+{
+	/* Make sure the master is passed into this function */
+	q921_dchannel_down(master->subchannel);
+	__pri_free_tei(master->subchannel);
+	master->subchannel = NULL;
+	q921_start(master, master->localtype == PRI_CPE);
+}
+
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 {
 	int ri;
@@ -814,10 +823,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		}
 		if (pri->subchannel && (pri->subchannel->tei == tei)) {
 			pri_error(pri, "TEI already assigned (new is %d, current is %d)\n", tei, pri->subchannel->tei);
-			q921_dchannel_down(pri->subchannel);
-			__pri_free_tei(pri->subchannel);
-			pri->subchannel = NULL;
-			q921_start(pri, pri->localtype == PRI_CPE);
+			q921_tei_release_and_reacquire(pri);
 			return NULL;
 		}
 
@@ -847,10 +853,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 
 		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei)) {
-			q921_dchannel_down(pri->subchannel);
-			__pri_free_tei(pri->subchannel);
-			pri->subchannel = NULL;
-			q921_start(pri, pri->localtype == PRI_CPE);
+			q921_tei_release_and_reacquire(pri);
 		}
 	}
 	return NULL;	/* Do we need to return something??? */
@@ -1043,8 +1046,17 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 						pri_message(pri, "-- Got UA from %s peer  Link up.\n", h->h.c_r ? "cpe" : "network");
 					}
 					return q921_dchannel_up(pri);
-				} else 
+				} else if ((pri->q921_state >= Q921_TEI_ASSIGNED) && pri->bri) {
+					/* Possible duplicate TEI assignment */
+					if (pri->master)
+						q921_tei_release_and_reacquire(pri->master);
+					else
+						pri_error(pri, "Huh!? no master found\n");
+				} else {
+					/* Since we're not in the AWAITING_ESTABLISH STATE, it's unsolicited */
 					pri_error(pri, "!! Got a UA, but i'm in state %d\n", pri->q921_state);
+
+				}
 			} else 
 				pri_error(pri, "!! Weird frame received (m3=3, m2 = %d)\n", h->u.m2);
 			break;

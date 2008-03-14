@@ -201,7 +201,6 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	if (!(p = calloc(1, sizeof(*p))))
 		return NULL;
 
-	pri_error(NULL, "Making new tei %d\n", tei);
 	p->bri = bri;
 	p->fd = fd;
 	p->read_func = rd;
