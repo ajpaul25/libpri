@@ -163,7 +163,7 @@ typedef struct q921_frame {
 #define Q921_INC(j) (j) = (((j) + 1) % 128)
 
 typedef enum q921_state {
-	Q921_DOWN,
+	Q921_DOWN = 0,
 	Q921_TEI_UNASSIGNED,
 	Q921_TEI_AWAITING_ESTABLISH,
 	Q921_TEI_AWAITING_ASSIGN,
