@@ -84,6 +84,7 @@ struct pri {
 
 	/* Various timers */
 	int sabme_timer;	/* SABME retransmit */
+	int sabme_count;	/* SABME retransmit counter for BRI */
 	int t203_timer;		/* Max idle time */
 	int t202_timer;
 	int n202_counter;
