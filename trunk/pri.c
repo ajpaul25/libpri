@@ -215,7 +215,6 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	p->protodisc = Q931_PROTOCOL_DISCRIMINATOR;
 	p->master = master;
 	p->callpool = &p->localpool;
-	p->ev.gen.pri = p;
 	pri_default_timers(p, switchtype);
 	if (master) {
 		pri_set_debug(p, master->debug);
