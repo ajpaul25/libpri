@@ -52,6 +52,7 @@
 
 static void reschedule_t203(struct pri *pri);
 static void q921_restart(struct pri *pri, int now);
+static void q921_tei_release_and_reacquire(struct pri *master);
 
 static void q921_discard_retransmissions(struct pri *pri)
 {
@@ -188,6 +189,15 @@ static void q921_send_sabme(void *vpri, int now)
 	default:
 		pri_error(pri, "Don't know how to U/A on a type %d node\n", pri->localtype);
 		return;
+	}
+	if (pri->bri && (pri->state == Q921_AWAITING_ESTABLISH)) {
+		if (pri->sabme_count >= pri->timers[PRI_TIMER_N200]) {
+			pri_schedule_del(pri, pri->sabme_timer);
+			pri->sabme_timer = 0;
+			q921_tei_release_and_reacquire(pri->master);
+		} else {
+			pri->sabme_count++;
+		}
 	}
 	if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP))
 		pri_message(pri, "Sending Set Asynchronous Balanced Mode Extended\n");
@@ -421,9 +431,14 @@ static void t200_expire(void *vpri)
 				pri_message(pri, DBGHEAD "q921_state now is Q921_LINK_CONNECTION_RELEASED\n", DBGINFO);
 			pri->q921_state = Q921_LINK_CONNECTION_RELEASED;
 			pri->t200_timer = 0;
-			q921_dchannel_down(pri);
-			q921_start(pri, 1);
-			pri->schedev = 1;
+			if (pri->bri && pri->master) {
+				q921_tei_release_and_reacquire(pri->master);
+				return;
+			} else {
+				q921_dchannel_down(pri);
+				q921_start(pri, 1);
+				pri->schedev = 1;
+			}
 		}
 	} else {
 		pri_error(pri, "T200 counter expired, nothing to send...\n");
@@ -752,6 +767,7 @@ void q921_reset(struct pri *pri)
 	if (pri->t200_timer)
 		pri_schedule_del(pri, pri->t200_timer);
 	pri->sabme_timer = 0;
+	pri->sabme_count = 0;
 	pri->t203_timer = 0;
 	pri->t200_timer = 0;
 	pri->busy = 0;
@@ -772,6 +788,8 @@ static void q921_tei_release_and_reacquire(struct pri *master)
 	q921_dchannel_down(master->subchannel);
 	__pri_free_tei(master->subchannel);
 	master->subchannel = NULL;
+	master->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
+	master->schedev = 1;
 	q921_start(master, master->localtype == PRI_CPE);
 }
 
