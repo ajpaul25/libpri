@@ -303,24 +303,20 @@ typedef struct q931_call q931_call;
 typedef struct pri_event_generic {
 	/* Events with no additional information fall in this category */
 	int e;
-	struct pri *pri;
 } pri_event_generic;
 
 typedef struct pri_event_error {
 	int e;
-	struct pri *pri;
 	char err[256];
 } pri_event_error;
 
 typedef struct pri_event_restart {
 	int e;
-	struct pri *pri;
 	int channel;
 } pri_event_restart;
 
 typedef struct pri_event_ringing {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -331,7 +327,6 @@ typedef struct pri_event_ringing {
 
 typedef struct pri_event_answer {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -342,7 +337,6 @@ typedef struct pri_event_answer {
 
 typedef struct pri_event_facname {
 	int e;
- 	struct pri *pri;
 	int callingpres;			/* Presentation of Calling CallerID */
 	int callingplan;			/* Dialing plan of Calling entity */
 	char callingname[256];
@@ -356,7 +350,6 @@ typedef struct pri_event_facname {
 #define PRI_CALLINGPLANRDNIS
 typedef struct pri_event_ring {
 	int e;
-	struct pri *pri;
 	int channel;				/* Channel requested */
 	int cref;					/* Call Reference Number */
 	int callingpres;			/* Presentation of Calling CallerID */
@@ -389,7 +382,6 @@ typedef struct pri_event_ring {
 
 typedef struct pri_event_hangup {
 	int e;
-	struct pri *pri;
 	int channel;				/* Channel requested */
 	int cref;
 	int cause;
@@ -400,14 +392,12 @@ typedef struct pri_event_hangup {
 
 typedef struct pri_event_restart_ack {
 	int e;
-	struct pri *pri;
 	int channel;
 } pri_event_restart_ack;
 
 #define PRI_PROGRESS_CAUSE
 typedef struct pri_event_proceeding {
 	int e;
-	struct pri *pri;
 	int channel;
 	int cref;
 	int progress;
@@ -418,21 +408,18 @@ typedef struct pri_event_proceeding {
  
 typedef struct pri_event_setup_ack {
 	int e;
- 	struct pri *pri;
 	int channel;
 	q931_call *call;
 } pri_event_setup_ack;
 
 typedef struct pri_event_notify {
 	int e;
- 	struct pri *pri;
 	int channel;
 	int info;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {
 	int e;
- 	struct pri *pri;
 	int channel;
 	q931_call *call;
 	char digits[64];
