@@ -379,6 +379,7 @@ static void q921_rr(struct pri *pri, int pbit, int cmd) {
 static void t200_expire(void *vpri)
 {
 	struct pri *pri = vpri;
+
 	if (pri->txqueue) {
 		/* Retransmit first packet in the queue, setting the poll bit */
 		if (pri->debug & PRI_DEBUG_Q921_DUMP)
