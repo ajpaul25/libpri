@@ -84,10 +84,12 @@ static struct msgtype msgs[] = {
 	{ Q931_SUSPEND, "SUSPEND" },
 	{ Q931_SUSPEND_ACKNOWLEDGE, "SUSPEND ACKNOWLEDGE" },
 	{ Q931_SUSPEND_REJECT, "SUSPEND REJECT" },
+};
 
+struct msgtype nfas_msgs[] = {
 	/* Maintenance */
-	{ NATIONAL_SERVICE, "SERVICE" },
-	{ NATIONAL_SERVICE_ACKNOWLEDGE, "SERVICE ACKNOWLEDGE" },
+	{ NFAS_MAINTENANCE_SERVICE, "SERVICE", { Q931_CHANNEL_IDENT } },
+	{ NFAS_MAINTENANCE_SERVICE_ACKNOWLEDGE, "SERVICE ACKNOWLEDGE", { Q931_CHANNEL_IDENT } },
 };
 
 static struct msgtype causes[] = {
@@ -379,7 +381,7 @@ static FUNC_SEND(transmit_channel_id)
 		return 0;
 	}
 
-	if (((pri->switchtype != PRI_SWITCH_QSIG) && (call->ds1no > 0)) || call->ds1explicit) {
+	if (((pri->switchtype != PRI_SWITCH_QSIG) && (call->ds1no >= 0)) || call->ds1explicit) {
 		/* Note that we are specifying the identifier */
 		ie->data[pos++] |= 0x40;
 		/* We need to use the Channel Identifier Present thingy.  Just specify it and we're done */
@@ -407,7 +409,7 @@ static FUNC_SEND(transmit_channel_id)
 			return pos + 2;
 		}
 	}
-	if (call->ds1no > 0) {
+	if (call->ds1no >= 0) {
 		/* We're done */
 		return pos + 2;
 	}
@@ -1162,6 +1164,27 @@ static FUNC_SEND(transmit_user_user)
 	}
 
 	return 0;
+}
+
+static FUNC_DUMP(dump_change_status)
+{
+	int x;
+	pri_message(pri, "%c Change Status Information (len=%2d) [", prefix, len);
+	for (x=0;x<ie->len;x++)
+		pri_message(pri, " %02x", ie->data[x] & 0x7f);
+	pri_message(pri, " ]\n");
+}
+
+static FUNC_RECV(receive_change_status)
+{
+	call->changestatus = ie->data[0] & 0x0f;
+	return 0;
+}
+
+static FUNC_SEND(transmit_change_status)
+{
+	ie->data[0] = 0xc0 | call->changestatus;
+	return 3;
 }
 
 static char *prog2str(int prog)
@@ -2127,7 +2150,7 @@ static FUNC_DUMP(dump_transit_count)
 
 static struct ie ies[] = {
 	/* Codeset 0 - Common */
-	{ 1, NATIONAL_CHANGE_STATUS, "Change Status" },
+	{ 1, NFAS_IE_CHANGE_STATUS, "Change Status", dump_change_status, receive_change_status, transmit_change_status },
 	{ 0, Q931_LOCKING_SHIFT, "Locking Shift", dump_shift },
 	{ 0, Q931_BEARER_CAPABILITY, "Bearer Capability", dump_bearer_capability, receive_bearer_capability, transmit_bearer_capability },
 	{ 0, Q931_CAUSE, "Cause", dump_cause, receive_cause, transmit_cause },
@@ -2171,7 +2194,6 @@ static struct ie ies[] = {
 	{ 1, Q931_IE_USER_USER, "User-User", dump_user_user, receive_user_user, transmit_user_user },
 	{ 1, Q931_IE_ESCAPE_FOR_EXT, "Escape for Extension" },
 	{ 1, Q931_IE_CALL_STATUS, "Call Status" },
-	{ 1, Q931_IE_CHANGE_STATUS, "Change Status" },
 	{ 1, Q931_IE_CONNECTED_ADDR, "Connected Number", dump_connected_number },
 	{ 1, Q931_IE_CONNECTED_NUM, "Connected Number", dump_connected_number },
 	{ 1, Q931_IE_ORIGINAL_CALLED_NUMBER, "Original Called Number", dump_redirecting_number, receive_redirecting_number, transmit_redirecting_number },
@@ -2185,7 +2207,7 @@ static struct ie ies[] = {
 	{ 1, Q931_IE_FACILITY | Q931_CODESET(6), "Facility", dump_facility, receive_facility, transmit_facility },
 	{ 1, Q931_DISPLAY | Q931_CODESET(6), "Display (CS6)", dump_display, receive_display, transmit_display },
 	{ 0, Q931_IE_GENERIC_DIGITS, "Generic Digits", dump_generic_digits, receive_generic_digits, transmit_generic_digits },
-	/* Codeset 7 */
+	/* Codeset 7 - User specific */
 };
 
 static char *ie2str(int ie) 
@@ -2254,6 +2276,15 @@ static char *msg2str(int msg)
 	for (x=0;x<sizeof(msgs) / sizeof(msgs[0]); x++) 
 		if (msgs[x].msgnum == msg)
 			return msgs[x].name;
+	return "Unknown Message Type";
+}
+
+static char *nfas_msg2str(int msg)
+{
+	unsigned int x;
+	for (x=0;x<sizeof(nfas_msgs) / sizeof(nfas_msgs[0]); x++)
+		if (nfas_msgs[x].msgnum == msg)
+			return nfas_msgs[x].name;
 	return "Unknown Message Type";
 }
 
@@ -2491,8 +2522,8 @@ static char *disc2str(int disc)
 	static struct msgtype discs[] = {
 		{ Q931_PROTOCOL_DISCRIMINATOR, "Q.931" },
 		{ GR303_PROTOCOL_DISCRIMINATOR, "GR-303" },
-		{ 0x3, "AT&T Maintenance" },
-		{ 0x43, "New AT&T Maintenance" },
+		{ NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR, "AT&T Maintenance" },
+		{ NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR_TOO, "New AT&T Maintenance" },
 	};
 	return code2str(disc, discs, sizeof(discs) / sizeof(discs[0]));
 }
@@ -2509,7 +2540,11 @@ void q931_dump(struct pri *pri, q931_h *h, int len, int txrx)
 	pri_message(pri, "%c Call Ref: len=%2d (reference %d/0x%X) (%s)\n", c, h->crlen, q931_cr(h) & 0x7FFF, q931_cr(h) & 0x7FFF, (h->crv[0] & 0x80) ? "Terminator" : "Originator");
 	/* Message header begins at the end of the call reference number */
 	mh = (q931_mh *)(h->contents + h->crlen);
-	pri_message(pri, "%c Message type: %s (%d)\n", c, msg2str(mh->msg), mh->msg);
+	/* Might be an NFAS message */
+	if ((h->pd == NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR) || (h->pd == NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR_TOO))
+		pri_message(pri, "%c Message type: %s (%d)\n", c, nfas_msg2str(mh->msg), mh->msg);
+	else
+		pri_message(pri, "%c Message type: %s (%d)\n", c, msg2str(mh->msg), mh->msg);
 	/* Drop length of header, including call reference */
 	len -= (h->crlen + 3);
 	codeset = cur_codeset = 0;
@@ -2555,12 +2590,15 @@ static int q931_handle_ie(int codeset, struct pri *pri, q931_call *c, int msg, q
 	return -1;
 }
 
-static void init_header(struct pri *pri, q931_call *call, unsigned char *buf, q931_h **hb, q931_mh **mhb, int *len)
+static void init_header(struct pri *pri, q931_call *call, unsigned char *buf, q931_h **hb, q931_mh **mhb, int *len, int protodisc)
 {
 	/* Returns header and message header and modifies length in place */
 	q931_h *h = (q931_h *)buf;
 	q931_mh * mh;
-	h->pd = pri->protodisc;
+	if (protodisc)
+		h->pd = protodisc;
+	else
+		h->pd = pri->protodisc;
 	h->x0 = 0;		/* Reserved 0 */
 	if (!pri->bri) {
 		h->crlen = 2;	/* Two bytes of Call Reference.  Invert the top bit to make it from our sense */
@@ -2623,8 +2661,8 @@ static int send_message(struct pri *pri, q931_call *c, int msgtype, int ies[])
 	
 	memset(buf, 0, sizeof(buf));
 	len = sizeof(buf);
-	init_header(pri, c, buf, &h, &mh, &len);
-	mh->msg = msgtype;
+	init_header(pri, c, buf, &h, &mh, &len, (msgtype >> 8));
+	mh->msg = msgtype & 0x00ff;
 	x=0;
 	codeset = 0;
 	while(ies[x] > -1) {
@@ -2644,6 +2682,29 @@ static int send_message(struct pri *pri, q931_call *c, int msgtype, int ies[])
 	q931_xmit(c->pri, h, len, 1);
 	c->acked = 1;
 	return 0;
+}
+
+static int maintenance_service_ies[] = { NFAS_IE_CHANGE_STATUS, Q931_CHANNEL_IDENT, -1 };
+
+int nfas_maintenance_service_ack(struct pri *pri, q931_call *c)
+{
+	return send_message(pri, c, (NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR << 8) | NFAS_MAINTENANCE_SERVICE_ACKNOWLEDGE, maintenance_service_ies);
+}
+
+int nfas_maintenance_service(struct pri *pri, int span, int channel, int changestatus)
+{
+	struct q931_call *c;
+	c = q931_getcall(pri, 0 | 0x8000, 0);
+	if (!c)
+		return -1;
+	if (channel > -1) {
+		channel &= 0xff;
+	}
+	c->ds1no = span;
+	c->channelno = channel;
+	c->chanflags &= FLAG_EXCLUSIVE;
+	c->changestatus = changestatus;
+	return send_message(pri, c, (NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR << 8) | NFAS_MAINTENANCE_SERVICE, maintenance_service_ies);
 }
 
 static int status_ies[] = { Q931_CAUSE, Q931_CALL_STATE, -1 };
@@ -3241,14 +3302,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 	pri->q931_rxcount++;
 #endif
 	mh = (q931_mh *)(h->contents + h->crlen);
-	if ((h->pd == 0x3) || (h->pd == 0x43)) {
-		/* This is the weird maintenance stuff.  We majorly
-		   KLUDGE this by changing byte 4 from a 0xf (SERVICE) 
-		   to a 0x7 (SERVICE ACKNOWLEDGE) */
-		h->raw[h->crlen + 2] -= 0x8;
-		q931_xmit(pri, h, len, 1);
-		return 0;
-	} else if (h->pd != pri->protodisc) {
+	if ((h->pd != pri->protodisc) && (h->pd != NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR) && (h->pd != NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR_TOO)) {
 		pri_error(pri, "Warning: unknown/inappropriate protocol discriminator received (%02x/%d)\n", h->pd, h->pd);
 		return 0;
 	}
@@ -3258,133 +3312,154 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		return -1;
 	}
 	/* Preliminary handling */
-	switch(mh->msg) {
-	case Q931_RESTART:
-		if (pri->debug & PRI_DEBUG_Q931_STATE)
-			pri_message(pri, "-- Processing Q.931 Restart\n");
-		/* Reset information */
-		c->channelno = -1;
-		c->slotmap = -1;
-		c->chanflags = 0;
-		c->ds1no = 0;
-		c->ri = -1;
-		break;
-	case Q931_FACILITY:
-		c->callername[0] = '\0';
-		break;
-	case Q931_SETUP:
-		if (pri->debug & PRI_DEBUG_Q931_STATE)
-			pri_message(pri, "-- Processing Q.931 Call Setup\n");
-		c->channelno = -1;
-		c->slotmap = -1;
-		c->chanflags = 0;
-		c->ds1no = 0;
-		c->ri = -1;
-		c->transcapability = -1;
-		c->transmoderate = -1;
-		c->transmultiple = -1;
-		c->userl1 = -1;
-		c->userl2 = -1;
-		c->userl3 = -1;
-		c->rateadaption = -1;
-		c->calledplan = -1;
-		c->callerplan = -1;
-		c->callerpres = -1;
-		c->callernum[0] = '\0';
-		c->callednum[0] = '\0';
-		c->callername[0] = '\0';
-		c->callerani[0] = '\0';
-		c->callerplanani = -1;
-		c->redirectingplan = -1;
-		c->redirectingpres = -1;
-		c->redirectingreason = -1;
-		c->origcalledplan = -1;
-		c->origcalledpres = -1;
-		c->origredirectingreason = -1;
-		c->redirectingnum[0] = '\0';
-		c->origcallednum[0] = '\0';
-		c->redirectingname[0] = '\0';
-		c->origcalledname[0] = '\0';
-		c->useruserprotocoldisc = -1; 
-		c->useruserinfo[0] = '\0';
-		c->complete = 0;
-		c->nonisdn = 0;
-		c->aoc_units = -1;
-		/* Fall through */
-	case Q931_CONNECT:
-	case Q931_ALERTING:
-	case Q931_PROGRESS:
-		c->useruserinfo[0] = '\0';
-		c->cause = -1;
-		/* Fall through */
-	case Q931_CALL_PROCEEDING:
-		c->progress = -1;
-		c->progressmask = 0;
-		break;
-	case Q931_CONNECT_ACKNOWLEDGE:
-		if (c->retranstimer)
-			pri_schedule_del(pri, c->retranstimer);
-		c->retranstimer = 0;
-		break;
-	case Q931_RELEASE:
-	case Q931_DISCONNECT:
-		c->cause = -1;
-		c->causecode = -1;
-		c->causeloc = -1;
-		c->aoc_units = -1;
-		if (c->retranstimer)
-			pri_schedule_del(pri, c->retranstimer);
-		c->retranstimer = 0;
-		c->useruserinfo[0] = '\0';
-		break;
-	case Q931_RELEASE_COMPLETE:
-		if (c->retranstimer)
-			pri_schedule_del(pri, c->retranstimer);
-		c->retranstimer = 0;
-		c->useruserinfo[0] = '\0';
-		/* Fall through */
-	case Q931_STATUS:
-		c->cause = -1;
-		c->causecode = -1;
-		c->causeloc = -1;
-		c->sugcallstate = -1;
-		c->aoc_units = -1;
-		break;
-	case Q931_RESTART_ACKNOWLEDGE:
-		c->channelno = -1;
-		break;
-	case Q931_INFORMATION:
-		c->callednum[0] = '\0';
-		break;
-	case Q931_STATUS_ENQUIRY:
-		break;
-	case Q931_SETUP_ACKNOWLEDGE:
-		break;
-	case Q931_NOTIFY:
-		break;
-	case Q931_USER_INFORMATION:
-	case Q931_SEGMENT:
-	case Q931_CONGESTION_CONTROL:
-	case Q931_HOLD:
-	case Q931_HOLD_ACKNOWLEDGE:
-	case Q931_HOLD_REJECT:
-	case Q931_RETRIEVE:
-	case Q931_RETRIEVE_ACKNOWLEDGE:
-	case Q931_RETRIEVE_REJECT:
-	case Q931_RESUME:
-	case Q931_RESUME_ACKNOWLEDGE:
-	case Q931_RESUME_REJECT:
-	case Q931_SUSPEND:
-	case Q931_SUSPEND_ACKNOWLEDGE:
-	case Q931_SUSPEND_REJECT:
-		pri_error(pri, "!! Not yet handling pre-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
-		/* Fall through */
-	default:
-		pri_error(pri, "!! Don't know how to pre-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
-		q931_status(pri,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
-		if (c->newcall) 
-			q931_destroycall(pri,c->cr);
-		return -1;
+	if (h->pd != pri->protodisc) {
+		/* Service messages are a superset of messages that can
+		 * take B-channels or entire D-channels in and out of service */
+		switch(mh->msg) {
+		case NFAS_MAINTENANCE_SERVICE:
+		case NFAS_MAINTENANCE_SERVICE_ACKNOWLEDGE:
+			c->channelno = -1;
+			c->slotmap = -1;
+			c->chanflags = 0;
+			c->ds1no = 0;
+			c->ri = -1;
+			c->changestatus = -1;
+			break;
+		default:
+			pri_error(pri, "!! Don't know how to pre-handle maintenance message type %s (%d)\n", nfas_msg2str(mh->msg), mh->msg);
+			return -1;
+			break;
+		}
+	} else {
+		/* All other messages*/
+		switch(mh->msg) {
+		case Q931_RESTART:
+			if (pri->debug & PRI_DEBUG_Q931_STATE)
+				pri_message(pri, "-- Processing Q.931 Restart\n");
+			/* Reset information */
+			c->channelno = -1;
+			c->slotmap = -1;
+			c->chanflags = 0;
+			c->ds1no = 0;
+			c->ri = -1;
+			break;
+		case Q931_FACILITY:
+			c->callername[0] = '\0';
+			break;
+		case Q931_SETUP:
+			if (pri->debug & PRI_DEBUG_Q931_STATE)
+				pri_message(pri, "-- Processing Q.931 Call Setup\n");
+			c->channelno = -1;
+			c->slotmap = -1;
+			c->chanflags = 0;
+			c->ds1no = 0;
+			c->ri = -1;
+			c->transcapability = -1;
+			c->transmoderate = -1;
+			c->transmultiple = -1;
+			c->userl1 = -1;
+			c->userl2 = -1;
+			c->userl3 = -1;
+			c->rateadaption = -1;
+			c->calledplan = -1;
+			c->callerplan = -1;
+			c->callerpres = -1;
+			c->callernum[0] = '\0';
+			c->callednum[0] = '\0';
+			c->callername[0] = '\0';
+			c->callerani[0] = '\0';
+			c->callerplanani = -1;
+			c->redirectingplan = -1;
+			c->redirectingpres = -1;
+			c->redirectingreason = -1;
+			c->origcalledplan = -1;
+			c->origcalledpres = -1;
+			c->origredirectingreason = -1;
+			c->redirectingnum[0] = '\0';
+			c->origcallednum[0] = '\0';
+			c->redirectingname[0] = '\0';
+			c->origcalledname[0] = '\0';
+			c->useruserprotocoldisc = -1; 
+			c->useruserinfo[0] = '\0';
+			c->complete = 0;
+			c->nonisdn = 0;
+			c->aoc_units = -1;
+			/* Fall through */
+		case Q931_CONNECT:
+		case Q931_ALERTING:
+		case Q931_PROGRESS:
+			c->useruserinfo[0] = '\0';
+			c->cause = -1;
+			/* Fall through */
+		case Q931_CALL_PROCEEDING:
+			c->progress = -1;
+			c->progressmask = 0;
+			break;
+		case Q931_CONNECT_ACKNOWLEDGE:
+			if (c->retranstimer)
+				pri_schedule_del(pri, c->retranstimer);
+			c->retranstimer = 0;
+			break;
+		case Q931_RELEASE:
+		case Q931_DISCONNECT:
+			c->cause = -1;
+			c->causecode = -1;
+			c->causeloc = -1;
+			c->aoc_units = -1;
+			if (c->retranstimer)
+				pri_schedule_del(pri, c->retranstimer);
+			c->retranstimer = 0;
+			c->useruserinfo[0] = '\0';
+			break;
+		case Q931_RELEASE_COMPLETE:
+			if (c->retranstimer)
+				pri_schedule_del(pri, c->retranstimer);
+			c->retranstimer = 0;
+			c->useruserinfo[0] = '\0';
+			/* Fall through */
+		case Q931_STATUS:
+			c->cause = -1;
+			c->causecode = -1;
+			c->causeloc = -1;
+			c->sugcallstate = -1;
+			c->aoc_units = -1;
+			break;
+		case Q931_RESTART_ACKNOWLEDGE:
+			c->channelno = -1;
+			break;
+		case Q931_INFORMATION:
+			c->callednum[0] = '\0';
+			break;
+		case Q931_STATUS_ENQUIRY:
+			break;
+		case Q931_SETUP_ACKNOWLEDGE:
+			break;
+		case Q931_NOTIFY:
+			break;
+		case Q931_USER_INFORMATION:
+		case Q931_SEGMENT:
+		case Q931_CONGESTION_CONTROL:
+		case Q931_HOLD:
+		case Q931_HOLD_ACKNOWLEDGE:
+		case Q931_HOLD_REJECT:
+		case Q931_RETRIEVE:
+		case Q931_RETRIEVE_ACKNOWLEDGE:
+		case Q931_RETRIEVE_REJECT:
+		case Q931_RESUME:
+		case Q931_RESUME_ACKNOWLEDGE:
+		case Q931_RESUME_REJECT:
+		case Q931_SUSPEND:
+		case Q931_SUSPEND_ACKNOWLEDGE:
+		case Q931_SUSPEND_REJECT:
+			pri_error(pri, "!! Not yet handling pre-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
+			/* Fall through */
+		default:
+			pri_error(pri, "!! Don't know how to pre-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
+			q931_status(pri,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
+			if (c->newcall) 
+				q931_destroycall(pri,c->cr);
+			return -1;
+		}
 	}
 	/* Handle IEs */
 	memset(mandies, 0, sizeof(mandies));
@@ -3474,223 +3549,311 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 	}
 	
 	/* Post handling */
-	switch(mh->msg) {
-	case Q931_RESTART:
-		if (missingmand) {
-			q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			q931_destroycall(pri, c->cr);
-			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_RESTART);
-		c->peercallstate = Q931_CALL_STATE_RESTART_REQUEST;
-		/* Send back the Restart Acknowledge */
-		restart_ack(pri, c);
-		/* Notify user of restart event */
-		pri->ev.e = PRI_EVENT_RESTART;
-		pri->ev.restart.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		return Q931_RES_HAVEEVENT;
-	case Q931_SETUP:
-		if (missingmand) {
-			q931_release_complete(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			break;
-		}
-		/* Must be new call */
-		if (!c->newcall) {
-			break;
-		}
-		if (c->progressmask & PRI_PROG_CALLER_NOT_ISDN)
-			c->nonisdn = 1;
-		c->newcall = 0;
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_PRESENT);
-		c->peercallstate = Q931_CALL_STATE_CALL_INITIATED;
-		/* it's not yet a call since higher level can respond with RELEASE or RELEASE_COMPLETE */
-		c->alive = 0;
-		if (c->transmoderate != TRANS_MODE_64_CIRCUIT) {
-			q931_release_complete(pri, c, PRI_CAUSE_BEARERCAPABILITY_NOTIMPL);
-			break;
-		}
-		pri->ev.e = PRI_EVENT_RING;
-		pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.ring.callingpres = c->callerpres;
-		pri->ev.ring.callingplan = c->callerplan;
-		pri->ev.ring.callingplanani = c->callerplanani;
-		pri->ev.ring.callingplanrdnis = c->redirectingplan;
-		pri->ev.ring.callingplanorigcalled = c->origcalledplan;
-		pri->ev.ring.ani2 = c->ani2;
-		libpri_copy_string(pri->ev.ring.callingani, c->callerani, sizeof(pri->ev.ring.callingani));
-		libpri_copy_string(pri->ev.ring.callingnum, c->callernum, sizeof(pri->ev.ring.callingnum));
-		libpri_copy_string(pri->ev.ring.callingname, c->callername, sizeof(pri->ev.ring.callingname));
-		pri->ev.ring.calledplan = c->calledplan;
-		libpri_copy_string(pri->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(pri->ev.ring.callingsubaddr));
-		libpri_copy_string(pri->ev.ring.callednum, c->callednum, sizeof(pri->ev.ring.callednum));
-		libpri_copy_string(pri->ev.ring.origcalledname, c->origcalledname, sizeof(pri->ev.ring.origcalledname));
-		libpri_copy_string(pri->ev.ring.origcallednum, c->origcallednum, sizeof(pri->ev.ring.origcallednum));
-		libpri_copy_string(pri->ev.ring.redirectingnum, c->redirectingnum, sizeof(pri->ev.ring.redirectingnum));
-		libpri_copy_string(pri->ev.ring.redirectingname, c->redirectingname, sizeof(pri->ev.ring.redirectingname));
-		libpri_copy_string(pri->ev.ring.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
-		c->useruserinfo[0] = '\0';
-		pri->ev.ring.redirectingreason = c->redirectingreason;
-		pri->ev.ring.origredirectingreason = c->origredirectingreason;
-		pri->ev.ring.flexible = ! (c->chanflags & FLAG_EXCLUSIVE);
-		pri->ev.ring.cref = c->cr;
-		pri->ev.ring.call = c;
-		pri->ev.ring.layer1 = c->userl1;
-		pri->ev.ring.complete = c->complete; 
-		pri->ev.ring.ctype = c->transcapability;
-		pri->ev.ring.redirectingreason = c->redirectingreason;
-		pri->ev.ring.progress = c->progress;
-		pri->ev.ring.progressmask = c->progressmask;
-		return Q931_RES_HAVEEVENT;
-	case Q931_ALERTING:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_DELIVERED);
-		c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
-		pri->ev.e = PRI_EVENT_RINGING;
-		pri->ev.ringing.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.ringing.cref = c->cr;
-		pri->ev.ringing.call = c;
-		pri->ev.ringing.progress = c->progress;
-		pri->ev.ringing.progressmask = c->progressmask;
-		libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ringing.useruserinfo));
-		c->useruserinfo[0] = '\0';
-
-		cur = c->apdus;
-		while (cur) {
-			if (!cur->sent && cur->message == Q931_FACILITY) {
-				q931_facility(pri, c);
-				break;
+ 	if (h->pd != pri->protodisc) {
+ 		/* Do the maintenance stuff */
+ 		switch(mh->msg) {
+ 		case NFAS_MAINTENANCE_SERVICE:
+ 			if (c->channelno > 0) {
+ 				pri->ev.e = PRI_EVENT_SERVICE;
+ 				pri->ev.service.channel = c->channelno | (c->ds1no << 8);
+ 				pri->ev.service.changestatus = 0x0f & c->changestatus;
+ 			} else {
+ 				switch (0x0f & c->changestatus) {
+ 				case NFAS_CHANGE_STATUS_IN_SERVICE:
+ 					pri->ev.e = PRI_EVENT_DCHAN_UP;
+ 					q921_dchannel_up(pri);
+ 					break;
+ 				case NFAS_CHANGE_STATUS_OUT_OF_SERVICE:
+ 				case NFAS_CHANGE_STATUS_LOOP_BACK:
+ 				case NFAS_CHANGE_STATUS_REQ_CONTINUITY_CHECK:
+ 				case NFAS_CHANGE_STATUS_GRACEFUL_SHUTDOWN:
+ 					pri->ev.e = PRI_EVENT_DCHAN_DOWN;
+ 					q921_dchannel_down(pri);
+ 					break;
+ 				default:
+ 					pri_error(pri, "!! Don't know how to handle span service change status %d\n", (0x0f & c->changestatus));
+ 					return -1;
+ 					break;
+ 				}
+ 			}
+ 			nfas_maintenance_service_ack(pri, c);
+ 			return Q931_RES_HAVEEVENT;
+ 		case NFAS_MAINTENANCE_SERVICE_ACKNOWLEDGE:
+ 			if (c->channelno > 0) {
+ 				pri->ev.e = PRI_EVENT_SERVICE_ACK;
+ 				pri->ev.service_ack.channel = c->channelno | (c->ds1no << 8);
+ 				pri->ev.service_ack.changestatus = 0x0f & c->changestatus;
+ 			} else {
+ 				switch (0x0f & c->changestatus) {
+ 				case NFAS_CHANGE_STATUS_IN_SERVICE:
+ 					pri->ev.e = PRI_EVENT_DCHAN_UP;
+ 					q921_dchannel_up(pri);
+ 					break;
+ 				case NFAS_CHANGE_STATUS_OUT_OF_SERVICE:
+ 				case NFAS_CHANGE_STATUS_LOOP_BACK:
+ 				case NFAS_CHANGE_STATUS_REQ_CONTINUITY_CHECK:
+ 				case NFAS_CHANGE_STATUS_GRACEFUL_SHUTDOWN:
+ 					pri->ev.e = PRI_EVENT_DCHAN_DOWN;
+ 					q921_dchannel_down(pri);
+ 					break;
+ 				default:
+ 					pri_error(pri, "!! Don't know how to handle span service change status %d\n", (0x0f & c->changestatus));
+ 					return -1;
+					break;
+				}
 			}
-			cur = cur->next;
-		}
-
-		return Q931_RES_HAVEEVENT;
-	case Q931_CONNECT:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
-		}
-		if (c->ourcallstate == Q931_CALL_STATE_ACTIVE) {
-			q931_status(pri, c, PRI_CAUSE_WRONG_MESSAGE);
-			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
-		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
-		pri->ev.e = PRI_EVENT_ANSWER;
-		pri->ev.answer.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.answer.cref = c->cr;
-		pri->ev.answer.call = c;
-		pri->ev.answer.progress = c->progress;
-		pri->ev.answer.progressmask = c->progressmask;
-		libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.answer.useruserinfo));
-		c->useruserinfo[0] = '\0';
-		q931_connect_acknowledge(pri, c);
-		if (c->justsignalling) {  /* Make sure WE release when we initiatie a signalling only connection */
-			q931_release(pri, c, PRI_CAUSE_NORMAL_CLEARING);
-			break;
-		} else
 			return Q931_RES_HAVEEVENT;
-	case Q931_FACILITY:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+		default:
+			pri_error(pri, "!! Don't know how to post-handle maintenance message type %s (%d)\n", nfas_msg2str(mh->msg), mh->msg);
+			return -1;
 			break;
 		}
-		pri->ev.e = PRI_EVENT_FACNAME;
-		libpri_copy_string(pri->ev.facname.callingname, c->callername, sizeof(pri->ev.facname.callingname));
-		libpri_copy_string(pri->ev.facname.callingnum, c->callernum, sizeof(pri->ev.facname.callingnum));
-		pri->ev.facname.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.facname.callingpres = c->callerpres;
-		pri->ev.facname.callingplan = c->callerplan;
-		pri->ev.facname.cref = c->cr;
-		pri->ev.facname.call = c;
-#if 0
-		pri_message(pri, "Sending facility event (%s/%s)\n", pri->ev.facname.callingname, pri->ev.facname.callingnum);
-#endif
-		return Q931_RES_HAVEEVENT;
-	case Q931_PROGRESS:
-		if (missingmand) {
-			q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			q931_destroycall(pri, c->cr);
-			break;
-		}
-		pri->ev.e = PRI_EVENT_PROGRESS;
-		pri->ev.proceeding.cause = c->cause;
-		/* Fall through */
-	case Q931_CALL_PROCEEDING:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
-		}
-		if ((c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED) &&
-		    (c->ourcallstate != Q931_CALL_STATE_OVERLAP_SENDING) && 
-		    (c->ourcallstate != Q931_CALL_STATE_CALL_DELIVERED) && 
-		    (c->ourcallstate != Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING)) {
-			q931_status(pri,c,PRI_CAUSE_WRONG_MESSAGE);
-			break;
-		}
-		pri->ev.proceeding.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		if (mh->msg == Q931_CALL_PROCEEDING) {
-			pri->ev.e = PRI_EVENT_PROCEEDING;
-			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
-			c->peercallstate = Q931_CALL_STATE_INCOMING_CALL_PROCEEDING;
-		}
-		pri->ev.proceeding.progress = c->progress;
-		pri->ev.proceeding.progressmask = c->progressmask;
-		pri->ev.proceeding.cref = c->cr;
-		pri->ev.proceeding.call = c;
-
-		cur = c->apdus;
-		while (cur) {
-			if (!cur->sent && cur->message == Q931_FACILITY) {
-				q931_facility(pri, c);
+	} else {
+		/* Do the non-maintenance stuff */
+		switch(mh->msg) {
+		case Q931_RESTART:
+			if (missingmand) {
+				q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
+				q931_destroycall(pri, c->cr);
 				break;
 			}
-			cur = cur->next;
-		}
-		return Q931_RES_HAVEEVENT;
-	case Q931_CONNECT_ACKNOWLEDGE:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_RESTART);
+			c->peercallstate = Q931_CALL_STATE_RESTART_REQUEST;
+			/* Send back the Restart Acknowledge */
+			restart_ack(pri, c);
+			/* Notify user of restart event */
+			pri->ev.e = PRI_EVENT_RESTART;
+			pri->ev.restart.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			return Q931_RES_HAVEEVENT;
+		case Q931_SETUP:
+			if (missingmand) {
+				q931_release_complete(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
+				break;
+			}
+			/* Must be new call */
+			if (!c->newcall) {
+				break;
+			}
+			if (c->progressmask & PRI_PROG_CALLER_NOT_ISDN)
+			c->nonisdn = 1;
+			c->newcall = 0;
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_PRESENT);
+			c->peercallstate = Q931_CALL_STATE_CALL_INITIATED;
+			/* it's not yet a call since higher level can respond with RELEASE or RELEASE_COMPLETE */
+			c->alive = 0;
+			if (c->transmoderate != TRANS_MODE_64_CIRCUIT) {
+				q931_release_complete(pri, c, PRI_CAUSE_BEARERCAPABILITY_NOTIMPL);
+				break;
+			}
+			pri->ev.e = PRI_EVENT_RING;
+			pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.ring.callingpres = c->callerpres;
+			pri->ev.ring.callingplan = c->callerplan;
+			pri->ev.ring.callingplanani = c->callerplanani;
+			pri->ev.ring.callingplanrdnis = c->redirectingplan;
+			pri->ev.ring.callingplanorigcalled = c->origcalledplan;
+			pri->ev.ring.ani2 = c->ani2;
+			libpri_copy_string(pri->ev.ring.callingani, c->callerani, sizeof(pri->ev.ring.callingani));
+			libpri_copy_string(pri->ev.ring.callingnum, c->callernum, sizeof(pri->ev.ring.callingnum));
+			libpri_copy_string(pri->ev.ring.callingname, c->callername, sizeof(pri->ev.ring.callingname));
+			pri->ev.ring.calledplan = c->calledplan;
+			libpri_copy_string(pri->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(pri->ev.ring.callingsubaddr));
+			libpri_copy_string(pri->ev.ring.callednum, c->callednum, sizeof(pri->ev.ring.callednum));
+			libpri_copy_string(pri->ev.ring.origcalledname, c->origcalledname, sizeof(pri->ev.ring.origcalledname));
+			libpri_copy_string(pri->ev.ring.origcallednum, c->origcallednum, sizeof(pri->ev.ring.origcallednum));
+			libpri_copy_string(pri->ev.ring.redirectingnum, c->redirectingnum, sizeof(pri->ev.ring.redirectingnum));
+			libpri_copy_string(pri->ev.ring.redirectingname, c->redirectingname, sizeof(pri->ev.ring.redirectingname));
+			libpri_copy_string(pri->ev.ring.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
+			c->useruserinfo[0] = '\0';
+			pri->ev.ring.redirectingreason = c->redirectingreason;
+			pri->ev.ring.origredirectingreason = c->origredirectingreason;
+			pri->ev.ring.flexible = ! (c->chanflags & FLAG_EXCLUSIVE);
+			pri->ev.ring.cref = c->cr;
+			pri->ev.ring.call = c;
+			pri->ev.ring.layer1 = c->userl1;
+			pri->ev.ring.complete = c->complete; 
+			pri->ev.ring.ctype = c->transcapability;
+			pri->ev.ring.redirectingreason = c->redirectingreason;
+			pri->ev.ring.progress = c->progress;
+			pri->ev.ring.progressmask = c->progressmask;
+			return Q931_RES_HAVEEVENT;
+		case Q931_ALERTING:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_DELIVERED);
+			c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
+			pri->ev.e = PRI_EVENT_RINGING;
+			pri->ev.ringing.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.ringing.cref = c->cr;
+			pri->ev.ringing.call = c;
+			pri->ev.ringing.progress = c->progress;
+			pri->ev.ringing.progressmask = c->progressmask;
+			libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ringing.useruserinfo));
+			c->useruserinfo[0] = '\0';
+	
+			cur = c->apdus;
+			while (cur) {
+				if (!cur->sent && cur->message == Q931_FACILITY) {
+					q931_facility(pri, c);
+					break;
+				}
+				cur = cur->next;
+			}
+	
+			return Q931_RES_HAVEEVENT;
+		case Q931_CONNECT:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			if (c->ourcallstate == Q931_CALL_STATE_ACTIVE) {
+				q931_status(pri, c, PRI_CAUSE_WRONG_MESSAGE);
+				break;
+			}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
+			c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
+			pri->ev.e = PRI_EVENT_ANSWER;
+			pri->ev.answer.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.answer.cref = c->cr;
+			pri->ev.answer.call = c;
+			pri->ev.answer.progress = c->progress;
+			pri->ev.answer.progressmask = c->progressmask;
+			libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.answer.useruserinfo));
+			c->useruserinfo[0] = '\0';
+			q931_connect_acknowledge(pri, c);
+			if (c->justsignalling) {  /* Make sure WE release when we initiatie a signalling only connection */
+				q931_release(pri, c, PRI_CAUSE_NORMAL_CLEARING);
+				break;
+			} else
+				return Q931_RES_HAVEEVENT;
+		case Q931_FACILITY:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			pri->ev.e = PRI_EVENT_FACNAME;
+			libpri_copy_string(pri->ev.facname.callingname, c->callername, sizeof(pri->ev.facname.callingname));
+			libpri_copy_string(pri->ev.facname.callingnum, c->callernum, sizeof(pri->ev.facname.callingnum));
+			pri->ev.facname.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.facname.callingpres = c->callerpres;
+			pri->ev.facname.callingplan = c->callerplan;
+			pri->ev.facname.cref = c->cr;
+			pri->ev.facname.call = c;
+#if 0	
+			pri_message(pri, "Sending facility event (%s/%s)\n", pri->ev.facname.callingname, pri->ev.facname.callingnum);
+#endif
+			return Q931_RES_HAVEEVENT;
+		case Q931_PROGRESS:
+			if (missingmand) {
+				q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
+				q931_destroycall(pri, c->cr);
+				break;
+			}
+			pri->ev.e = PRI_EVENT_PROGRESS;
+			pri->ev.proceeding.cause = c->cause;
+			/* Fall through */
+		case Q931_CALL_PROCEEDING:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			if ((c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED) &&
+			    (c->ourcallstate != Q931_CALL_STATE_OVERLAP_SENDING) && 
+			    (c->ourcallstate != Q931_CALL_STATE_CALL_DELIVERED) && 
+			    (c->ourcallstate != Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING)) {
+				q931_status(pri,c,PRI_CAUSE_WRONG_MESSAGE);
+				break;
+			}
+			pri->ev.proceeding.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			if (mh->msg == Q931_CALL_PROCEEDING) {
+				pri->ev.e = PRI_EVENT_PROCEEDING;
+				UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
+				c->peercallstate = Q931_CALL_STATE_INCOMING_CALL_PROCEEDING;
+			}
+			pri->ev.proceeding.progress = c->progress;
+			pri->ev.proceeding.progressmask = c->progressmask;
+			pri->ev.proceeding.cref = c->cr;
+			pri->ev.proceeding.call = c;
+	
+			cur = c->apdus;
+			while (cur) {
+				if (!cur->sent && cur->message == Q931_FACILITY) {
+					q931_facility(pri, c);
+					break;
+				}
+				cur = cur->next;
+			}
+			return Q931_RES_HAVEEVENT;
+		case Q931_CONNECT_ACKNOWLEDGE:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			if (!(c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) &&
+			    !(c->ourcallstate == Q931_CALL_STATE_ACTIVE &&
+			      (pri->localtype == PRI_NETWORK || pri->switchtype == PRI_SWITCH_QSIG))) {
+				q931_status(pri,c,PRI_CAUSE_WRONG_MESSAGE);
+				break;
+			}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
+			c->peercallstate = Q931_CALL_STATE_ACTIVE;
 			break;
-		}
-		if (!(c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) &&
-		    !(c->ourcallstate == Q931_CALL_STATE_ACTIVE &&
-		      (pri->localtype == PRI_NETWORK || pri->switchtype == PRI_SWITCH_QSIG))) {
-			q931_status(pri,c,PRI_CAUSE_WRONG_MESSAGE);
+		case Q931_STATUS:
+			if (missingmand) {
+				q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
+				q931_destroycall(pri, c->cr);
+				break;
+			}
+			if (c->newcall) {
+				if (c->cr & 0x7fff)
+					q931_release_complete(pri,c,PRI_CAUSE_WRONG_CALL_STATE);
+				break;	
+			}
+			/* Do nothing */
+			/* Also when the STATUS asks for the call of an unexisting reference send RELEASE_COMPL */
+			if ((pri->debug & PRI_DEBUG_Q931_ANOMALY) &&
+			    (c->cause != PRI_CAUSE_INTERWORKING)) 
+				pri_error(pri, "Received unsolicited status: %s\n", pri_cause2str(c->cause));
+			/* Workaround for S-12 ver 7.3 - it responds for invalid/non-implemented IEs at SETUP with null call state */
+			if (!c->sugcallstate && (c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED)) {
+				pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+				pri->ev.hangup.cause = c->cause;
+				pri->ev.hangup.cref = c->cr;
+				pri->ev.hangup.call = c;
+				pri->ev.hangup.aoc_units = c->aoc_units;
+				libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
+				/* Free resources */
+				UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
+				c->peercallstate = Q931_CALL_STATE_NULL;
+				if (c->alive) {
+					pri->ev.e = PRI_EVENT_HANGUP;
+					res = Q931_RES_HAVEEVENT;
+					c->alive = 0;
+				} else if (c->sendhangupack) {
+					res = Q931_RES_HAVEEVENT;
+					pri->ev.e = PRI_EVENT_HANGUP_ACK;
+					q931_hangup(pri, c, c->cause);
+				} else {
+					q931_hangup(pri, c, c->cause);
+					res = 0;
+				}	
+				if (res)
+					return res;
+			}
 			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
-		c->peercallstate = Q931_CALL_STATE_ACTIVE;
-		break;
-	case Q931_STATUS:
-		if (missingmand) {
-			q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			q931_destroycall(pri, c->cr);
-			break;
-		}
-		if (c->newcall) {
-			if (c->cr & 0x7fff)
-				q931_release_complete(pri,c,PRI_CAUSE_WRONG_CALL_STATE);
-			break;
-		}
-		/* Do nothing */
-		/* Also when the STATUS asks for the call of an unexisting reference send RELEASE_COMPL */
-		if ((pri->debug & PRI_DEBUG_Q931_ANOMALY) &&
-		    (c->cause != PRI_CAUSE_INTERWORKING)) 
-			pri_error(pri, "Received unsolicited status: %s\n", pri_cause2str(c->cause));
-		/* Workaround for S-12 ver 7.3 - it responds for invalid/non-implemented IEs at SETUP with null call state */
-		if (!c->sugcallstate && (c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED)) {
+		case Q931_RELEASE_COMPLETE:
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
+			c->peercallstate = Q931_CALL_STATE_NULL;
 			pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 			pri->ev.hangup.cause = c->cause;
 			pri->ev.hangup.cref = c->cr;
 			pri->ev.hangup.call = c;
 			pri->ev.hangup.aoc_units = c->aoc_units;
 			libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
+			c->useruserinfo[0] = '\0';
 			/* Free resources */
-			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
-			c->peercallstate = Q931_CALL_STATE_NULL;
 			if (c->alive) {
 				pri->ev.e = PRI_EVENT_HANGUP;
 				res = Q931_RES_HAVEEVENT;
@@ -3698,186 +3861,160 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			} else if (c->sendhangupack) {
 				res = Q931_RES_HAVEEVENT;
 				pri->ev.e = PRI_EVENT_HANGUP_ACK;
-				q931_hangup(pri, c, c->cause);
-			} else {
-				q931_hangup(pri, c, c->cause);
+				pri_hangup(pri, c, c->cause);
+			} else
 				res = 0;
-			}
 			if (res)
 				return res;
-		}
-		break;
-	case Q931_RELEASE_COMPLETE:
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
-		c->peercallstate = Q931_CALL_STATE_NULL;
-		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.hangup.cause = c->cause;
-		pri->ev.hangup.cref = c->cr;
-		pri->ev.hangup.call = c;
-		pri->ev.hangup.aoc_units = c->aoc_units;
-		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
-		c->useruserinfo[0] = '\0';
-		/* Free resources */
-		if (c->alive) {
+			else
+				q931_hangup(pri,c,c->cause);
+			break;
+		case Q931_RELEASE:
+			if (missingmand) {
+				/* Force cause to be mandatory IE missing */
+				c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
+			}
+			if (c->ourcallstate == Q931_CALL_STATE_RELEASE_REQUEST) 
+				c->peercallstate = Q931_CALL_STATE_NULL;
+			else {
+				c->peercallstate = Q931_CALL_STATE_RELEASE_REQUEST;
+			}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 			pri->ev.e = PRI_EVENT_HANGUP;
-			res = Q931_RES_HAVEEVENT;
-			c->alive = 0;
-		} else if (c->sendhangupack) {
-			res = Q931_RES_HAVEEVENT;
-			pri->ev.e = PRI_EVENT_HANGUP_ACK;
-			pri_hangup(pri, c, c->cause);
-		} else
-			res = 0;
-		if (res)
-			return res;
-		else
-			q931_hangup(pri,c,c->cause);
-		break;
-	case Q931_RELEASE:
-		if (missingmand) {
-			/* Force cause to be mandatory IE missing */
-			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
-		}
-		if (c->ourcallstate == Q931_CALL_STATE_RELEASE_REQUEST) 
-			c->peercallstate = Q931_CALL_STATE_NULL;
-		else {
-			c->peercallstate = Q931_CALL_STATE_RELEASE_REQUEST;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
-		pri->ev.e = PRI_EVENT_HANGUP;
-		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.hangup.cause = c->cause;
-		pri->ev.hangup.cref = c->cr;
-		pri->ev.hangup.call = c;
-		pri->ev.hangup.aoc_units = c->aoc_units;
-		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
-		c->useruserinfo[0] = '\0';
-		/* Don't send release complete if they send us release 
-		   while we sent it, assume a NULL state */
-		if (c->newcall)
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-		else 
-			return Q931_RES_HAVEEVENT;
-		break;
-	case Q931_DISCONNECT:
-		if (missingmand) {
-			/* Still let user call release */
-			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
-		}
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+			pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.hangup.cause = c->cause;
+			pri->ev.hangup.cref = c->cr;
+			pri->ev.hangup.call = c;
+			pri->ev.hangup.aoc_units = c->aoc_units;
+			libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
+			c->useruserinfo[0] = '\0';
+			/* Don't send release complete if they send us release 
+			   while we sent it, assume a NULL state */
+			if (c->newcall)
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+			else 
+				return Q931_RES_HAVEEVENT;
 			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_DISCONNECT_INDICATION);
-		c->peercallstate = Q931_CALL_STATE_DISCONNECT_REQUEST;
-		c->sendhangupack = 1;
-
-		/* wait for a RELEASE so that sufficient time has passed
-		   for the inband audio to be heard */
-		if (c->progressmask & PRI_PROG_INBAND_AVAILABLE)
-			break;
-
-		/* Return such an event */
-		pri->ev.e = PRI_EVENT_HANGUP_REQ;
-		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.hangup.cause = c->cause;
-		pri->ev.hangup.cref = c->cr;
-		pri->ev.hangup.call = c;
-		pri->ev.hangup.aoc_units = c->aoc_units;
-		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
-		c->useruserinfo[0] = '\0';
-		if (c->alive)
-			return Q931_RES_HAVEEVENT;
-		else
-			q931_hangup(pri,c,c->cause);
-		break;
-	case Q931_RESTART_ACKNOWLEDGE:
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
-		c->peercallstate = Q931_CALL_STATE_NULL;
-		pri->ev.e = PRI_EVENT_RESTART_ACK;
-		pri->ev.restartack.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		return Q931_RES_HAVEEVENT;
-	case Q931_INFORMATION:
-		/* XXX We're handling only INFORMATION messages that contain
-		       overlap dialing received digit
-		       +  the "Complete" msg which is basically an EOF on further digits
-		   XXX */
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
-		}
-		if (c->ourcallstate != Q931_CALL_STATE_OVERLAP_RECEIVING) {
-			pri->ev.e = PRI_EVENT_KEYPAD_DIGIT;
-			pri->ev.digit.call = c;
-			pri->ev.digit.channel = c->channelno | (c->ds1no << 8);
-			libpri_copy_string(pri->ev.digit.digits, c->keypad_digits, sizeof(pri->ev.digit.digits));
-			/* Make sure we clear it out before we return */
-			c->keypad_digits[0] = '\0';
-			return Q931_RES_HAVEEVENT;
-		}
-		pri->ev.e = PRI_EVENT_INFO_RECEIVED;
-		pri->ev.ring.call = c;
-		pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		libpri_copy_string(pri->ev.ring.callednum, c->callednum, sizeof(pri->ev.ring.callednum));
-		libpri_copy_string(pri->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(pri->ev.ring.callingsubaddr));
-		pri->ev.ring.complete = c->complete; 	/* this covers IE 33 (Sending Complete) */
-		return Q931_RES_HAVEEVENT;
-	case Q931_STATUS_ENQUIRY:
-		if (c->newcall) {
-			q931_release_complete(pri, c, PRI_CAUSE_INVALID_CALL_REFERENCE);
-		} else
-			q931_status(pri,c, 0);
-		break;
-	case Q931_SETUP_ACKNOWLEDGE:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
-		}
-		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_OVERLAP_SENDING);
-		c->peercallstate = Q931_CALL_STATE_OVERLAP_RECEIVING;
-		pri->ev.e = PRI_EVENT_SETUP_ACK;
-		pri->ev.setup_ack.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.setup_ack.call = c;
-
-		cur = c->apdus;
-		while (cur) {
-			if (!cur->sent && cur->message == Q931_FACILITY) {
-				q931_facility(pri, c);
+		case Q931_DISCONNECT:
+			if (missingmand) {
+				/* Still let user call release */
+				c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
+			}
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 				break;
 			}
-			cur = cur->next;
-		}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_DISCONNECT_INDICATION);
+			c->peercallstate = Q931_CALL_STATE_DISCONNECT_REQUEST;
+			c->sendhangupack = 1;
+	
+			/* wait for a RELEASE so that sufficient time has passed
+			   for the inband audio to be heard */
+			if (c->progressmask & PRI_PROG_INBAND_AVAILABLE)
+				break;
+	
+			/* Return such an event */
+			pri->ev.e = PRI_EVENT_HANGUP_REQ;
+			pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.hangup.cause = c->cause;
+			pri->ev.hangup.cref = c->cr;
+			pri->ev.hangup.call = c;
+			pri->ev.hangup.aoc_units = c->aoc_units;
+			libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
+			c->useruserinfo[0] = '\0';
+			if (c->alive)
+				return Q931_RES_HAVEEVENT;
+			else
+				q931_hangup(pri,c,c->cause);
+			break;
+		case Q931_RESTART_ACKNOWLEDGE:
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
+			c->peercallstate = Q931_CALL_STATE_NULL;
+			pri->ev.e = PRI_EVENT_RESTART_ACK;
+			pri->ev.restartack.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			return Q931_RES_HAVEEVENT;
+		case Q931_INFORMATION:
+			/* XXX We're handling only INFORMATION messages that contain
+			       overlap dialing received digit
+			       +  the "Complete" msg which is basically an EOF on further digits
+			   XXX */
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			if (c->ourcallstate != Q931_CALL_STATE_OVERLAP_RECEIVING) {
+				pri->ev.e = PRI_EVENT_KEYPAD_DIGIT;
+				pri->ev.digit.call = c;
+				pri->ev.digit.channel = c->channelno | (c->ds1no << 8);
+				libpri_copy_string(pri->ev.digit.digits, c->keypad_digits, sizeof(pri->ev.digit.digits));
+				/* Make sure we clear it out before we return */
+				c->keypad_digits[0] = '\0';
+				return Q931_RES_HAVEEVENT;
+			}
+			pri->ev.e = PRI_EVENT_INFO_RECEIVED;
+			pri->ev.ring.call = c;
+			pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			libpri_copy_string(pri->ev.ring.callednum, c->callednum, sizeof(pri->ev.ring.callednum));
+			libpri_copy_string(pri->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(pri->ev.ring.callingsubaddr));
+			pri->ev.ring.complete = c->complete; 	/* this covers IE 33 (Sending Complete) */
+			return Q931_RES_HAVEEVENT;
+		case Q931_STATUS_ENQUIRY:
+			if (c->newcall) {
+				q931_release_complete(pri, c, PRI_CAUSE_INVALID_CALL_REFERENCE);
+			} else
+				q931_status(pri,c, 0);
+			break;
+		case Q931_SETUP_ACKNOWLEDGE:
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_OVERLAP_SENDING);
+			c->peercallstate = Q931_CALL_STATE_OVERLAP_RECEIVING;
+			pri->ev.e = PRI_EVENT_SETUP_ACK;
+			pri->ev.setup_ack.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+			pri->ev.setup_ack.call = c;
+	
+			cur = c->apdus;
+			while (cur) {
+				if (!cur->sent && cur->message == Q931_FACILITY) {
+					q931_facility(pri, c);
+					break;
+				}
+				cur = cur->next;
+			}
 
-		return Q931_RES_HAVEEVENT;
-	case Q931_NOTIFY:
-		pri->ev.e = PRI_EVENT_NOTIFY;
-		pri->ev.notify.channel = c->channelno;
-		pri->ev.notify.info = c->notify;
-		return Q931_RES_HAVEEVENT;
-	case Q931_USER_INFORMATION:
-	case Q931_SEGMENT:
-	case Q931_CONGESTION_CONTROL:
-	case Q931_HOLD:
-	case Q931_HOLD_ACKNOWLEDGE:
-	case Q931_HOLD_REJECT:
-	case Q931_RETRIEVE:
-	case Q931_RETRIEVE_ACKNOWLEDGE:
-	case Q931_RETRIEVE_REJECT:
-	case Q931_RESUME:
-	case Q931_RESUME_ACKNOWLEDGE:
-	case Q931_RESUME_REJECT:
-	case Q931_SUSPEND:
-	case Q931_SUSPEND_ACKNOWLEDGE:
-	case Q931_SUSPEND_REJECT:
-		pri_error(pri, "!! Not yet handling post-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
-		/* Fall through */
-	default:
+			return Q931_RES_HAVEEVENT;
+		case Q931_NOTIFY:
+			pri->ev.e = PRI_EVENT_NOTIFY;
+			pri->ev.notify.channel = c->channelno;
+			pri->ev.notify.info = c->notify;
+			return Q931_RES_HAVEEVENT;
+		case Q931_USER_INFORMATION:
+		case Q931_SEGMENT:
+		case Q931_CONGESTION_CONTROL:
+		case Q931_HOLD:
+		case Q931_HOLD_ACKNOWLEDGE:
+		case Q931_HOLD_REJECT:
+		case Q931_RETRIEVE:
+		case Q931_RETRIEVE_ACKNOWLEDGE:
+		case Q931_RETRIEVE_REJECT:
+		case Q931_RESUME:
+		case Q931_RESUME_ACKNOWLEDGE:
+		case Q931_RESUME_REJECT:
+		case Q931_SUSPEND:
+		case Q931_SUSPEND_ACKNOWLEDGE:
+		case Q931_SUSPEND_REJECT:
+			pri_error(pri, "!! Not yet handling post-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
+			/* Fall through */
+		default:
 		
-		pri_error(pri, "!! Don't know how to post-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
-		q931_status(pri,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
-		if (c->newcall) 
-			q931_destroycall(pri,c->cr);
-		return -1;
+			pri_error(pri, "!! Don't know how to post-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
+			q931_status(pri,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
+			if (c->newcall) 
+				q931_destroycall(pri,c->cr);
+			return -1;
+		}
 	}
 	return 0;
 }

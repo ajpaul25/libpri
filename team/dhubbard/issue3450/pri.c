@@ -608,6 +608,13 @@ int pri_reset(struct pri *pri, int channel)
 	return q931_restart(pri, channel);
 }
 
+int pri_maintenance_service(struct pri *pri, int span, int channel, int changestatus)
+{
+	if (!pri)
+		return -1;
+	return nfas_maintenance_service(pri, span, channel, changestatus);
+}
+
 q931_call *pri_new_call(struct pri *pri)
 {
 	if (!pri)

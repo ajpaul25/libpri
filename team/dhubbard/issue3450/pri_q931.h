@@ -108,6 +108,8 @@ typedef struct q931_ie {
 
 #define Q931_PROTOCOL_DISCRIMINATOR 0x08
 #define GR303_PROTOCOL_DISCRIMINATOR 0x4f
+#define NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR 0x3
+#define NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR_TOO 0x43
 
 /* Q.931 / National ISDN Message Types */
 
@@ -151,12 +153,9 @@ typedef struct q931_ie {
 #define Q931_SUSPEND_ACKNOWLEDGE	0x2d
 #define Q931_SUSPEND_REJECT			0x21
 
-/* Maintenance messages (codeset 0 only) */
-#define NATIONAL_SERVICE			0x0f
-#define NATIONAL_SERVICE_ACKNOWLEDGE	0x07
-
-/* Special codeset 0 IE */
-#define	NATIONAL_CHANGE_STATUS		0x1
+/* Maintenance messages (codeset 0) */
+#define NFAS_MAINTENANCE_SERVICE			0x0f
+#define NFAS_MAINTENANCE_SERVICE_ACKNOWLEDGE		0x07
 
 /* Q.931 / National ISDN Information Elements */
 #define Q931_LOCKING_SHIFT			0x90
@@ -218,6 +217,13 @@ typedef struct q931_ie {
 #define Q931_IE_USER_USER				0x7E
 #define Q931_IE_ESCAPE_FOR_EXT			0x7F
 
+/* For maintenance service */
+#define NFAS_IE_CHANGE_STATUS				0x01
+#define NFAS_CHANGE_STATUS_IN_SERVICE			0
+#define NFAS_CHANGE_STATUS_LOOP_BACK			1
+#define NFAS_CHANGE_STATUS_OUT_OF_SERVICE		2
+#define NFAS_CHANGE_STATUS_REQ_CONTINUITY_CHECK		3
+#define NFAS_CHANGE_STATUS_GRACEFUL_SHUTDOWN		4
 
 /* Call state stuff */
 #define Q931_CALL_STATE_NULL				0
@@ -242,6 +248,10 @@ typedef struct q931_ie {
 
 /* EuroISDN  */
 #define Q931_SENDING_COMPLETE		0xa1
+
+extern int nfas_maintenance_service(struct pri *pri, int span, int channel, int changestatus);
+
+extern int nfas_maintenance_service_ack(struct pri *pri, q931_call *call);
 
 
 /* Q.SIG specific */
