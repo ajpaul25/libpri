@@ -255,6 +255,7 @@ struct q931_call {
 
 	/* Bridged call info */
 	q931_call *bridged_call;        /* Pointer to other leg of bridged call */
+	int changestatus;		/* NFAS Maintenance service related */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
