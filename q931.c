@@ -3687,6 +3687,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		/* Remove "workaround" since it breaks certification testing.  If we receive a STATUS message of call state
 		 * NULL and we are not in the call state NULL we must clear resources and return to the call state to pass
 		 * testing.  See section 5.8.11 of Q.931 */
+
 		if (!c->sugcallstate) {
 #endif
 			pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
