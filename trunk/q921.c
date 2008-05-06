@@ -1156,12 +1156,10 @@ void q921_start(struct pri *pri, int isCPE)
 {
 	q921_reset(pri);
 	if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
-		pri_message(pri, "Starting in BRI mode\n");
 		pri->q921_state = Q921_DOWN;
 		if (isCPE)
 			q921_tei_request(pri);
 	} else {
-		pri_message(pri, "Starting in PRI mode, isCPE=%d, SAPI/TEI=%d/%d\n", isCPE, pri->sapi, pri->tei);
 		q921_send_sabme(pri, isCPE);
 	}
 }
