@@ -423,7 +423,7 @@ static FUNC_DUMP(dump_channel_id)
 	int x;
 	int res = 0;
 	static const char*	msg_chan_sel[] = {
-		"No channel selected", "B1 channel", "B2 channel","Any channel selected" 
+		"No channel selected", "B1 channel", "B2 channel","Any channel selected",  
 		"No channel selected", "As indicated in following octets", "Reserved","Any channel selected"
 	};
 
@@ -3817,7 +3817,15 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			    (c->cause != PRI_CAUSE_INTERWORKING)) 
 				pri_error(pri, "Received unsolicited status: %s\n", pri_cause2str(c->cause));
 			/* Workaround for S-12 ver 7.3 - it responds for invalid/non-implemented IEs at SETUP with null call state */
+#if 0
 			if (!c->sugcallstate && (c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED)) {
+#else
+			/* Remove "workaround" since it breaks certification testing.  If we receive a STATUS message of call state
+ 			 * NULL and we are not in the call state NULL we must clear resources and return to the call state to pass
+ 			 * testing.  See section 5.8.11 of Q.931 */
+
+			if (!c->sugcallstate) {
+#endif
 				pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 				pri->ev.hangup.cause = c->cause;
 				pri->ev.hangup.cref = c->cr;

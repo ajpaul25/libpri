@@ -190,7 +190,6 @@ static int __pri_write(struct pri *pri, void *buf, int buflen)
 /* Pass in the master for this function */
 void __pri_free_tei(struct pri * p)
 {
-	pri_error(NULL, "Freeing TEI %d\n", p->tei);
 	free (p);
 }
 

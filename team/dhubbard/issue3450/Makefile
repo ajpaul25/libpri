@@ -28,6 +28,8 @@
 #LIBPRI_COUNTERS=-DLIBPRI_COUNTERS
 
 CC=gcc
+GREP=grep
+AWK=awk
 
 OSARCH=$(shell uname -s)
 PROC?=$(shell uname -m)
@@ -39,8 +41,8 @@ SONAME:=1.6
 
 STATIC_LIBRARY=libpri.a
 DYNAMIC_LIBRARY:=libpri.so.$(SONAME)
-STATIC_OBJS=copy_string.o pri.o q921.o prisched.o q931.o pri_facility.o
-DYNAMIC_OBJS=copy_string.lo pri.lo q921.lo prisched.lo q931.lo pri_facility.lo
+STATIC_OBJS=copy_string.o pri.o q921.o prisched.o q931.o pri_facility.o version.o
+DYNAMIC_OBJS=copy_string.lo pri.lo q921.lo prisched.lo q931.lo pri_facility.lo version.lo
 CFLAGS=-Wall -Werror -Wstrict-prototypes -Wmissing-prototypes -g -fPIC $(ALERTING) $(LIBPRI_COUNTERS)
 INSTALL_PREFIX=$(DESTDIR)
 INSTALL_BASE=/usr
@@ -61,6 +63,10 @@ LDCONFIG =
 LDCONFIG_FLAGS = \# # Trick to comment out the period in the command below
 #INSTALL_PREFIX = /opt/asterisk  # Uncomment out to install in standard Solaris location for 3rd party code
 endif
+
+export PRIVERSION
+
+PRIVERSION:=$(shell GREP=$(GREP) AWK=$(AWK) build_tools/make_version .)
 
 #The problem with sparc is the best stuff is in newer versions of gcc (post 3.0) only.
 #This works for even old (2.96) versions of gcc and provides a small boost either way.
@@ -141,6 +147,11 @@ $(DYNAMIC_LIBRARY): $(DYNAMIC_OBJS)
 	$(LDCONFIG) $(LDCONFIG_FLAGS) .
 	ln -sf libpri.so.$(SONAME) libpri.so
 
+version.c:
+	@build_tools/make_version_c > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
 clean:
 	rm -f *.o *.so *.lo *.so.$(SONAME)
 	rm -f testprilib $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
@@ -151,3 +162,5 @@ depend: .depend
 
 .depend: 
 	CC="$(CC)" ./mkdep ${CFLAGS} `ls *.c`
+
+.PHONY: version.c

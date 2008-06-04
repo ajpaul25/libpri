@@ -700,4 +700,7 @@ int pri_timer2idx(char *timer);
 #define PRI_TIMER_TM20	28	/* maximum time avaiting XID response */
 #define PRI_TIMER_NM20	29	/* number of XID retransmits */
 
+/* Get PRI version */
+const char *pri_get_version(void);
+
 #endif
