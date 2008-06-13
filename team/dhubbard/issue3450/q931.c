@@ -2702,7 +2702,7 @@ int nfas_maintenance_service(struct pri *pri, int span, int channel, int changes
 	}
 	c->ds1no = span;
 	c->channelno = channel;
-	c->chanflags &= FLAG_EXCLUSIVE;
+	c->chanflags |= FLAG_EXCLUSIVE;
 	c->changestatus = changestatus;
 	return send_message(pri, c, (NFAS_MAINTENANCE_PROTOCOL_DISCRIMINATOR << 8) | NFAS_MAINTENANCE_SERVICE, maintenance_service_ies);
 }
