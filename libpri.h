@@ -337,13 +337,13 @@ typedef struct pri_event_answer {
 
 typedef struct pri_event_facname {
 	int e;
-	int callingpres;			/* Presentation of Calling CallerID */
-	int callingplan;			/* Dialing plan of Calling entity */
 	char callingname[256];
 	char callingnum[256];
 	int channel;
 	int cref;
 	q931_call *call;
+	int callingpres;			/* Presentation of Calling CallerID */
+	int callingplan;			/* Dialing plan of Calling entity */
 } pri_event_facname;
 
 #define PRI_CALLINGPLANANI
@@ -351,7 +351,6 @@ typedef struct pri_event_facname {
 typedef struct pri_event_ring {
 	int e;
 	int channel;				/* Channel requested */
-	int cref;					/* Call Reference Number */
 	int callingpres;			/* Presentation of Calling CallerID */
 	int callingplanani;			/* Dialing plan of Calling entity ANI */
 	int callingplan;			/* Dialing plan of Calling entity */
@@ -367,6 +366,7 @@ typedef struct pri_event_ring {
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
+	int cref;					/* Call Reference Number */
 	int ctype;					/* Call type (see PRI_TRANS_CAP_* */
 	int layer1;					/* User layer 1 */
 	int complete;				/* Have we seen "Complete" i.e. no more number? */
@@ -383,8 +383,8 @@ typedef struct pri_event_ring {
 typedef struct pri_event_hangup {
 	int e;
 	int channel;				/* Channel requested */
-	int cref;
 	int cause;
+	int cref;
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
@@ -623,6 +623,9 @@ int pri_progress(struct pri *pri, q931_call *c, int channel, int info);
 #define PRI_PROCEEDING_FULL
 /* Send call proceeding */
 int pri_proceeding(struct pri *pri, q931_call *c, int channel, int info);
+
+/* Enable inband progress when a RELEASE is received */
+void pri_set_inbandrelease(struct pri *pri, unsigned int enable);
 
 /* Enslave a PRI to another, so they share the same call list
    (and maybe some timers) */
