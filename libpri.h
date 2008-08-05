@@ -1,25 +1,30 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@linux-support.net>
+ * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001, Linux Support Services, Inc.
+ * Copyright (C) 2001, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
  
 #ifndef _LIBPRI_H
@@ -337,13 +342,13 @@ typedef struct pri_event_answer {
 
 typedef struct pri_event_facname {
 	int e;
-	int callingpres;			/* Presentation of Calling CallerID */
-	int callingplan;			/* Dialing plan of Calling entity */
 	char callingname[256];
 	char callingnum[256];
 	int channel;
 	int cref;
 	q931_call *call;
+	int callingpres;			/* Presentation of Calling CallerID */
+	int callingplan;			/* Dialing plan of Calling entity */
 } pri_event_facname;
 
 #define PRI_CALLINGPLANANI
@@ -351,7 +356,6 @@ typedef struct pri_event_facname {
 typedef struct pri_event_ring {
 	int e;
 	int channel;				/* Channel requested */
-	int cref;					/* Call Reference Number */
 	int callingpres;			/* Presentation of Calling CallerID */
 	int callingplanani;			/* Dialing plan of Calling entity ANI */
 	int callingplan;			/* Dialing plan of Calling entity */
@@ -367,6 +371,7 @@ typedef struct pri_event_ring {
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
+	int cref;					/* Call Reference Number */
 	int ctype;					/* Call type (see PRI_TRANS_CAP_* */
 	int layer1;					/* User layer 1 */
 	int complete;				/* Have we seen "Complete" i.e. no more number? */
@@ -383,8 +388,8 @@ typedef struct pri_event_ring {
 typedef struct pri_event_hangup {
 	int e;
 	int channel;				/* Channel requested */
-	int cref;
 	int cause;
+	int cref;
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
@@ -623,6 +628,9 @@ int pri_progress(struct pri *pri, q931_call *c, int channel, int info);
 #define PRI_PROCEEDING_FULL
 /* Send call proceeding */
 int pri_proceeding(struct pri *pri, q931_call *c, int channel, int info);
+
+/* Enable inband progress when a DISCONNECT is received */
+void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable);
 
 /* Enslave a PRI to another, so they share the same call list
    (and maybe some timers) */

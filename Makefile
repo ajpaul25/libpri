@@ -37,7 +37,7 @@ PROC?=$(shell uname -m)
 # SONAME version; should be changed on every ABI change
 # please don't change it needlessly; it's perfectly fine to have a SONAME
 # of 1.2 and a version of 1.4.x
-SONAME:=1.6
+SONAME:=1.4
 
 STATIC_LIBRARY=libpri.a
 DYNAMIC_LIBRARY:=libpri.so.$(SONAME)
@@ -76,7 +76,7 @@ PROC=ultrasparc
 CFLAGS += -mtune=$(PROC) -O3 -pipe -fomit-frame-pointer -mcpu=v8
 endif
 
-all: depend $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
+all: $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
 
 update:
 	@if [ -d .svn ]; then \
@@ -131,12 +131,13 @@ testprilib: testprilib.o
 pridump: pridump.o
 	$(CC) -o pridump pridump.o -L. -lpri $(CFLAGS)
 
-ifneq ($(wildcard .depend),)
-include .depend
-endif
+MAKE_DEPS= -MD -MT $@ -MF .$(subst /,_,$@).d -MP
 
-%.lo : %.c
-	$(CC) $(CFLAGS) -o $@ -c $<
+%.o: %.c
+	$(CC) $(CFLAGS) $(MAKE_DEPS) -c -o $@ $<
+
+%.lo: %.c
+	$(CC) $(CFLAGS) $(MAKE_DEPS) -c -o $@ $<
 
 $(STATIC_LIBRARY): $(STATIC_OBJS)
 	ar rcs $(STATIC_LIBRARY) $(STATIC_OBJS)
@@ -147,7 +148,7 @@ $(DYNAMIC_LIBRARY): $(DYNAMIC_OBJS)
 	$(LDCONFIG) $(LDCONFIG_FLAGS) .
 	ln -sf libpri.so.$(SONAME) libpri.so
 
-version.c:
+version.c: FORCE
 	@build_tools/make_version_c > $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
@@ -156,11 +157,12 @@ clean:
 	rm -f *.o *.so *.lo *.so.$(SONAME)
 	rm -f testprilib $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
 	rm -f pritest pridump
-	rm -f .depend
+	rm -f .*.d
 
-depend: .depend
+.PHONY:
 
-.depend: 
-	CC="$(CC)" ./mkdep ${CFLAGS} `ls *.c`
+FORCE:
 
-.PHONY: version.c
+ifneq ($(wildcard .*.d),)
+   include .*.d
+endif
