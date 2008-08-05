@@ -3,23 +3,28 @@
  *
  * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001-2005, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
 
 #include <stdio.h>
@@ -35,9 +40,6 @@ int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), vo
 {
 	int x;
 	struct timeval tv;
-	/* Scheduling runs on master channels only */
-	while (pri->master)
-		pri = pri->master;
 	for (x=1;x<MAX_SCHED;x++)
 		if (!pri->pri_sched[x].callback)
 			break;
@@ -116,8 +118,6 @@ pri_event *pri_schedule_run(struct pri *pri)
 
 void pri_schedule_del(struct pri *pri,int id)
 {
-	while (pri->master)
-		pri = pri->master;
 	if ((id >= MAX_SCHED) || (id < 0)) 
 		pri_error(pri, "Asked to delete sched id %d???\n", id);
 	pri->pri_sched[id].callback = NULL;

@@ -1,25 +1,30 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@linux-support.net>
+ * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001, Linux Support Services, Inc.
+ * Copyright (C) 2001, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
  
 #ifndef _PRI_Q931_H
@@ -243,10 +248,6 @@ typedef struct q931_ie {
 /* EuroISDN  */
 #define Q931_SENDING_COMPLETE		0xa1
 
-
-/* Q.SIG specific */
-#define QSIG_IE_TRANSIT_COUNT		0x31
-
 extern int q931_receive(struct pri *pri, q931_h *h, int len);
 
 extern int q931_alerting(struct pri *pri, q931_call *call, int channel, int info);
@@ -260,8 +261,6 @@ extern int q931_call_proceeding(struct pri *pri, q931_call *call, int channel, i
 extern int q931_setup_ack(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
 extern int q931_information(struct pri *pri, q931_call *call, char digit);
-
-extern int q931_keypad_facility(struct pri *pri, q931_call *call, char *digits);
 
 extern int q931_connect(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
@@ -285,7 +284,5 @@ extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);
 extern void q931_dump(struct pri *pri, q931_h *h, int len, int txrx);
 
 extern void __q931_destroycall(struct pri *pri, q931_call *c);
-
-extern void q931_dl_indication(struct pri *pri, int event);
-
+	
 #endif

@@ -1,25 +1,30 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@linux-support.net>
+ * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001, Linux Support Services, Inc.
+ * Copyright (C) 2001, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
  
 #ifndef _PRI_INTERNAL_H
@@ -27,9 +32,6 @@
 
 #include <stddef.h>
 #include <sys/time.h>
-
-#define DBGHEAD __FILE__ ":%d %s: "
-#define DBGINFO __LINE__,__PRETTY_FUNCTION__
 
 struct pri_sched {
 	struct timeval when;
@@ -61,7 +63,6 @@ struct pri {
 	int localtype;		/* Local network type (unknown, network, cpe) */
 	int remotetype;		/* Remote network type (unknown, network, cpe) */
 
-	int bri;
 	int sapi;
 	int tei;
 	int protodisc;
@@ -84,11 +85,7 @@ struct pri {
 
 	/* Various timers */
 	int sabme_timer;	/* SABME retransmit */
-	int sabme_count;	/* SABME retransmit counter for BRI */
 	int t203_timer;		/* Max idle time */
-	int t202_timer;
-	int n202_counter;
-	int ri;
 	int t200_timer;		/* T-200 retransmission timer */
 	/* All ISDN Timer values */
 	int timers[MAX_TIMERS];
@@ -138,8 +135,7 @@ struct pri_sr {
 	int redirectingpres;
 	int redirectingreason;
 	int justsignalling;
-	const char *useruserinfo;
-	int transferable;
+	char *useruserinfo;
 };
 
 /* Internal switch types */
@@ -216,7 +212,7 @@ struct q931_call {
 	char callernum[256];
 	char callername[256];
 
-	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
+	char digitbuf[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 
 	int ani2;               /* ANI II */
 	
@@ -249,12 +245,6 @@ struct q931_call {
 	long aoc_units;				/* Advice of Charge Units */
 
 	struct apdu_event *apdus;	/* APDU queue for call */
-
-	int transferable;
-	unsigned int rlt_call_id;	/* RLT call id */
-
-	/* Bridged call info */
-	q931_call *bridged_call;        /* Pointer to other leg of bridged call */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
@@ -270,9 +260,5 @@ extern void pri_message(struct pri *pri, char *fmt, ...);
 extern void pri_error(struct pri *pri, char *fmt, ...);
 
 void libpri_copy_string(char *dst, const char *src, size_t size);
-
-struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
-
-void __pri_free_tei(struct pri *p);
 
 #endif

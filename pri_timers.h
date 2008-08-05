@@ -1,62 +1,64 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@linux-support.net>
+ * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001, Linux Support Services, Inc.
+ * Copyright (C) 2001, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
  
 #ifndef _PRI_TIMERS_H
 #define _PRI_TIMERS_H
 
 /* -1 means we dont currently support the timer/counter */
-#define PRI_TIMERS_DEFAULT { \
-				3,		/* N200 */ \
-				-1,		/* N201 */ \
-				3,		/* N202 */ \
-				7,		/* K */ \
+#define PRI_TIMERS_DEFAULT {	3,	/* N200 */ \
+				-1,	/* N201 */ \
+				-1,	/* N202 */ \
+				7,	/* K */ \
 				1000,	/* T200 */ \
-				-1,		/* T201 */ \
-				10000,	/* T202 */ \
+				-1,	/* T201 */ \
+				-1,	/* T202 */ \
 				10000,	/* T203 */ \
-				-1,		/* T300 */ \
-				-1,		/* T301 */ \
-				-1,		/* T302 */ \
-				-1,		/* T303 */ \
-				-1,		/* T304 */ \
+				-1,	/* T300 */ \
+				-1,	/* T301 */ \
+				-1,	/* T302 */ \
+				-1,	/* T303 */ \
+				-1,	/* T304 */ \
 				30000,	/* T305 */ \
-				-1,		/* T306 */ \
-				-1,		/* T307 */ \
+				-1,	/* T306 */ \
+				-1,	/* T307 */ \
 				4000,	/* T308 */ \
-				-1,		/* T309 */ \
-				-1,		/* T310 */ \
+				-1,	/* T309 */ \
+				-1,	/* T310 */ \
 				4000,	/* T313 */ \
-				-1,		/* T314 */ \
-				-1,		/* T316 */ \
-				-1,		/* T317 */ \
-				-1,		/* T318 */ \
-				-1,		/* T319 */ \
-				-1,		/* T320 */ \
-				-1,		/* T321 */ \
-				-1,		/* T322 */ \
-				2500,	/* TM20 - Q.921 Appendix IV */ \
-				3,		/* NM20 - Q.921 Appendix IV */ \
+				-1,	/* T314 */ \
+				-1,	/* T316 */ \
+				-1,	/* T317 */ \
+				-1,	/* T318 */ \
+				-1,	/* T319 */ \
+				-1,	/* T320 */ \
+				-1,	/* T321 */ \
+				-1	/* T322 */ \
 			}
 
 /* XXX Only our default timers are setup now XXX */

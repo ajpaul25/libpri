@@ -1,25 +1,30 @@
 /*
  * libpri: An implementation of Primary Rate ISDN
  *
- * Written by Mark Spencer <markster@linux-support.net>
+ * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001, Linux Support Services, Inc.
+ * Copyright (C) 2001, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
  
 #ifndef _PRI_Q921_H
@@ -46,11 +51,10 @@
 #define Q921_FRAMETYPE_I	0x0
 #define Q921_FRAMETYPE_S	0x1
 
-#define Q921_TEI_GROUP					127
-#define Q921_TEI_PRI					0
+#define Q921_TEI_GROUP				127
 #define Q921_TEI_GR303_EOC_PATH			0
 #define Q921_TEI_GR303_EOC_OPS			4
-#define Q921_TEI_GR303_TMC_SWITCHING	0
+#define Q921_TEI_GR303_TMC_SWITCHING		0
 #define Q921_TEI_GR303_TMC_CALLPROC		0
 
 #define Q921_SAPI_CALL_CTRL		0
@@ -63,14 +67,6 @@
 #define Q921_SAPI_X25_LAYER3      	16
 #define Q921_SAPI_LAYER2_MANAGEMENT	63
 
-
-#define Q921_TEI_IDENTITY_REQUEST			1
-#define Q921_TEI_IDENTITY_ASSIGNED			2
-#define Q921_TEI_IDENTITY_DENIED			3
-#define Q921_TEI_IDENTITY_CHECK_REQUEST		4
-#define Q921_TEI_IDENTITY_CHECK_RESPONSE	5
-#define Q921_TEI_IDENTITY_REMOVE			6
-#define Q921_TEI_IDENTITY_VERIFY			7
 
 typedef struct q921_header {
 #if __BYTE_ORDER == __BIG_ENDIAN
@@ -163,12 +159,6 @@ typedef struct q921_frame {
 #define Q921_INC(j) (j) = (((j) + 1) % 128)
 
 typedef enum q921_state {
-	Q921_DOWN = 0,
-	Q921_TEI_UNASSIGNED,
-	Q921_TEI_AWAITING_ESTABLISH,
-	Q921_TEI_AWAITING_ASSIGN,
-	Q921_TEI_ASSIGNED,
-	Q921_NEGOTIATION,
 	Q921_LINK_CONNECTION_RELEASED,	/* Also known as TEI_ASSIGNED */
 	Q921_LINK_CONNECTION_ESTABLISHED,
 	Q921_AWAITING_ESTABLISH,

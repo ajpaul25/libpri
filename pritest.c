@@ -3,23 +3,28 @@
  *
  * Written by Mark Spencer <markster@digium.com>
  *
- * Copyright (C) 2001-2005, Digium
+ * Copyright (C) 2001-2005, Digium, Inc.
  * All Rights Reserved.
+ */
+
+/*
+ * See http://www.asterisk.org for more information about
+ * the Asterisk project. Please do not directly contact
+ * any of the maintainers of this project for assistance;
+ * the project provides a web site, mailing lists and IRC
+ * channels for your use.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License Version 2 as published by the
+ * Free Software Foundation. See the LICENSE file included with
+ * this program for more details.
  *
+ * In addition, when this program is distributed with Asterisk in
+ * any form that would qualify as a 'combined work' or as a
+ * 'derivative work' (but not mere aggregation), you can redistribute
+ * and/or modify the combination under the terms of the license
+ * provided with that copy of Asterisk, instead of the license
+ * terms granted here.
  */
 
 /*
@@ -40,7 +45,11 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <zaptel/zaptel.h>
+#if defined(__linux__)
+#include <linux/zaptel.h>
+#elif defined(__FreeBSD__)
+#include <zaptel.h>
+#endif
 #include <zap.h>
 #include "libpri.h"
 
@@ -294,7 +303,7 @@ static int run_pri(int dfd, int swtype, int node)
 	fd_set rfds, efds;
 	int res,x;
 
-	pri = pri_new_bri(dfd, 1, node, swtype);
+	pri = pri_new(dfd, node, swtype);
 	if (!pri) {
 		fprintf(stderr, "Unable to create PRI\n");
 		return -1;
