@@ -626,10 +626,10 @@ char *pri_dump_info_str(struct pri *pri);
 int pri_fd(struct pri *pri);
 
 #define PRI_PROGRESS
-/* Send call proceeding */
+/* Send progress */
 int pri_progress(struct pri *pri, q931_call *c, int channel, int info);
 
-/* Send call with cause IE */
+/* Send progress with cause IE */
 int pri_progress_with_cause(struct pri *pri, q931_call *c, int channel, int info, int cause);
 
 #define PRI_PROCEEDING_FULL
