@@ -309,7 +309,7 @@ int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
 int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
-int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest);
+int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const char* original, const char* reason);
 
 /* starts a QSIG Path Replacement */
 int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);

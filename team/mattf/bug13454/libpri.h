@@ -654,7 +654,7 @@ void pri_enslave(struct pri *master, struct pri *slave);
 /* Send notification */
 int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 
-int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest);
+int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
 
 /* Get/Set PRI Timers  */
 #define PRI_GETSET_TIMERS

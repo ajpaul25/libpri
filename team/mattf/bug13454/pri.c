@@ -515,12 +515,12 @@ int pri_keypad_facility(struct pri *pri, q931_call *call, char *digits)
 }
 
 
-int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest)
+int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason)
 {
 	if (!pri || !call)
 		return -1;
 
-	return qsig_cf_callrerouting(pri, call, dest);
+	return qsig_cf_callrerouting(pri, call, dest, original, reason);
 }
 
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)

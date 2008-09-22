@@ -1187,7 +1187,7 @@ int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 /* End EECT */
 
 /* QSIG CF CallRerouting */
-int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest)
+int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const char* original, const char* reason)
 {
 /*CallRerouting ::= OPERATION
     -- Sent from the Served User PINX to the Rerouting PINX
@@ -1252,7 +1252,19 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest)
 	ASN1_PUSH(compstk, compsp, comp);
 
 	/* reroutingReason DiversionReason */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1); /* cfu */
+
+	if (reason) {
+		if (!strcasecmp(reason, "cfu"))
+			ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1); /* cfu */
+		else if (!strcasecmp(reason, "cfb"))
+			 ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 2); /* cfb */
+		else if (!strcasecmp(reason, "cfnr"))
+			ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 3); /* cfnr */
+	}
+	else {
+		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0); /* unknown */
+	}
+
 
 	/* calledAddress Address */
 	/* explicit sequence tag for Address */
@@ -1303,7 +1315,7 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest)
 	ASN1_PUSH(compstk, compsp, comp);
 	/* type of public party number = unknown */
 	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);
-	j = asn1_string_encode(ASN1_NUMERICSTRING, &buffer[i], len - i, 20, c->callednum, strlen(c->callednum));
+	j = asn1_string_encode(ASN1_NUMERICSTRING, &buffer[i], len - i, 20, original?(char*)original:c->callednum, original?strlen(original):strlen(c->callednum));
 	if (j < 0)
 		return -1;
 
