@@ -1260,8 +1260,7 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const
 			 ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 2); /* cfb */
 		else if (!strcasecmp(reason, "cfnr"))
 			ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 3); /* cfnr */
-	}
-	else {
+	} else {
 		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0); /* unknown */
 	}
 
