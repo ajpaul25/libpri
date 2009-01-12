@@ -3679,6 +3679,7 @@ static int post_handle_maintenance_message(struct pri *pri, struct q931_mh *mh, 
 				return -1;
 			}
 		}
+		return Q931_RES_HAVEEVENT;
 	default:
 		pri_error(pri, "!! Don't know how to post-handle maintenance message type %s (%d)\n", maintenance_msg2str(mh->msg), mh->msg);
 	}
