@@ -38,14 +38,6 @@
 #define Q932_PROTOCOL_GAT			0x16
 #define Q932_PROTOCOL_EXTENSIONS	0x1F
 
-/* Argument values */
-#define ROSE_NAME_PRESENTATION_ALLOWED_SIMPLE	0x80
-#define ROSE_NAME_PRESENTATION_RESTRICTED_NULL	0x87
-#define ROSE_NAME_PRESENTATION_ALLOWED_EXTENDED    0xA1
-#define ROSE_NAME_PRESENTATION_RESTRICTED_SIMPLE   0xA2
-#define ROSE_NAME_PRESENTATION_RESTRICTED_EXTENDED 0xA3
-#define ROSE_NAME_NOT_AVAIL			0x84
-
 /* Component types */
 #define COMP_TYPE_INTERPRETATION			0x8B
 #define COMP_TYPE_NETWORK_PROTOCOL_PROFILE	0x92
@@ -65,10 +57,11 @@
 #define ROSE_CALL_TRANSFER_COMPLETE			12
 #define ROSE_CALL_TRANSFER_UPDATE			13
 #define ROSE_SUBADDRESS_TRANSFER 			14
+#define QSIG_CF_CALLREROUTING 				19
 /* Q.952 ROSE operations (Diverting) */
-#define ROSE_DIVERTING_LEG_INFORMATION1		18
-#define ROSE_DIVERTING_LEG_INFORMATION2		0x15
-#define ROSE_DIVERTING_LEG_INFORMATION3		19
+#define ROSE_DIVERTING_LEG_INFORMATION1			20
+#define ROSE_DIVERTING_LEG_INFORMATION2			21
+#define ROSE_DIVERTING_LEG_INFORMATION3			22
 /* Q.956 ROSE operations (Advice Of Charge) */
 #define ROSE_AOC_NO_CHARGING_INFO_AVAILABLE	26
 #define ROSE_AOC_CHARGING_REQUEST			30
@@ -81,8 +74,9 @@
 #define ROSE_AOC_IDENTIFICATION_OF_CHARGE	37
 /* Q.SIG operations */
 #define SS_CNID_CALLINGNAME					0
+#define SS_CNOP_CALLEDNAME			 		1
+#define SS_CNOP_CONNECTEDNAME					2
 #define SS_ANFPR_PATHREPLACEMENT                                4
-#define SS_DIVERTING_LEG_INFORMATION2		21
 #define SS_MWI_ACTIVATE						80
 #define SS_MWI_DEACTIVATE					81
 #define SS_MWI_INTERROGATE					82
@@ -128,6 +122,10 @@
 #define ASN1_TAG_7				0x07
 #define ASN1_TAG_8				0x08
 #define ASN1_TAG_9				0x09
+#define ASN1_TAG_10				0x0a
+#define ASN1_TAG_11				0x0b
+#define ASN1_TAG_12				0x0c
+#define ASN1_TAG_13				0x0d
 
 /* ASN.1 Identifier Octet - Primitive/Constructor Bit */
 #define ASN1_PC_MASK			0x20
@@ -168,6 +166,20 @@
 #define Q932_TON_NET_SPECIFIC			0x03
 #define Q932_TON_SUBSCRIBER				0x04
 #define Q932_TON_ABBREVIATED			0x06
+
+/* Q.SIG Character Sets. Listed in ISO/IEC 8859 */
+#define CHARACTER_SET_UNKNOWN			0x00
+#define CHARACTER_SET_ISO8859_1			0x01
+#define CHARACTER_SET_ISO8859_2			0x03
+#define CHARACTER_SET_ISO8859_3			0x04
+#define CHARACTER_SET_ISO8859_4			0x05
+#define CHARACTER_SET_ISO8859_5			0x06
+#define CHARACTER_SET_ISO8859_7			0x07
+
+/* Q.SIG Subscription Option. Listed in ECMA-174 */
+#define QSIG_NO_NOTIFICATION						0x00
+#define QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR	0x01
+#define QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR		0x02
 
 /* RLT related Operations */
 #define RLT_SERVICE_ID		0x3e
@@ -313,6 +325,18 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const
 
 /* starts a QSIG Path Replacement */
 int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
+
+int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call);
+
+int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call);
+
+int rose_diverting_leg_information1_encode(struct pri *pri, q931_call *call);
+
+int rose_diverting_leg_information3_encode(struct pri *pri, q931_call *call, int messagetype);
+
+int rose_connected_name_encode(struct pri *pri, q931_call *call, int messagetype);
+
+int rose_called_name_encode(struct pri *pri, q931_call *call, int messagetype);
 
 /* Use this function to queue a facility-IE born APDU onto a call
  * call is the call to use, messagetype is any one of the Q931 messages,

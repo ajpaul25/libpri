@@ -36,6 +36,12 @@
 #define DBGHEAD __FILE__ ":%d %s: "
 #define DBGINFO __LINE__,__PRETTY_FUNCTION__
 
+/* divertedstate */
+#define DIVERTEDSTATE_NONE				0
+#define DIVERTEDSTATE_DIVERTED			1
+#define DIVERTEDSTATE_DIVLEGINFO1SEND	2
+#define DIVERTEDSTATE_DIVLEGINFO3SEND	3
+
 struct pri_sched {
 	struct timeval when;
 	void (*callback)(void *data);
@@ -142,6 +148,7 @@ struct pri_sr {
 	int calledplan;
 	int userl1;
 	int numcomplete;
+	char *redirectingname;
 	char *redirectingnum;
 	int redirectingplan;
 	int redirectingpres;
@@ -231,6 +238,7 @@ struct q931_call {
 	
 	int calledplan;
 	int nonisdn;
+	char calledname[256];
 	char callednum[256];	/* Called Number */
 	int complete;			/* no more digits coming */
 	int newcall;			/* if the received message has a new call reference value */
@@ -241,6 +249,7 @@ struct q931_call {
 	int redirectingplan;
 	int redirectingpres;
 	int redirectingreason;	      
+	int redirectingcount;
 	char redirectingnum[256];	/* Number of redirecting party */
 	char redirectingname[256];	/* Name of redirecting party */
 
@@ -250,6 +259,39 @@ struct q931_call {
 	int origredirectingreason;	/* Original reason for redirect (in cases of multiple redirects) */
 	char origcalledname[256];	/* Original name of person being called */
 	char origcallednum[256];	/* Orignal number of person being called */
+
+	int connectedplan;
+	int connectedpres;
+	char connectednum[256];
+	char connectedname[256];
+
+	/* divertingLegInformation1 */
+	int divleginfo1activeflag;
+	int divertedtoplan;
+	int divertedtopres;
+	int divertedtoreason;
+	char divertedtonum[256];
+	int divertedtocount;
+
+	/* divertingLegInformation3 */
+	int divleginfo3activeflag;
+	char divertedtoname[256];
+	int divertedstate;
+
+	/* callTransferComplete */
+	int ctcompleteflag;
+	int ctcompletepres;
+	int ctcompleteplan;
+	char ctcompletenum[256];
+	char ctcompletename[256];
+	int ctcompletecallstatus;
+
+	/* callTransferActive */
+	int ctactiveflag;
+	int ctactivepres;
+	int ctactiveplan;
+	char ctactivenum[256];
+	char ctactivename[256];
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];

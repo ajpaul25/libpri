@@ -81,6 +81,7 @@
 #define PRI_EVENT_NOTIFY		16	/* Notification received */
 #define PRI_EVENT_PROGRESS		17	/* When we get CALL_PROCEEDING or PROGRESS */
 #define PRI_EVENT_KEYPAD_DIGIT		18	/* When we receive during ACTIVE state */
+#define PRI_EVENT_FACILITY		19	/* Facility received */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -135,15 +136,44 @@
 #define PRI_UNKNOWN					0x0
 
 /* Presentation */
-#define PRES_ALLOWED_USER_NUMBER_NOT_SCREENED	0x00
-#define PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN	0x01
-#define PRES_ALLOWED_USER_NUMBER_FAILED_SCREEN	0x02
-#define PRES_ALLOWED_NETWORK_NUMBER				0x03
-#define PRES_PROHIB_USER_NUMBER_NOT_SCREENED	0x20
-#define PRES_PROHIB_USER_NUMBER_PASSED_SCREEN	0x21
-#define PRES_PROHIB_USER_NUMBER_FAILED_SCREEN	0x22
-#define PRES_PROHIB_NETWORK_NUMBER				0x23
-#define PRES_NUMBER_NOT_AVAILABLE				0x43
+#define PRES_NUMBER_TYPE					0x03
+#define PRES_USER_NUMBER_UNSCREENED			0x00
+#define PRES_USER_NUMBER_PASSED_SCREEN		0x01
+#define PRES_USER_NUMBER_FAILED_SCREEN		0x02
+#define PRES_NETWORK_NUMBER					0x03
+
+#define PRES_RESTRICTION					0x60
+#define PRES_ALLOWED						0x00
+#define PRES_RESTRICTED						0x20
+#define PRES_UNAVAILABLE					0x40
+#define PRES_RESERVED						0x60
+
+#define PRES_ALLOWED_USER_NUMBER_NOT_SCREENED \
+	(PRES_ALLOWED | PRES_USER_NUMBER_UNSCREENED)
+
+#define PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN \
+	(PRES_ALLOWED | PRES_USER_NUMBER_PASSED_SCREEN)
+
+#define PRES_ALLOWED_USER_NUMBER_FAILED_SCREEN \
+	(PRES_ALLOWED | PRES_USER_NUMBER_FAILED_SCREEN)
+
+#define PRES_ALLOWED_NETWORK_NUMBER	\
+	(PRES_ALLOWED | PRES_NETWORK_NUMBER)
+
+#define PRES_PROHIB_USER_NUMBER_NOT_SCREENED \
+	(PRES_RESTRICTED | PRES_USER_NUMBER_UNSCREENED)
+
+#define PRES_PROHIB_USER_NUMBER_PASSED_SCREEN \
+	(PRES_RESTRICTED | PRES_USER_NUMBER_PASSED_SCREEN)
+
+#define PRES_PROHIB_USER_NUMBER_FAILED_SCREEN \
+	(PRES_RESTRICTED | PRES_USER_NUMBER_FAILED_SCREEN)
+
+#define PRES_PROHIB_NETWORK_NUMBER \
+	(PRES_RESTRICTED | PRES_NETWORK_NUMBER)
+
+#define PRES_NUMBER_NOT_AVAILABLE \
+	(PRES_UNAVAILABLE | PRES_NETWORK_NUMBER)
 
 /* Causes for disconnection */
 #define PRI_CAUSE_UNALLOCATED					1
@@ -305,6 +335,76 @@
 
 typedef struct q931_call q931_call;
 
+/* Connected line update source code */
+enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,   /* Update for unknown reason (May be interpreted to mean from answer) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,    /* Update from normal call answering */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_DIVERSION, /* Update from call diversion */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER   /* Update from call transfer */
+};
+
+/* Information needed to identify an endpoint in a call. */
+struct pri_party_id {
+	char number[256];			/* Subscriber phone number */
+	char name[256];				/* Subscriber name */
+	int number_type;			/* Q.931 encoded "type of number" and "numbering plan identification" */
+	int number_presentation;	/* Q.931 encoded "presentation indicator" and "screening indicator" */
+};
+
+/* Connected Line/Party information */
+struct pri_party_connected_line {
+	struct pri_party_id id;		/* Connected party ID */
+	int source;					/* Information about the source of an update .
+	 							 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
+	 							 * for Normal-Answer, Call-transfer, Call-diversion */
+};
+
+/* Redirecting Line information.
+ * RDNIS (Redirecting Directory Number Information Service)
+ * Where a call diversion or transfer was invoked. */
+struct pri_party_redirecting {
+	struct pri_party_id from;	/* Who is redirecting the call (Sent to the party the call is redirected toward) */
+	struct pri_party_id to;		/* Call is redirecting to a new party (Sent to the caller) */
+	int count;					/* Number of times the call was redirected */
+	int reason;					/* Redirection reasons */
+};
+
+/* Command derived from Facility */
+#define CMD_REDIRECTING         1
+#define CMD_CONNECTEDLINE       2
+
+
+typedef struct cmd_connectedline {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_party_connected_line connected;
+} cmd_connectedline;
+
+typedef struct cmd_redirecting {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_party_redirecting redirecting;
+} cmd_redirecting;
+
+typedef	struct subcommand {
+	int cmd;
+	union {
+		cmd_connectedline      connectedline;
+		cmd_redirecting        redirecting;
+	};
+} subcommand;
+
+/* Max number of subcommands per event message */
+#define MAX_SUBCOMMANDS	4
+
+typedef	struct subcommands {
+	int counter_subcmd;
+	subcommand subcmd[MAX_SUBCOMMANDS];
+} subcommands;
+
+
 typedef struct pri_event_generic {
 	/* Events with no additional information fall in this category */
 	int e;
@@ -328,6 +428,10 @@ typedef struct pri_event_ringing {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
+	char calledname[256];
+	char callednum[256];
+	int calledpres;
+	int calledplan;
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -338,6 +442,11 @@ typedef struct pri_event_answer {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
+	int connectedpres;
+	int connectedplan;
+	char connectednum[256];
+	char connectedname[256];
+	int source;
 } pri_event_answer;
 
 typedef struct pri_event_facname {
@@ -350,6 +459,14 @@ typedef struct pri_event_facname {
 	int callingpres;			/* Presentation of Calling CallerID */
 	int callingplan;			/* Dialing plan of Calling entity */
 } pri_event_facname;
+
+typedef struct pri_event_facility {
+	int e;
+	int channel;
+	int cref;
+	q931_call *call;
+	struct subcommands subcmds;
+} pri_event_facility;
 
 #define PRI_CALLINGPLANANI
 #define PRI_CALLINGPLANRDNIS
@@ -367,7 +484,9 @@ typedef struct pri_event_ring {
 	char callednum[256];		/* Called number */
 	char redirectingnum[256];	/* Redirecting number */
 	char redirectingname[256];	/* Redirecting name */
+	int redirectingpres;
 	int redirectingreason;		/* Reason for redirect */
+	int redirectingcount;
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
@@ -445,6 +564,7 @@ typedef union {
 	pri_event_setup_ack   setup_ack;	/* SETUP_ACKNOWLEDGE structure */
 	pri_event_notify notify;		/* Notification */
 	pri_event_keypad_digit digit;			/* Digits that come during a call */
+	pri_event_facility facility;
 } pri_event;
 
 struct pri;
@@ -531,6 +651,12 @@ int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisd
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
+/* Give connected line information to a call */
+int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party_connected_line *connected);
+
+/* Give redirection information to a call */
+int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_redirecting *redirecting);
+
 /* Set CRV reference for GR-303 calls */
 
 
@@ -583,7 +709,7 @@ int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int nonisd
 int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
-int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
+int pri_sr_set_redirecting(struct pri_sr *sr, char *name, char *num, int plan, int pres, int reason);
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
 void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);

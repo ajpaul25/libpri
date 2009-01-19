@@ -998,6 +998,41 @@ static FUNC_DUMP(dump_redirecting_number)
 	pri_message(pri, "  '%s' ]\n", cnum);
 }
 
+static FUNC_RECV(receive_connected_number)
+{
+	int i = 0;
+
+	/* To follow Q.931 (4.5.1), we must search for start of octet 4 by
+	   walking through all bytes until one with ext bit (8) set to 1 */
+	do {
+		switch(i) {
+		case 0:
+			call->connectedplan = ie->data[i] & 0x7f;
+			break;
+		case 1:
+			call->connectedpres = ie->data[i] & 0x7f;
+			break;
+		}
+	}
+	while(!(ie->data[i++] & 0x80));
+	q931_get_number((unsigned char *) call->connectednum, sizeof(call->connectednum), ie->data + i, ie->len - i);
+
+	return 0;
+}
+
+static FUNC_SEND(transmit_connected_number)
+{
+	int datalen = strlen(call->connectednum);
+	if (datalen > 0) {
+		ie->data[0] = call->connectedplan;
+		ie->data[1] = 0x80 | call->connectedpres;
+		memcpy(ie->data + 2, call->connectednum, strlen(call->connectednum));
+		return datalen + 4;
+	}
+
+	return 0;
+}
+
 static FUNC_DUMP(dump_connected_number)
 {
 	unsigned char cnum[256];
@@ -2183,7 +2218,7 @@ static struct ie ies[] = {
 	{ 1, Q931_IE_CALL_STATUS, "Call Status" },
 	{ 1, Q931_IE_CHANGE_STATUS, "Change Status" },
 	{ 1, Q931_IE_CONNECTED_ADDR, "Connected Number", dump_connected_number },
-	{ 1, Q931_IE_CONNECTED_NUM, "Connected Number", dump_connected_number },
+	{ 1, Q931_IE_CONNECTED_NUM, "Connected Number", dump_connected_number, receive_connected_number, transmit_connected_number },
 	{ 1, Q931_IE_ORIGINAL_CALLED_NUMBER, "Original Called Number", dump_redirecting_number, receive_redirecting_number, transmit_redirecting_number },
 	{ 1, Q931_IE_USER_USER_FACILITY, "User-User Facility" },
 	{ 1, Q931_IE_UPDATE, "Update" },
@@ -2820,9 +2855,9 @@ int q931_call_proceeding(struct pri *pri, q931_call *c, int channel, int info)
 	return send_message(pri, c, Q931_CALL_PROCEEDING, call_proceeding_ies);
 }
 #ifndef ALERTING_NO_PROGRESS
-static int alerting_ies[] = { Q931_PROGRESS_INDICATOR, Q931_IE_USER_USER,  -1 };
+static int alerting_ies[] = { Q931_PROGRESS_INDICATOR, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
 #else
-static int alerting_ies[] = { -1 };
+static int alerting_ies[] = { Q931_IE_FACILITY, -1 };
 #endif
 
 int q931_alerting(struct pri *pri, q931_call *c, int channel, int info)
@@ -2841,7 +2876,7 @@ int q931_alerting(struct pri *pri, q931_call *c, int channel, int info)
 	return send_message(pri, c, Q931_ALERTING, alerting_ies);
 }
 
-static int connect_ies[] = {  Q931_CHANNEL_IDENT, Q931_PROGRESS_INDICATOR, -1 };
+static int connect_ies[] = {  Q931_CHANNEL_IDENT, Q931_PROGRESS_INDICATOR, Q931_IE_CONNECTED_NUM, Q931_IE_FACILITY, -1 };
  
 int q931_setup_ack(struct pri *pri, q931_call *c, int channel, int nonisdn)
 {
@@ -3081,6 +3116,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 		c->callerpres = PRES_NUMBER_NOT_AVAILABLE;
 	}
 	if (req->redirectingnum) {
+		libpri_copy_string(c->redirectingname, req->redirectingname, sizeof(c->redirectingname));
 		libpri_copy_string(c->redirectingnum, req->redirectingnum, sizeof(c->redirectingnum));
 		c->redirectingplan = req->redirectingplan;
 		if ((pri->switchtype == PRI_SWITCH_DMS100) ||
@@ -3092,6 +3128,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 		c->redirectingpres = req->redirectingpres;
 		c->redirectingreason = req->redirectingreason;
 	} else {
+		c->redirectingname[0] = '\0';
 		c->redirectingnum[0] = '\0';
 		c->redirectingplan = PRI_UNKNOWN;
 		c->redirectingpres = PRES_NUMBER_NOT_AVAILABLE;
@@ -3260,6 +3297,22 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 	return 0;
 }
 
+static void clr_subcommands(subcommands *sub)
+{
+	sub->counter_subcmd = 0;
+}
+
+static subcommand *get_ptr_subcommand(subcommands *sub)
+{
+	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
+		int count = sub->counter_subcmd;
+		sub->counter_subcmd++;
+		return &sub->subcmd[count];
+	}
+
+	return NULL;
+}
+
 int q931_receive(struct pri *pri, q931_h *h, int len)
 {
 	q931_mh *mh;
@@ -3339,6 +3392,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		c->redirectingplan = -1;
 		c->redirectingpres = -1;
 		c->redirectingreason = -1;
+		c->redirectingcount = 0;
 		c->origcalledplan = -1;
 		c->origcalledpres = -1;
 		c->origredirectingreason = -1;
@@ -3346,6 +3400,29 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		c->origcallednum[0] = '\0';
 		c->redirectingname[0] = '\0';
 		c->origcalledname[0] = '\0';
+		c->connectedplan = -1;
+		c->connectedpres = -1;
+		c->connectednum[0] = '\0';
+		c->connectedname[0] = '\0';
+		c->divleginfo1activeflag = 0;
+		c->divertedtocount = 0;
+		c->divertedtoplan = -1;
+		c->divertedtopres = -1;
+		c->divertedtoreason = -1;
+		c->divertedtonum[0] = '\0';
+		c->divleginfo3activeflag = 0;
+		c->divertedtoname[0] = '\0';
+		c->divertedstate = DIVERTEDSTATE_NONE;
+		c->ctcompleteflag = 0;
+		c->ctcompleteplan = -1;
+		c->ctcompletepres = -1;
+		c->ctcompletenum[0] = '\0';
+		c->ctcompletename[0] = '\0';
+		c->ctactiveflag = 0;
+		c->ctactiveplan = -1;
+		c->ctactivepres = -1;
+		c->ctactivenum[0] = '\0';
+		c->ctactivename[0] = '\0';
 		c->useruserprotocoldisc = -1; 
 		c->useruserinfo[0] = '\0';
 		c->complete = 0;
@@ -3570,7 +3647,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		libpri_copy_string(pri->ev.ring.redirectingname, c->redirectingname, sizeof(pri->ev.ring.redirectingname));
 		libpri_copy_string(pri->ev.ring.useruserinfo, c->useruserinfo, sizeof(pri->ev.ring.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		pri->ev.ring.redirectingpres = c->redirectingpres;
 		pri->ev.ring.redirectingreason = c->redirectingreason;
+		pri->ev.ring.redirectingcount = c->redirectingcount;
 		pri->ev.ring.origredirectingreason = c->origredirectingreason;
 		pri->ev.ring.flexible = ! (c->chanflags & FLAG_EXCLUSIVE);
 		pri->ev.ring.cref = c->cr;
@@ -3578,7 +3657,6 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.ring.layer1 = c->userl1;
 		pri->ev.ring.complete = c->complete; 
 		pri->ev.ring.ctype = c->transcapability;
-		pri->ev.ring.redirectingreason = c->redirectingreason;
 		pri->ev.ring.progress = c->progress;
 		pri->ev.ring.progressmask = c->progressmask;
 		return Q931_RES_HAVEEVENT;
@@ -3595,6 +3673,19 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.ringing.call = c;
 		pri->ev.ringing.progress = c->progress;
 		pri->ev.ringing.progressmask = c->progressmask;
+
+		if (c->divleginfo3activeflag) {
+			c->divleginfo3activeflag = 0;
+			libpri_copy_string(pri->ev.ringing.calledname, c->divertedtoname, sizeof(pri->ev.ringing.calledname));
+			libpri_copy_string(pri->ev.ringing.callednum, (c->divertedtonum[0]) ? c->divertedtonum : c->callednum, sizeof(pri->ev.ringing.callednum));
+			pri->ev.ringing.calledpres = c->divertedtopres;
+			pri->ev.ringing.calledplan = c->divertedtoplan;
+		} else {
+			libpri_copy_string(pri->ev.ringing.calledname, c->calledname, sizeof(pri->ev.ringing.calledname));
+			libpri_copy_string(pri->ev.ringing.callednum, c->callednum, sizeof(pri->ev.ringing.callednum));
+			pri->ev.ringing.calledpres = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
+			pri->ev.ringing.calledplan = c->calledplan;
+		}
 		libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ringing.useruserinfo));
 		c->useruserinfo[0] = '\0';
 
@@ -3625,6 +3716,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.answer.call = c;
 		pri->ev.answer.progress = c->progress;
 		pri->ev.answer.progressmask = c->progressmask;
+		libpri_copy_string(pri->ev.answer.connectednum, c->connectednum, sizeof(pri->ev.answer.connectednum));
+		libpri_copy_string(pri->ev.answer.connectedname, c->connectedname, sizeof(pri->ev.answer.connectedname));
+		pri->ev.answer.connectedpres = c->connectedpres;
+		pri->ev.answer.connectedplan = c->connectedplan;
+		pri->ev.answer.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER;
 		libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.answer.useruserinfo));
 		c->useruserinfo[0] = '\0';
 		q931_connect_acknowledge(pri, c);
@@ -3634,22 +3730,121 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		} else
 			return Q931_RES_HAVEEVENT;
 	case Q931_FACILITY:
-		if (c->newcall) {
-			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
-			break;
+		{
+			int haveevent = 0;
+			clr_subcommands(&pri->ev.facility.subcmds);
+
+			if (c->newcall) {
+				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
+				break;
+			}
+			if (c->ctcompleteflag) {
+				c->ctcompleteflag = 0;
+
+				if (c->ctcompletecallstatus == 0) {
+					/* answered(0) */
+					subcommand *subcmd;
+
+					pri_message(pri, "Got CT-Complete, callStatus = answered(0)\n");
+					pri->ev.e = PRI_EVENT_FACILITY;
+					pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+					pri->ev.facility.call = c;
+
+					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+					if (subcmd) {
+						subcmd->cmd = CMD_CONNECTEDLINE;
+						cmd_connectedline *cmdcl = &subcmd->connectedline;
+						libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
+						libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
+						cmdcl->connected.id.number_type = c->ctcompleteplan;
+						cmdcl->connected.id.number_presentation = c->ctcompletepres;
+						cmdcl->connected.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
+						haveevent = 1;
+						pri_message(pri, "CT-Complete, sending facility/CMD_CONNECTEDLINE (%s/%s)\n", cmdcl->connected.id.name, cmdcl->connected.id.number);
+					}
+				} else if (c->ctcompletecallstatus == 1) {
+					/* alerting(1) */
+					subcommand *subcmd;
+
+					pri_message(pri, "Got CT-Complete, callStatus = alerting(1)\n");
+					pri->ev.e = PRI_EVENT_FACILITY;
+					pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+					pri->ev.facility.call = c;
+
+					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+					if (subcmd) {
+						subcmd->cmd = CMD_REDIRECTING;
+						cmd_redirecting *cmdr = &subcmd->redirecting;
+						libpri_copy_string(cmdr->redirecting.from.number, c->connectednum, sizeof(cmdr->redirecting.from.number));
+						libpri_copy_string(cmdr->redirecting.from.name, c->connectedname, sizeof(cmdr->redirecting.from.name));
+						cmdr->redirecting.from.number_type = c->connectedplan;
+						cmdr->redirecting.from.number_presentation = c->connectedpres;
+						libpri_copy_string(cmdr->redirecting.to.number, c->ctcompletenum, sizeof(cmdr->redirecting.to.number));
+						libpri_copy_string(cmdr->redirecting.to.name, c->ctcompletename, sizeof(cmdr->redirecting.to.name));
+						cmdr->redirecting.to.number_type = c->ctcompleteplan;
+						cmdr->redirecting.to.number_presentation = c->ctcompletepres;
+						cmdr->redirecting.count = 0;
+						cmdr->redirecting.reason = PRI_REDIR_UNKNOWN;
+						haveevent = 1;
+						pri_message(pri, "CT-Complete, sending facility/CMD_REDIRECTING (%s/%s)\n", cmdr->redirecting.to.name, cmdr->redirecting.to.number);
+					}
+				} else {
+					pri_message(pri, "illegal value for callStatus=%d\n", c->ctcompletecallstatus);
+				}
+			} else if (c->ctactiveflag) {
+				subcommand *subcmd;
+				c->ctactiveflag = 0;
+
+				pri_message(pri, "Got CT-Active\n");
+				pri->ev.e = PRI_EVENT_FACILITY;
+				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+				pri->ev.facility.call = c;
+
+				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+				if (subcmd) {
+					subcmd->cmd = CMD_CONNECTEDLINE;
+					cmd_connectedline *cmdcl = &subcmd->connectedline;
+					libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
+					libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
+					cmdcl->connected.id.number_type = c->ctcompleteplan;
+					cmdcl->connected.id.number_presentation = c->ctcompletepres;
+					cmdcl->connected.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
+					haveevent = 1;
+					pri_message(pri, "CT-Active, sending facility CMD_CONNECTEDLINE (%s/%s)\n", cmdcl->connected.id.name, cmdcl->connected.id.number);
+				}
+			}
+			else if (c->divleginfo1activeflag) {
+				subcommand *subcmd;
+				c->divleginfo1activeflag = 0;
+
+				pri_message(pri, "Got DivertingLegInformation1\n");
+				pri->ev.e = PRI_EVENT_FACILITY;
+				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+				pri->ev.facility.call = c;
+
+				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+				if (subcmd) {
+					subcmd->cmd = CMD_REDIRECTING;
+					cmd_redirecting *cmdr = &subcmd->redirecting;
+					libpri_copy_string(cmdr->redirecting.from.number, c->callednum, sizeof(cmdr->redirecting.from.number));
+					cmdr->redirecting.from.name[0] = '\0';
+					cmdr->redirecting.from.number_type = c->calledplan;
+					cmdr->redirecting.from.number_presentation = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
+					libpri_copy_string(cmdr->redirecting.to.number, c->divertedtonum, sizeof(cmdr->redirecting.to.number));
+					cmdr->redirecting.to.name[0] = '\0';
+					cmdr->redirecting.to.number_type = c->divertedtoplan;
+					cmdr->redirecting.to.number_presentation = c->divertedtopres;
+					cmdr->redirecting.count = c->divertedtocount;
+					cmdr->redirecting.reason = c->divertedtoreason;
+					haveevent = 1;
+					pri_message(pri, "DivertingLegInformation1, sending facility/CMD_REDIRECTING (%s/%s)\n", cmdr->redirecting.to.name, cmdr->redirecting.to.number);
+				}
+			}
+
+			if (haveevent)
+				return Q931_RES_HAVEEVENT;
 		}
-		pri->ev.e = PRI_EVENT_FACNAME;
-		libpri_copy_string(pri->ev.facname.callingname, c->callername, sizeof(pri->ev.facname.callingname));
-		libpri_copy_string(pri->ev.facname.callingnum, c->callernum, sizeof(pri->ev.facname.callingnum));
-		pri->ev.facname.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-		pri->ev.facname.callingpres = c->callerpres;
-		pri->ev.facname.callingplan = c->callerplan;
-		pri->ev.facname.cref = c->cr;
-		pri->ev.facname.call = c;
-#if 0
-		pri_message(pri, "Sending facility event (%s/%s)\n", pri->ev.facname.callingname, pri->ev.facname.callingnum);
-#endif
-		return Q931_RES_HAVEEVENT;
+		break;
 	case Q931_PROGRESS:
 		if (missingmand) {
 			q931_status(pri, c, PRI_CAUSE_MANDATORY_IE_MISSING);
