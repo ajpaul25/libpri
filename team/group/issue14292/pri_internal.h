@@ -53,7 +53,7 @@ enum q931_state;
 enum q931_mode;
 
 /* No more than 128 scheduled events */
-#define MAX_SCHED 128
+#define MAX_SCHED 128+256 /* 256 ccT2 timer events*/
 
 #define MAX_TIMERS 32
 
@@ -154,8 +154,11 @@ struct pri_sr {
 	int redirectingpres;
 	int redirectingreason;
 	int justsignalling;
+	int nochannelsignalling;
+	int ccbsnr;
 	const char *useruserinfo;
 	int transferable;
+	int ccringout;
 };
 
 /* Internal switch types */
@@ -209,6 +212,7 @@ struct q931_call {
 	
 	int sentchannel;
 	int justsignalling;		/* for a signalling-only connection */
+	int nochannelsignalling;
 
 	int progcode;			/* Progress coding */
 	int progloc;			/* Progress Location */	
@@ -231,6 +235,12 @@ struct q931_call {
 	char callerani[256];	/* Caller */
 	char callernum[256];
 	char callername[256];
+
+	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
+	int ccrequestresult;
+	int cctimer2;			/* Timer for QSIG-timer2 */
+	/* QSIG cc infos (receive) */
+	struct subcommands subcmds;
 
 	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 

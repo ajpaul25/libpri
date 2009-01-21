@@ -81,6 +81,20 @@
 #define SS_MWI_DEACTIVATE					81
 #define SS_MWI_INTERROGATE					82
 
+/* ECMA 186 */
+#define QSIG_CC_CCNRREQUEST		PRI_CC_CCNRREQUEST /* 27 */
+#define QSIG_CC_CANCEL				PRI_CC_CANCEL      /* 28 */
+#define QSIG_CC_EXECPOSIBLE		29
+#define QSIG_CC_PATHRESERVE		30
+#define QSIG_CC_RINGOUT				31
+#define QSIG_CC_SUSPEND				32
+#define QSIG_CC_RESUME				33
+#define QSIG_CC_CCBSREQUEST		PRI_CC_CCBSREQUEST /* 40 */
+
+#define QSIG_CC_UNSPECIFIED				1008
+#define QSIG_CC_REMOTE_USER_BUSY_AGAIN	1012
+#define QSIG_CC_FAILURE_TO_MATCH			1013
+
 /* ROSE definitions and data structures */
 #define INVOKE_IDENTIFIER			0x02
 #define INVOKE_LINKED_IDENTIFIER	0x80
@@ -126,6 +140,8 @@
 #define ASN1_TAG_11				0x0b
 #define ASN1_TAG_12				0x0c
 #define ASN1_TAG_13				0x0d
+#define ASN1_TAG_14				0x0e
+#define ASN1_TAG_15				0x0f
 
 /* ASN.1 Identifier Octet - Primitive/Constructor Bit */
 #define ASN1_PC_MASK			0x20
@@ -348,6 +364,8 @@ int pri_call_apdu_queue_cleanup(q931_call *call);
 
 /* Adds the "standard" APDUs to a call */
 int pri_call_add_standard_apdus(struct pri *pri, q931_call *call);
+
+int add_qsigCcInv_facility_ie (struct pri *pri, q931_call *c, int messagetype);
 
 int asn1_dump(struct pri *pri, void *comp, int len);
 

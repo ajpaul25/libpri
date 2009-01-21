@@ -166,6 +166,8 @@ int pri_timer2idx(char *timer)
 		return PRI_TIMER_T321;
 	else if (!strcasecmp(timer, "T322"))
 		return PRI_TIMER_T322;
+	else if (!strcasecmp(timer, "CCT2"))
+		return PRI_TIMER_CCBST2;
 	else
 		return -1;
 }
@@ -752,6 +754,17 @@ q931_call *pri_new_call(struct pri *pri)
 	return q931_new_call(pri);
 }
 
+q931_call *pri_new_nochannel_call(struct pri *pri, int *cr)
+{
+	q931_call *call;
+	if (!pri)
+		return NULL;
+	call = q931_new_call(pri);
+	if (cr)
+		*cr = call->cr;
+	return call;
+}
+
 void pri_dump_event(struct pri *pri, pri_event *e)
 {
 	if (!pri || !e)
@@ -791,6 +804,15 @@ int pri_sr_set_connection_call_independent(struct pri_sr *req)
 		return -1;
 
 	req->justsignalling = 1; /* have to set justsignalling for all those pesky IEs we need to setup */
+	return 0;
+}
+
+int pri_sr_set_no_channel_call(struct pri_sr *req)
+{
+	if (!req)
+		return -1;
+
+	req->nochannelsignalling = 1;
 	return 0;
 }
 
@@ -944,6 +966,10 @@ char *pri_dump_info_str(struct pri *pri)
 	struct q921_frame *f;
 	int q921outstanding = 0;
 #endif
+	q931_call *cur, *prev;
+	struct pri *master;
+	int counter = 0;
+
 	if (!pri)
 		return NULL;
 
@@ -977,8 +1003,55 @@ char *pri_dump_info_str(struct pri *pri)
 	len += sprintf(buf + len, "T309 Timer: %d\n", pri->timers[PRI_TIMER_T309]);
 	len += sprintf(buf + len, "T313 Timer: %d\n", pri->timers[PRI_TIMER_T313]);
 	len += sprintf(buf + len, "N200 Counter: %d\n", pri->timers[PRI_TIMER_N200]);
+	len += sprintf(buf + len, "CCT2 Timer: %d\n", pri->timers[PRI_TIMER_CCBST2]);
+	/* Find the master  - He has the call pool */
+	if (pri->master)
+		master = pri->master;
+	else
+		master = pri;
+
+	cur = *master->callpool;
+	prev = NULL;
+	while(cur) {
+		if (cur->cctimer2) {
+			struct timeval tv;
+			int time_ms_to_go, time_to_go_min, time_to_go_sec;
+			gettimeofday(&tv, NULL);
+			time_ms_to_go = (pri->pri_sched[cur->cctimer2].when.tv_sec - tv.tv_sec)*1000;
+			time_to_go_min = time_ms_to_go/1000/60;
+			time_to_go_sec = (time_ms_to_go-(time_to_go_min*60*1000))/1000;
+
+			len += sprintf(buf + len, "%d. Active Q.931 Call: %x cr=%d: (%dmin %dsec)\n",
+								++counter, (int)cur, cur->cr,
+								time_to_go_min, time_to_go_sec);
+		} else {
+			len += sprintf(buf + len, "%d. Active Q.931 Call: %x cr=%d\n", ++counter, (int)cur, cur->cr);
+		}
+		cur = cur->next;
+	}
 
 	return strdup(buf);
+}
+
+q931_call *pri_find_call(struct pri *pri, int cr)
+{
+	q931_call *cur;
+	struct pri *master;
+
+	/* Find the master  - He has the call pool */
+	if (pri->master)
+		master = pri->master;
+	else
+		master = pri;
+	
+	cur = *master->callpool;
+	while(cur) {
+		if (cur->cr == cr)
+			return cur;
+		cur = cur->next;
+	}
+
+	return NULL;
 }
 
 int pri_get_crv(struct pri *pri, q931_call *call, int *callmode)
@@ -1051,4 +1124,21 @@ int pri_sr_set_redirecting(struct pri_sr *sr, char *name, char *num, int plan, i
 	sr->redirectingpres = pres;
 	sr->redirectingreason = reason;
 	return 0;
+}
+
+int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout)
+{
+	sr->ccringout = ccringout;
+	return 0;
+}
+
+int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr)
+{
+	sr->ccbsnr = ccbsnr;
+	return 0;
+}
+
+void pri_call_set_cc_operation(q931_call *call, int cc_operation)
+{
+	call->ccoperation = cc_operation;
 }

@@ -62,6 +62,7 @@
 				-1,		/* T322 */ \
 				2500,	/* TM20 - Q.921 Appendix IV */ \
 				3,		/* NM20 - Q.921 Appendix IV */ \
+				45*60*1000	/* CC-Timer2 45 min */\
 			}
 
 /* XXX Only our default timers are setup now XXX */
