@@ -362,6 +362,11 @@ static FUNC_SEND(transmit_channel_id)
 	/* We are ready to transmit single IE only */
 	if (order > 1)
 		return 0;
+
+	if (call->nochannelsignalling) {
+		ie->data[pos++] = 0xac;
+		return pos + 2;
+	}
 	
 	if (call->justsignalling) {
 		ie->data[pos++] = 0xac; /* Read the standards docs to figure this out
@@ -804,7 +809,13 @@ static FUNC_SEND(transmit_bearer_capability)
 		ie->data[1] = 0x90;
 		return 4;
 	}
-	
+
+	if (call->nochannelsignalling) {
+		ie->data[0] = 0xa8;
+		ie->data[1] = 0x80;
+		return 4;
+	}
+
 	if (call->justsignalling) {
 		ie->data[0] = 0xa8;
 		ie->data[1] = 0x80;
@@ -2958,6 +2969,18 @@ static void pri_disconnect_timeout(void *data)
 	q931_release(pri, c, PRI_CAUSE_NORMAL_CLEARING);
 }
 
+static void pri_cctimer2_timeout(void *data)
+{
+	int cause = 16;
+	struct q931_call *c = data;
+	struct pri *pri = c->pri;
+	if (pri->debug & PRI_DEBUG_Q931_STATE)
+		pri_message(pri, "Timed out no-channel call\n");
+	c->ccoperation = QSIG_CC_CANCEL;
+	/* normal clear cause */
+	q931_hangup(pri, c, cause);
+}
+
 int q931_connect(struct pri *pri, q931_call *c, int channel, int nonisdn)
 {
 	if (channel) { 
@@ -2989,7 +3012,7 @@ int q931_connect(struct pri *pri, q931_call *c, int channel, int nonisdn)
 	return send_message(pri, c, Q931_CONNECT, connect_ies);
 }
 
-static int release_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
+static int release_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
 
 int q931_release(struct pri *pri, q931_call *c, int cause)
 {
@@ -3037,7 +3060,7 @@ int q931_restart(struct pri *pri, int channel)
 	return send_message(pri, c, Q931_RESTART, restart_ies);
 }
 
-static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
+static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
 
 int q931_disconnect(struct pri *pri, q931_call *c, int cause)
 {
@@ -3065,6 +3088,8 @@ static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1
 
 static int cis_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLED_PARTY_NUMBER, -1 };
 
+static int nochannel_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_SENDING_COMPLETE, -1 };
+
 int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 {
 	int res;
@@ -3090,6 +3115,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 	c->nonisdn = req->nonisdn;
 	c->newcall = 0;
 	c->justsignalling = req->justsignalling;		
+	c->nochannelsignalling = req->nochannelsignalling;		
 	c->complete = req->numcomplete; 
 	if (req->exclusive) 
 		c->chanflags = FLAG_EXCLUSIVE;
@@ -3150,12 +3176,19 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 	else
 		c->progressmask = 0;
 
+	if (req->ccringout)
+		c->ccoperation = QSIG_CC_RINGOUT;
+	if (req->ccbsnr)
+		c->ccoperation = req->ccbsnr;
+
 	pri_call_add_standard_apdus(pri, c);
 
 	if (pri->subchannel && !pri->bri)
 		res = send_message(pri, c, Q931_SETUP, gr303_setup_ies);
 	else if (c->justsignalling)
 		res = send_message(pri, c, Q931_SETUP, cis_setup_ies);
+	else if (c->nochannelsignalling)
+		res = send_message(pri, c, Q931_SETUP, nochannel_setup_ies);
 	else
 		res = send_message(pri, c, Q931_SETUP, setup_ies);
 	if (!res) {
@@ -3169,7 +3202,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 	
 }
 
-static int release_complete_ies[] = { Q931_IE_USER_USER, -1 };
+static int release_complete_ies[] = { Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
 
 static int q931_release_complete(struct pri *pri, q931_call *c, int cause)
 {
@@ -3224,6 +3257,18 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 		/* We'll send RELEASE with these causes */
 		disconnect = 0;
 	}
+	if (c->nochannelsignalling) {
+		if (c->ccoperation == QSIG_CC_CANCEL) {
+			add_qsigCcInv_facility_ie(pri, c, Q931_RELEASE);
+		}
+		if (c->cctimer2) {
+			pri_schedule_del(pri, c->cctimer2);
+			c->cctimer2 = 0;
+			pri_message(pri, "NEW_HANGUP DEBUG: stop CC-Timer2\n");
+		}
+		disconnect = 0;
+	}
+
 	/* All other causes we send with DISCONNECT */
 	switch(c->ourcallstate) {
 	case Q931_CALL_STATE_NULL:
@@ -3264,6 +3309,10 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 		break;
 	case Q931_CALL_STATE_ACTIVE:
 		/* received CONNECT */
+		if (c->nochannelsignalling) {
+			q931_release(pri,c,cause);
+			break;
+		}
 		q931_disconnect(pri,c,cause);
 		break;
 	case Q931_CALL_STATE_DISCONNECT_REQUEST:
@@ -3312,6 +3361,116 @@ static subcommand *get_ptr_subcommand(subcommands *sub)
 
 	return NULL;
 }
+
+static subcommand *get_ptr_q931_subcommand_by_index(subcommands *sub, int index)
+{
+	if (index < MAX_SUBCOMMANDS) {
+		sub->counter_subcmd--;
+		return &sub->subcmd[index];
+	}
+
+	return NULL;
+}
+
+static int q931_facilities2eventfacilities(struct pri *pri, q931_call *c, subcommands *subcmds)
+{
+	int facilitypos;
+	int facility_number;
+	struct subcommand *c_subcmd;
+	struct subcommand *e_subcmd;
+
+	if (c->subcmds.counter_subcmd) {
+		facility_number = c->subcmds.counter_subcmd;
+
+		for (facilitypos = 0; facilitypos < facility_number; facilitypos++) {
+			c->subcmds.counter_subcmd--;
+			c_subcmd = get_ptr_q931_subcommand_by_index(&c->subcmds, facilitypos);
+			e_subcmd = get_ptr_subcommand(subcmds);
+			if (c_subcmd && e_subcmd) {
+				switch (c_subcmd->cmd) {
+				case CMD_CC_CCBSREQUEST_RR:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_ccbs_rr, &e_subcmd->cc_ccbs_rr, sizeof(c_subcmd->cc_ccbs_rr));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_CCBSREQUEST) (%d/%d)\n",
+										e_subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation,
+										e_subcmd->cc_ccbs_rr.cc_request_res.retain_service);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					c->ccrequestresult = 1;
+					break;
+				case CMD_CC_CCNRREQUEST_RR:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_ccnr_rr, &e_subcmd->cc_ccnr_rr, sizeof(c_subcmd->cc_ccnr_rr));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_CCNRREQUEST) (%d/%d)\n",
+										e_subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation,
+										e_subcmd->cc_ccnr_rr.cc_request_res.retain_service);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					c->ccrequestresult = 1;
+					break;
+				case CMD_CC_CANCEL_INV:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_cancel_inv, &e_subcmd->cc_cancel_inv, sizeof(c_subcmd->cc_cancel_inv));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_CANCEL) (%s/%s)\n",
+										e_subcmd->cc_cancel_inv.cc_optional_arg.number_A,
+										e_subcmd->cc_cancel_inv.cc_optional_arg.number_B);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					break;
+				case CMD_CC_EXECPOSIBLE_INV:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_execposible_inv, &e_subcmd->cc_execposible_inv, sizeof(c_subcmd->cc_execposible_inv));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_EXECPOSIBLE) (%s/%s)\n",
+										e_subcmd->cc_execposible_inv.cc_optional_arg.number_A,
+										e_subcmd->cc_execposible_inv.cc_optional_arg.number_B);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					break;
+				case CMD_CC_RINGOUT_INV:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_ringout_inv, &e_subcmd->cc_ringout_inv, sizeof(c_subcmd->cc_ringout_inv));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_RINGOUT) (%d)\n",
+										e_subcmd->cc_ringout_inv.cc_extension.cc_extension_tag);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					break;
+				case CMD_CC_SUSPEND_INV:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_suspend_inv, &e_subcmd->cc_suspend_inv, sizeof(c_subcmd->cc_suspend_inv));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_SUSPEND) (%d)\n",
+										e_subcmd->cc_suspend_inv.cc_extension.cc_extension_tag);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					break;
+				case CMD_CC_ERROR:
+					e_subcmd->cmd = c_subcmd->cmd;
+					memcpy(&c_subcmd->cc_error, &e_subcmd->cc_error, sizeof(c_subcmd->cc_error));
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "facility(QSIG_CC_ERROR) (%d)\n",
+										e_subcmd->cc_error.error_value);
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
+					break;
+				default:
+					pri_error(pri, "Don't know how to handle Facility subcmd %d\n", c_subcmd->cmd);
+					break;
+				}
+			}
+		}
+#if 0
+	} else {
+		pri_message(pri, "No facilities specified\n");
+#endif
+	}
+	return 0;
+}
+
 
 int q931_receive(struct pri *pri, q931_h *h, int len)
 {
@@ -3365,6 +3524,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		break;
 	case Q931_FACILITY:
 		c->callername[0] = '\0';
+		c->subcmds.counter_subcmd = 0;
 		break;
 	case Q931_SETUP:
 		if (pri->debug & PRI_DEBUG_Q931_STATE)
@@ -3430,7 +3590,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		c->aoc_units = -1;
 		/* Fall through */
 	case Q931_CONNECT:
+		c->ccrequestresult = 0;
 	case Q931_ALERTING:
+		c->subcmds.counter_subcmd = 0;
 	case Q931_PROGRESS:
 		c->useruserinfo[0] = '\0';
 		c->cause = -1;
@@ -3446,6 +3608,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		break;
 	case Q931_RELEASE:
 	case Q931_DISCONNECT:
+		c->subcmds.counter_subcmd = 0;
 		c->cause = -1;
 		c->causecode = -1;
 		c->causeloc = -1;
@@ -3460,6 +3623,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			pri_schedule_del(pri, c->retranstimer);
 		c->retranstimer = 0;
 		c->useruserinfo[0] = '\0';
+		c->subcmds.counter_subcmd = 0;
 		/* Fall through */
 	case Q931_STATUS:
 		c->cause = -1;
@@ -3616,6 +3780,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		if (!c->newcall) {
 			break;
 		}
+
+		clr_subcommands(&pri->ev.ring.subcmds);
+
 		if (c->progressmask & PRI_PROG_CALLER_NOT_ISDN)
 			c->nonisdn = 1;
 		c->newcall = 0;
@@ -3659,12 +3826,19 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.ring.ctype = c->transcapability;
 		pri->ev.ring.progress = c->progress;
 		pri->ev.ring.progressmask = c->progressmask;
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending ring event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.ring.cref, c->nochannelsignalling, pri->ev.ring.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.ring.subcmds);
 		return Q931_RES_HAVEEVENT;
 	case Q931_ALERTING:
 		if (c->newcall) {
 			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
+		clr_subcommands(&pri->ev.ringing.subcmds);
+
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_DELIVERED);
 		c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
 		pri->ev.e = PRI_EVENT_RINGING;
@@ -3688,6 +3862,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		}
 		libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ringing.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending ringing event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.ringing.cref, c->nochannelsignalling, pri->ev.ringing.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.ringing.subcmds);
 
 		cur = c->apdus;
 		while (cur) {
@@ -3708,6 +3887,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			q931_status(pri, c, PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
+		clr_subcommands(&pri->ev.answer.subcmds);
+
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
 		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 		pri->ev.e = PRI_EVENT_ANSWER;
@@ -3723,7 +3904,19 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.answer.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER;
 		libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.answer.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending answer event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.answer.cref, c->nochannelsignalling, pri->ev.answer.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.answer.subcmds);
 		q931_connect_acknowledge(pri, c);
+		if (c->nochannelsignalling) {
+			if (c->ccrequestresult) {
+				pri_message(pri, "Q931_CONNECT: start CC-Timer2\n");
+				c->cctimer2 = pri_schedule_event(pri, pri->timers[PRI_TIMER_CCBST2], pri_cctimer2_timeout, c);
+			}
+			return Q931_RES_HAVEEVENT;
+		}
 		if (c->justsignalling) {  /* Make sure WE release when we initiatie a signalling only connection */
 			q931_release(pri, c, PRI_CAUSE_NORMAL_CLEARING);
 			break;
@@ -3737,6 +3930,19 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			if (c->newcall) {
 				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 				break;
+			}
+			if (c->subcmds.counter_subcmd) {
+				pri->ev.e = PRI_EVENT_FACILITY;
+				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+				pri->ev.facility.cref = c->cr;
+				pri->ev.facility.call = c;
+
+				if (pri->debug & PRI_DEBUG_APDU) {
+					pri_message(pri, "Sending facility event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+											pri->ev.facility.cref, c->nochannelsignalling, pri->ev.facility.subcmds.counter_subcmd);
+				}
+				q931_facilities2eventfacilities(pri, c, &pri->ev.facility.subcmds);
+				haveevent = 1;
 			}
 			if (c->ctcompleteflag) {
 				c->ctcompleteflag = 0;
@@ -3952,6 +4158,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		}
 		break;
 	case Q931_RELEASE_COMPLETE:
+		clr_subcommands(&pri->ev.hangup.subcmds);
+
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
 		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
@@ -3961,6 +4169,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		/* Free resources */
 		if (c->alive) {
 			pri->ev.e = PRI_EVENT_HANGUP;
@@ -3978,6 +4191,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			q931_hangup(pri,c,c->cause);
 		break;
 	case Q931_RELEASE:
+		clr_subcommands(&pri->ev.hangup.subcmds);
+
 		if (missingmand) {
 			/* Force cause to be mandatory IE missing */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
@@ -3996,6 +4211,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		/* Don't send release complete if they send us release 
 		   while we sent it, assume a NULL state */
 		if (c->newcall)
@@ -4004,6 +4224,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			return Q931_RES_HAVEEVENT;
 		break;
 	case Q931_DISCONNECT:
+		clr_subcommands(&pri->ev.hangup.subcmds);
+
 		if (missingmand) {
 			/* Still let user call release */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
@@ -4030,6 +4252,11 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
+		if (pri->debug & PRI_DEBUG_APDU) {
+			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
+									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
+		}
+		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		if (c->alive)
 			return Q931_RES_HAVEEVENT;
 		else

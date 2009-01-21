@@ -333,6 +333,11 @@
 #define PRI_NSF_ATT_MULTIQUEST         0xF0
 #define PRI_NSF_CALL_REDIRECTION_SERVICE       0xF7
 
+/* ECMA 186 */
+#define PRI_CC_CCNRREQUEST		27
+#define PRI_CC_CANCEL			28
+#define PRI_CC_CCBSREQUEST		40
+
 typedef struct q931_call q931_call;
 
 /* Connected line update source code */
@@ -369,9 +374,39 @@ struct pri_party_redirecting {
 	int reason;					/* Redirection reasons */
 };
 
+/* Structures for qsig_cc_facilities */
+struct qsig_cc_extension {
+	int	cc_extension_tag;
+	char	extension[256];
+};
+
+struct qsig_cc_optional_arg {
+	char	number_A[256];
+	char	number_B[256];
+	int	service;
+	struct qsig_cc_extension	cc_extension;
+};
+
+struct qsig_cc_request_res {
+	int	no_path_reservation;
+	int	retain_service;
+	struct qsig_cc_extension	cc_extension;
+};
+
 /* Command derived from Facility */
 #define CMD_REDIRECTING         1
 #define CMD_CONNECTEDLINE       2
+#define CMD_CC_CCBSREQUEST_RR   3
+#define CMD_CC_CCNRREQUEST_RR   4
+#define CMD_CC_CANCEL_INV       5
+#define CMD_CC_EXECPOSIBLE_INV  6
+#define CMD_CC_RINGOUT_INV      7
+#define CMD_CC_SUSPEND_INV      8
+#define CMD_CC_ERROR            9
+
+#define CCERROR_UNSPECIFIED		1008
+#define CCERROR_REMOTE_USER_BUSY_AGAIN	1012
+#define CCERROR_FAILURE_TO_MATCH	1013
 
 
 typedef struct cmd_connectedline {
@@ -388,11 +423,46 @@ typedef struct cmd_redirecting {
 	struct pri_party_redirecting redirecting;
 } cmd_redirecting;
 
+typedef struct cmd_cc_ccbs_rr {
+	struct qsig_cc_request_res	cc_request_res;
+} cmd_cc_ccbs_rr;
+
+typedef struct cmd_cc_ccnr_rr {
+	struct qsig_cc_request_res	cc_request_res;
+} cmd_cc_ccnr_rr;
+
+typedef struct cmd_cc_cancel_inv {
+	struct qsig_cc_optional_arg	cc_optional_arg;
+} cmd_cc_cancel_inv;
+
+typedef struct cmd_cc_execposible_inv {
+	struct qsig_cc_optional_arg	cc_optional_arg;
+} cmd_cc_execposible_inv;
+
+typedef struct cmd_cc_suspend_inv {
+	struct qsig_cc_extension	cc_extension;
+} cmd_cc_suspend_inv;
+
+typedef struct cmd_cc_ringout_inv {
+	struct qsig_cc_extension	cc_extension;
+} cmd_cc_ringout_inv;
+
+typedef struct cmd_cc_error {
+	int	error_value;
+} cmd_cc_error;
+
 typedef	struct subcommand {
 	int cmd;
 	union {
 		cmd_connectedline      connectedline;
 		cmd_redirecting        redirecting;
+		cmd_cc_ccbs_rr         cc_ccbs_rr;
+		cmd_cc_ccnr_rr         cc_ccnr_rr;
+		cmd_cc_cancel_inv      cc_cancel_inv;
+		cmd_cc_execposible_inv cc_execposible_inv;
+		cmd_cc_suspend_inv     cc_suspend_inv;
+		cmd_cc_ringout_inv     cc_ringout_inv;
+		cmd_cc_error           cc_error;
 	};
 } subcommand;
 
@@ -432,6 +502,7 @@ typedef struct pri_event_ringing {
 	char callednum[256];
 	int calledpres;
 	int calledplan;
+	struct subcommands subcmds;
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -447,6 +518,7 @@ typedef struct pri_event_answer {
 	char connectednum[256];
 	char connectedname[256];
 	int source;
+	struct subcommands subcmds;
 } pri_event_answer;
 
 typedef struct pri_event_facname {
@@ -502,6 +574,7 @@ typedef struct pri_event_ring {
 	char origcallednum[256];
 	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
 	int origredirectingreason;
+	struct subcommands subcmds;
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -512,6 +585,7 @@ typedef struct pri_event_hangup {
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
+	struct subcommands subcmds;
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -684,6 +758,11 @@ int pri_reset(struct pri *pri, int channel);
 
 /* Create a new call */
 q931_call *pri_new_call(struct pri *pri);
+q931_call *pri_new_nochannel_call(struct pri *pri, int *cr);
+
+q931_call *pri_find_call(struct pri *pri, int cr);
+
+void pri_call_set_cc_operation(q931_call *call, int cc_operation);
 
 /* Retrieve CRV reference for GR-303 calls.  Returns >0 on success. */
 int pri_get_crv(struct pri *pri, q931_call *call, int *callmode);
@@ -710,6 +789,10 @@ int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
 int pri_sr_set_redirecting(struct pri_sr *sr, char *name, char *num, int plan, int pres, int reason);
+
+int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout);
+int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr);
+
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
 void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);
@@ -720,6 +803,9 @@ int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 
 /* Set a call has a call indpendent signalling connection (i.e. no bchan) */
 int pri_sr_set_connection_call_independent(struct pri_sr *req);
+
+/* Set a no channel call (i.e. QSIG-CCBS/CCNR) */
+int pri_sr_set_no_channel_call(struct pri_sr *req);
 
 /* Send an MWI indication to a remote location.  If activate is non zero, activates, if zero, decativates */
 int pri_mwi_activate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called, int calledplan);
@@ -824,6 +910,7 @@ int pri_timer2idx(char *timer);
 #define PRI_TIMER_TM20	28	/* maximum time avaiting XID response */
 #define PRI_TIMER_NM20	29	/* number of XID retransmits */
 
+#define PRI_TIMER_CCBST2	30	/* maximum time on completion of CC Call */
 /* Get PRI version */
 const char *pri_get_version(void);
 

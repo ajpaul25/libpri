@@ -3589,6 +3589,289 @@ int rose_connected_name_encode(struct pri *pri, q931_call *call, int messagetype
 	return 0;
 }
 
+/* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
+/* operationId e.g. QSIG_CCBSRINGOUT, QSIG_CC_CANCEL */
+int add_qsigCcInv_facility_ie (struct pri *pri, q931_call *c, int messagetype)
+{
+	int i = 0;
+	unsigned char buffer[256];
+	struct rose_component *comp = NULL, *compstk[10];
+	int compsp = 0;
+	u_int8_t operationId = c->ccoperation;
+
+	/* 1 Byte 	   0x80 | 0x1F = 9F	 Protocol Profile */
+	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
+
+	/* Interpretation component */
+	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i); /* 2. Byte NEtwork Facility Extension 0xAA = ASN1_CONTEXT_SPECIFIC(0x80) | (ASN1_CONSTRUCTOR 0x20)  0x0A (Tag laut Standard) */
+	ASN1_PUSH(compstk, compsp, comp);
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* (0x80, 0x01(len), 0x00) endPTNX */
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* (0x82, 0x01(len), 0x00) endPTNX */
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);   /* 0x8B, 0x01(len), 0x00 discard */
+	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);			 /* 0xA1, 0xXX (len of Invoke Sequenz) invoke APDU */
+	ASN1_PUSH(compstk, compsp, comp);
+
+	/* Invoke ID */
+	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));   /* 0x02 0x01 0xXX */
+
+	/* Operation ID: QSIG_CCBSRINGOUT, QSIG_CC_CANCEL */
+	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, operationId); /* 0x02 0x01 0x1f/0x1c */
+
+	/* CcExtension */
+	ASN1_ADD_SIMPLE(comp, ASN1_NULL, buffer, i); /* 0x05 0x00 */
+
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+	if (pri_call_apdu_queue(c, messagetype, buffer, i, NULL, NULL))
+		return -1;
+	
+	return 0;
+}
+
+static int rose_cc_ringout_inv_decode(struct pri *pri, struct qsig_cc_extension *cc_extension, struct rose_component *choice, int len) {
+	int i = 0;
+	cc_extension->cc_extension_tag = 0;
+
+	do {
+		switch(choice->type) {
+		case (ASN1_NULL):   /* none NULL */
+			cc_extension->cc_extension_tag = ASN1_NULL;
+			return 0;
+
+		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /* single [14] IMPLICIT Extension */
+			cc_extension->cc_extension_tag = ASN1_TAG_14;
+			return 0;
+
+
+		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /* multiple [15] IMPLICIT SEQUENCE OF Extension */
+			cc_extension->cc_extension_tag = ASN1_TAG_15;
+			return 0;
+
+		default:
+			if (choice->type == 0 && choice->len == 0) {
+				return 0;
+			}
+			pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", choice->type);
+			return -1;
+		}
+
+		if (i < len)
+			pri_message(pri, "     ss-cc-extension: !! not all information is handled !! i=%d / len=%d\n", i, len);
+
+		return 0;
+	}
+	while (0);
+
+	return -1;
+}
+
+static int rose_cc_optional_arg_decode(struct pri *pri, q931_call *call, struct qsig_cc_optional_arg *cc_optional_arg , struct rose_component *choice, int len) {
+	int i = 0;
+	int res = 0;
+	struct rose_component *comp = NULL;
+	unsigned char *vdata = choice->data;
+	struct addressingdataelements_presentednumberunscreened numberA;
+	struct addressingdataelements_presentednumberunscreened numberB;
+
+	cc_optional_arg->cc_extension.cc_extension_tag = 0;
+	cc_optional_arg->number_A[0] = '\0';
+	cc_optional_arg->number_B[0] = '\0';
+
+	do {
+		switch(choice->type) {
+		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):   /* fullArg [0] IMPLICIT SEQUENCE */
+			if (pri->debug & PRI_DEBUG_APDU)
+				pri_message(pri, "     ss-cc-optional-Arg: len=%d\n", len);
+
+			numberA.partyaddress[0] = '\0';
+
+			/* numberA */
+			GET_COMPONENT(comp, i, vdata, len);
+			res += rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, &numberA);
+			if (res < 0)
+				return -1;
+			comp->len = res;
+			if (res > 2) {
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "     ss-cc-optional-Arg: Received numberA=%s\n", numberA.partyaddress);
+				strncpy(cc_optional_arg->number_A, numberA.partyaddress, 20);
+				cc_optional_arg->number_A[20] = '\0';
+			}
+			NEXT_COMPONENT(comp, i);
+
+			numberB.partyaddress[0] = '\0';
+
+			/* numberB */
+			GET_COMPONENT(comp, i, vdata, len);
+			res = rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, &numberB);
+			if (res < 0)
+				return -1;
+			comp->len = res;
+			if (res > 2) {
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "     ss-cc-optional-Arg: Received numberB=%s\n", numberB.partyaddress);
+				strncpy(cc_optional_arg->number_B, numberB.partyaddress, 20);
+				cc_optional_arg->number_B[20] = '\0';
+			}
+			NEXT_COMPONENT(comp, i);
+
+			/* service */ /* PSS1InformationElement */
+			GET_COMPONENT(comp, i, vdata, len);
+			NEXT_COMPONENT(comp, i);
+
+			/* optional */
+			for (; i < len; NEXT_COMPONENT(comp, i)) {
+				GET_COMPONENT(comp, i, vdata, len);
+				switch(comp->type) {
+				case (ASN1_NULL):   /*  */
+					cc_optional_arg->cc_extension.cc_extension_tag = ASN1_NULL;
+					NEXT_COMPONENT(comp, i);
+					break;
+				case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /*  */
+					NEXT_COMPONENT(comp, i);
+					break;
+				case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /*  */
+					NEXT_COMPONENT(comp, i);
+					break;
+				default:
+					if (comp->type == 0 && comp->len == 0) {
+						return 0;
+						break; /* Found termination characters */
+					}
+					pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", comp->type);
+					return -1;
+				}
+			}
+
+			if (i < len)
+				pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
+
+			return 0;
+
+		/* extArg CcExtension */
+		case (ASN1_NULL):   /* none NULL */
+			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_NULL;
+			return 0;
+
+		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /* single [14] IMPLICIT Extension */
+			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_TAG_14;
+			return 0;
+
+
+		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /* multiple [15] IMPLICIT SEQUENCE OF Extension */
+			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_TAG_15;
+			return 0;
+
+		default:
+			if (choice->type == 0 && choice->len == 0) {
+				return 0;
+			}
+			pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", choice->type);
+			return -1;
+		}
+
+		if (i < len)
+			pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
+
+		return 0;
+	}
+	while (0);
+
+	return -1;
+}
+
+static int rose_cc_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
+{
+	int i = 0;
+	struct rose_component *comp = NULL;
+	unsigned char *vdata = sequence->data;
+
+	cc_request_res->no_path_reservation           = 0;  /* Default FALSE */
+	cc_request_res->retain_service                = 0;  /* Default FALSE */
+	cc_request_res->cc_extension.cc_extension_tag = 0;
+
+	/* Data checks */
+	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
+		pri_message(pri, "Invalid cc request result argument. (Not a sequence)\n");
+		return -1;
+	}
+
+	if (sequence->len == ASN1_LEN_INDEF) {
+		len -= 4; /* For the 2 extra characters at the end
+					   * and two characters of header */
+	} else
+		len -= 2;
+
+	if (pri->debug & PRI_DEBUG_APDU)
+		pri_message(pri, "     CC-request-Return-Result: len=%d\n", len);
+
+	do {
+		/* defaults and optional */
+		for (; i < len; NEXT_COMPONENT(comp, i)) {
+			GET_COMPONENT(comp, i, vdata, len);
+			switch(comp->type) {
+			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):
+				/* no-path-reservation */
+				ASN1_GET_INTEGER(comp, cc_request_res->no_path_reservation);
+				NEXT_COMPONENT(comp, i);
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "     cc request result: Received noPathReservation=%d\n", cc_request_res->no_path_reservation);
+				break;
+
+			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1):
+				/* retain_service */
+				ASN1_GET_INTEGER(comp, cc_request_res->retain_service);
+				NEXT_COMPONENT(comp, i);
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "     cc request result: Received retainService=%d\n", cc_request_res->retain_service);
+				break;
+
+			case (ASN1_NULL):   /*  */
+				cc_request_res->cc_extension.cc_extension_tag = ASN1_NULL;
+				NEXT_COMPONENT(comp, i);
+				break;
+
+			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):
+				cc_request_res->cc_extension.cc_extension_tag = ASN1_TAG_14;
+				NEXT_COMPONENT(comp, i);
+				break;
+
+			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):
+				cc_request_res->cc_extension.cc_extension_tag = ASN1_TAG_15;
+				NEXT_COMPONENT(comp, i);
+				break;
+
+			default:
+				if (comp->type == 0 && comp->len == 0) {
+					break; /* Found termination characters */
+				}
+				pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", comp->type);
+				return -1;
+			}
+		}
+
+		if (i < len)
+			pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
+		return 0;
+	}
+	while (0);
+
+	return -1;
+}
+
+static int rose_ccbs_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
+{
+	return rose_cc_request_result_decode(pri, cc_request_res , sequence, len);
+}
+
+static int rose_ccnr_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
+{
+	return rose_cc_request_result_decode(pri, cc_request_res , sequence, len);
+}
+/* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
+
 
 int rose_reject_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
 {
@@ -3660,6 +3943,18 @@ int rose_reject_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned c
 }
 
 
+static subcommand *get_ptr_subcommand(subcommands *sub)
+{
+	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
+		int count = sub->counter_subcmd;
+		sub->counter_subcmd++;
+		return &sub->subcmd[count];
+	}
+
+	return NULL;
+}
+
+
 int rose_return_error_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
 {
 	int i = 0;
@@ -3668,6 +3963,7 @@ int rose_return_error_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsi
 	unsigned char *vdata = data;
 	struct rose_component *comp = NULL;
 	char *invokeidstr, *errorstr;
+	struct subcommand *c_subcmd;
 	
 	do {
 		/* Invoke ID stuff */
@@ -3714,9 +4010,39 @@ int rose_return_error_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsi
 			pri_error(pri, "\tERROR: %s\n", errorstr);
 
 			return 0;
+		} else if (pri->switchtype == PRI_SWITCH_QSIG) {
+			switch (errorvalue) {
+			case 1008:
+				errorstr = "Unspecified";
+				break;
+			case 1012:
+				errorstr = "Remote user busy again";
+				break;
+			case 1013:
+				errorstr = "Failure to match";
+				break;
+			default:
+				errorstr = "Unknown";
+			}
+
+			c_subcmd = get_ptr_subcommand(&call->subcmds);
+			if (!c_subcmd) {
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "ROSE RETURN ERROR %i - more than %d facilities !\n", errorvalue, MAX_SUBCOMMANDS);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				return -1;
+			}
+
+			if (pri->debug & PRI_DEBUG_APDU)
+			{
+				pri_message(pri, "ROSE RETURN RESULT %i:   %s\n", errorvalue, errorstr);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+			}
+			c_subcmd->cmd = CMD_CC_ERROR;
+			c_subcmd->cc_error.error_value = errorvalue;
+			return 0;
 		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
+			pri_message(pri, "Unable to handle return error on switchtype %d!\n", pri->switchtype);
 		}
 
 	} while(0);
@@ -3731,6 +4057,8 @@ int rose_return_result_decode(struct pri *pri, q931_call *call, q931_ie *ie, uns
 	int invokeidvalue = -1;
 	unsigned char *vdata = data;
 	struct rose_component *comp = NULL;
+	int res;
+	struct subcommand *c_subcmd;
 	
 	do {
 		/* Invoke ID stuff */
@@ -3777,10 +4105,89 @@ int rose_return_result_decode(struct pri *pri, q931_call *call, q931_ie *ie, uns
 				return -1;
 			}
 		} else if (pri->switchtype == PRI_SWITCH_QSIG) {
-			switch (invokeidvalue) {
-			case QSIG_CF_CALLREROUTING:
-				if (pri->debug & PRI_DEBUG_APDU) pri_message(pri, "Successfully completed QSIG CF callRerouting!\n");
+			int operation_tag;
+
+			/* sequence is optional */
+			if (i >= len) 
 				return 0;
+
+			/* Data checks, sequence is optional */
+			GET_COMPONENT(comp, i, vdata, len);
+			if (comp->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
+				pri_message(pri, "No arguments on cc-return result\n");
+				return 0;
+			}
+
+			if (comp->len == ASN1_LEN_INDEF) {
+				len -= 2; /* For the 2 extra characters at the end*/
+			}
+
+			/* Traverse the contents of this sequence */
+			SUB_COMPONENT(comp, i);
+
+			/* Operation Tag */
+			GET_COMPONENT(comp, i, vdata, len);
+			CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if second ROSE component is of type 0x%x\n");
+			ASN1_GET_INTEGER(comp, operation_tag);
+			NEXT_COMPONENT(comp, i);
+
+			/* No argument - return with error */
+			if (i >= len) 
+				return -1;
+
+			/* Arguement Tag */
+			GET_COMPONENT(comp, i, vdata, len);
+			if (!comp->type)
+				return -1;
+
+			if (pri->debug & PRI_DEBUG_APDU)
+				pri_message(pri, "  [ Handling operation %d ]\n", operation_tag);
+			switch (operation_tag) {
+			case QSIG_CF_CALLREROUTING:
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "Successfully completed QSIG CF callRerouting!\n");
+				return 0;
+
+			case QSIG_CC_CCBSREQUEST:
+				c_subcmd = get_ptr_subcommand(&call->subcmds);
+				if (!c_subcmd) {
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "ROSE %i:  return_result CcCcbsRequest - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+					return -1;
+				}
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcCcbsRequest\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				c_subcmd->cmd = CMD_CC_CCBSREQUEST_RR;
+				res = rose_ccbs_request_result_decode(pri, &c_subcmd->cc_ccbs_rr.cc_request_res, comp, len-i);
+				return res;
+
+			case QSIG_CC_CCNRREQUEST:
+				c_subcmd = get_ptr_subcommand(&call->subcmds);
+				if (!c_subcmd) {
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "ROSE %i:  return_result CcCcnrRequest - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+					return -1;
+				}
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcCcnrRequest\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				c_subcmd->cmd = CMD_CC_CCNRREQUEST_RR;
+				res = rose_ccnr_request_result_decode(pri, &c_subcmd->cc_ccnr_rr.cc_request_res, comp, len-i);
+				return res;
+
+			default:
+				if (pri->debug & PRI_DEBUG_APDU) {
+					pri_message(pri, "!! Unable to handle ROSE operation %d", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				return -1;
 			}
 		} else {
 			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
@@ -3799,6 +4206,7 @@ int rose_invoke_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned c
 	int operation_tag;
 	unsigned char *vdata = data;
 	struct rose_component *comp = NULL, *invokeid = NULL, *operationid = NULL;
+	struct subcommand *c_subcmd;
 	
 	do {
 		/* Invoke ID stuff */
@@ -3914,6 +4322,81 @@ int rose_invoke_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned c
 				}
 				anfpr_pathreplacement_respond(pri, call, ie);
 				break;
+			case QSIG_CC_CCBSREQUEST:
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "ROSE %i:  invoke CcbsRequest - not handled!\n", operation_tag);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				return -1;
+			case QSIG_CC_CCNRREQUEST:
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "ROSE %i:  invoke CcnrRequest - not handled!\n", operation_tag);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				return -1;
+			case QSIG_CC_CANCEL:
+				c_subcmd = get_ptr_subcommand(&call->subcmds);
+				if (!c_subcmd) {
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "ROSE %i:  invoke CcCancel - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+					return -1;
+				}
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcCancel\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				c_subcmd->cmd = CMD_CC_CANCEL_INV;
+				res = rose_cc_optional_arg_decode(pri, call, &c_subcmd->cc_cancel_inv.cc_optional_arg, comp, len-i);
+				return res;
+			case QSIG_CC_EXECPOSIBLE:
+				c_subcmd = get_ptr_subcommand(&call->subcmds);
+				if (!c_subcmd) {
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "ROSE %i:  invoke CcExecposible - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+					return -1;
+				}
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcExecposible\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				c_subcmd->cmd = CMD_CC_EXECPOSIBLE_INV;
+				res = rose_cc_optional_arg_decode(pri, call, &c_subcmd->cc_execposible_inv.cc_optional_arg, comp, len-i);
+				return res;
+			case QSIG_CC_PATHRESERVE:
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "ROSE %i:  invoke CcPathreserve - not handled!\n", operation_tag);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				return -1;
+			case QSIG_CC_RINGOUT:
+				c_subcmd = get_ptr_subcommand(&call->subcmds);
+				if (!c_subcmd) {
+					if (pri->debug & PRI_DEBUG_APDU)
+						pri_message(pri, "ROSE %i:  invoke CcRingout - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+					return -1;
+				}
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcRingout\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				c_subcmd->cmd = CMD_CC_RINGOUT_INV;
+				res = rose_cc_ringout_inv_decode(pri, &c_subcmd->cc_ringout_inv.cc_extension, comp, len-i);
+				return res;
+			case QSIG_CC_SUSPEND:
+				if (pri->debug & PRI_DEBUG_APDU)
+				{
+					pri_message(pri, "ROSE %i:   Handle CcSuspend\n", operation_tag);
+					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				}
+				return 0;
+			case QSIG_CC_RESUME:
+				if (pri->debug & PRI_DEBUG_APDU)
+					pri_message(pri, "ROSE %i:  invoke CcResume - not handled!\n", operation_tag);
+				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
+				return -1;
 			default:
 				if (pri->debug & PRI_DEBUG_APDU) {
 					pri_message(pri, "!! Unable to handle ROSE operation %d", operation_tag);
@@ -4097,6 +4580,95 @@ int pri_call_apdu_queue_cleanup(q931_call *call)
 	return 0;
 }
 
+/* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
+/* operationId e.g. QSIG_CC_CCBS_REQUEST and QSIG_CC_CCNR_REQUEST */
+static int add_qsigCcRequestArg_facility_ie (struct pri *pri, q931_call *c)
+{
+	int size = 0;
+	int i = 0;
+	unsigned char buffer[256];
+	struct rose_component *comp = NULL, *compstk[10];
+	int compsp = 0;
+	u_int8_t operationId = c->ccoperation;
+	char *numberA = c->callernum;
+	char *numberB = c->callednum;
+ 
+	/* 1 Byte 	   0x80 | 0x1F = 9F	 Protocol Profile (0x93 wäre altes QSIG oder DDS1) */
+	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
+
+	/* Interpretation component */
+	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i); /* 2. Byte NEtwork Facility Extension 0xAA = ASN1_CONTEXT_SPECIFIC(0x80) | (ASN1_CONSTRUCTOR 0x20)  0x0A (Tag laut Standard) */
+	ASN1_PUSH(compstk, compsp, comp);
+
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* (0x80, 0x01(len), 0x00) endPTNX */
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* (0x82, 0x01(len), 0x00) endPTNX */
+
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+#if 0
+	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);   /* 0x8B, 0x01(len), 0x00 discard */
+#endif
+	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);			 /* 0xA1, 0xXX (len of Invoke Sequenz) invoke APDU */
+	ASN1_PUSH(compstk, compsp, comp);
+
+	/* Invoke ID */
+	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));   /* InvokeID 0x02 0x01 0xXX */
+
+	/*CcbsRequest ::= 40 or CcnrRequest ::= 27 */
+	/* Operation ID: CCBS/CCNR */
+	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, operationId); /* 0x02 0x01 0x28/0x1b */
+
+	/* ccbs/ccnr request argument */
+	/* PresentedNumberUnscreened */
+	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i); /*0x30 0xXX (len)*/
+	ASN1_PUSH(compstk, compsp, comp);
+	/* (0xA0, 0x01(len)) presentationAlloweAddress  [0] PartyNumber */
+	/* (0xA1, 0xXX (len) publicPartyNumber [1] IMPLICIT PublicPartyNumber */
+	/* (0x0A, 0x01, 0x00 ) type of public party number = subscriber number */
+	/* (0x12, 0xXX (len), 0xXX .. 0xXX) numeric string */
+	size = rose_presented_number_unscreened_encode(pri, &buffer[i], PRES_ALLOWED, Q932_TON_UNKNOWN, numberA);
+	if (size < 0)
+		return -1;
+	i += size;
+
+	/* (0xA1, 0xXX (len) [1] IMPLICIT PublicPartyNumber */
+	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
+	ASN1_PUSH(compstk, compsp, comp);
+	/* (0x0A, 0x01, 0x00 ) type of public party number = subscriber number */
+	/* (0x12, 0xXX (len), 0xXX .. 0xXX) numeric string */
+	size = rose_public_party_number_encode(pri, comp->data, 1, Q932_TON_UNKNOWN, numberB);
+	if (size < 0)
+		return -1;
+	i += size;
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+	/* (0x40, 0xXX (len), 0xXX .. 0xXX) pSS1InfoElement */
+	ASN1_ADD_SIMPLE(comp, (ASN1_APPLICATION | ASN1_TAG_0 ), buffer, i);
+	ASN1_PUSH(compstk, compsp, comp);
+	buffer[i++] = (0x04);	/*  add Bearer Capability IE */
+	buffer[i++] = (0x03);	/* len*/
+	buffer[i++] = (0x80);	/* ETSI Standard, Speech */
+	buffer[i++] = (0x90);	/* circuit mode, 64kbit/s */
+	buffer[i++] = (0xa3);	/* level1 protocol, a-law */
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+#if 0
+	/* can-retain-service [12] IMPLICIT BOOLEAN DEFAULT FALSE,*/
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_12), buffer, i, 0);   /* 0x1C, 0x01(len), 0x00 false */
+#endif
+	/* retain-sig-connection [13] IMPLICIT BOOLEAN OPTIONAL, --TRUE: sign. connection to be retained */	 
+	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_13), buffer, i, 1);   /* 0x1D, 0x01(len), 0x01 true */
+
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+	ASN1_FIXUP(compstk, compsp, buffer, i);
+
+	if (pri_call_apdu_queue(c, Q931_SETUP, buffer, i, NULL, NULL))
+		return -1;
+	
+	return 0;
+}
+/* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
+
 int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 {
 	if (!pri->sendfacility)
@@ -4106,6 +4678,21 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 		if (call->redirectingnum[0])
 			rose_diverting_leg_information2_encode(pri, call);
 		add_callername_facility_ies(pri, call, 1);
+		if (call->ccoperation) {
+			switch(call->ccoperation) {
+			case 0:
+				break;
+			case QSIG_CC_CCBSREQUEST:
+			case QSIG_CC_CCNRREQUEST:
+				add_qsigCcRequestArg_facility_ie(pri, call);
+				break;
+			case QSIG_CC_RINGOUT:
+				add_qsigCcInv_facility_ie(pri, call, Q931_SETUP);
+				break;
+			default:
+				break;
+			}
+		}
 		return 0;
 	}
 
