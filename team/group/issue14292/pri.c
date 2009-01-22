@@ -1021,11 +1021,11 @@ char *pri_dump_info_str(struct pri *pri)
 			time_to_go_min = time_ms_to_go/1000/60;
 			time_to_go_sec = (time_ms_to_go-(time_to_go_min*60*1000))/1000;
 
-			len += sprintf(buf + len, "%d. Active Q.931 Call: %x cr=%d: (%dmin %dsec)\n",
-								++counter, (int)cur, cur->cr,
-								time_to_go_min, time_to_go_sec);
+			len += sprintf(buf + len, "%d. Active Q.931 Call: %p cr=%d: (%dmin %dsec)\n",
+				++counter, cur, cur->cr,
+				time_to_go_min, time_to_go_sec);
 		} else {
-			len += sprintf(buf + len, "%d. Active Q.931 Call: %x cr=%d\n", ++counter, (int)cur, cur->cr);
+			len += sprintf(buf + len, "%d. Active Q.931 Call: %p cr=%d\n", ++counter, cur, cur->cr);
 		}
 		cur = cur->next;
 	}
