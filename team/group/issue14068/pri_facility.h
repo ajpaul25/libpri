@@ -328,7 +328,7 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
 int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call);
 
-int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call);
+int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call, int call_status);
 
 int rose_diverting_leg_information1_encode(struct pri *pri, q931_call *call);
 
