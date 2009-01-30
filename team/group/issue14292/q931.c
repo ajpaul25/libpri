@@ -3142,8 +3142,11 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 		c->callerpres = PRES_NUMBER_NOT_AVAILABLE;
 	}
 	if (req->redirectingnum) {
-		libpri_copy_string(c->redirectingname, req->redirectingname, sizeof(c->redirectingname));
 		libpri_copy_string(c->redirectingnum, req->redirectingnum, sizeof(c->redirectingnum));
+		if (req->redirectingname)
+			libpri_copy_string(c->redirectingname, req->redirectingname, sizeof(c->redirectingname));
+		else
+			c->redirectingname[0] = '\0';
 		c->redirectingplan = req->redirectingplan;
 		if ((pri->switchtype == PRI_SWITCH_DMS100) ||
 		    (pri->switchtype == PRI_SWITCH_ATT4ESS)) {
@@ -3856,7 +3859,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 			pri->ev.ringing.calledplan = c->divertedtoplan;
 		} else {
 			libpri_copy_string(pri->ev.ringing.calledname, c->calledname, sizeof(pri->ev.ringing.calledname));
-			libpri_copy_string(pri->ev.ringing.callednum, c->callednum, sizeof(pri->ev.ringing.callednum));
+			libpri_copy_string(pri->ev.ringing.callednum, (c->divertedtonum[0]) ? c->divertedtonum : c->callednum, sizeof(pri->ev.ringing.callednum));
 			pri->ev.ringing.calledpres = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
 			pri->ev.ringing.calledplan = c->calledplan;
 		}

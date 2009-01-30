@@ -568,8 +568,8 @@ int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party
 	if (pri->switchtype == PRI_SWITCH_QSIG) {
 		switch (call->ourcallstate) {
 		case Q931_CALL_STATE_ACTIVE:
-			/* immediately send callTransferComplete APDU */
-			qsig_initiate_call_transfer_complete(pri, call);
+			/* immediately send callTransferComplete APDU, callStatus=answered(0) */
+			qsig_initiate_call_transfer_complete(pri, call, 0);
 			break;
 		case Q931_CALL_STATE_OVERLAP_RECEIVING:
 		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
@@ -651,17 +651,29 @@ int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_re
 	call->divertedtoreason = redirecting->reason;
 
 	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		call->divertedstate = DIVERTEDSTATE_DIVERTED;
+		switch (call->ourcallstate) {
+		case Q931_CALL_STATE_ACTIVE:
+			/* immediately send callTransferComplete APDU, callStatus=alerting(1) */
+			qsig_initiate_call_transfer_complete(pri, call, 1);
+			break;
+		case Q931_CALL_STATE_OVERLAP_RECEIVING:
+		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+			call->divertedstate = DIVERTEDSTATE_DIVERTED;
 
-		if (call->divertedtonum[0]) {
-			/* immediately send divertingLegInformation1 APDU */
-			qsig_initiate_diverting_leg_information1(pri, call);
-			call->divertedstate = DIVERTEDSTATE_DIVLEGINFO1SEND;
-		}
-		if ((call->divertedstate == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->divertedtoname[0]) {
-			/* queue divertingLegInformation3 to be send with next Q931_ALERTING */
-			rose_diverting_leg_information3_encode(pri, call, Q931_ALERTING);
-			call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+			if (call->divertedtonum[0]) {
+				/* immediately send divertingLegInformation1 APDU */
+				qsig_initiate_diverting_leg_information1(pri, call);
+				call->divertedstate = DIVERTEDSTATE_DIVLEGINFO1SEND;
+			}
+			if ((call->divertedstate == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->divertedtoname[0]) {
+				/* queue divertingLegInformation3 to be send with next Q931_ALERTING */
+				rose_diverting_leg_information3_encode(pri, call, Q931_ALERTING);
+				call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+			}
+			break;
+		default:
+			pri_message(pri, "Redirecting update in state %d\n", call->ourcallstate);
+			break;
 		}
 	}
 

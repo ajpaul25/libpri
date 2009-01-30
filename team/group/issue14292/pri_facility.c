@@ -3056,7 +3056,7 @@ static int rose_call_transfer_complete_decode(struct pri *pri, q931_call *call, 
 	return -1;
 }
 
-static int rose_call_transfer_complete_encode(struct pri *pri, q931_call *call)
+static int rose_call_transfer_complete_encode(struct pri *pri, q931_call *call, int call_status)
 {
 	int i = 0, compsp = 0;
 	struct rose_component *comp, *compstk[10];
@@ -3150,13 +3150,17 @@ static int rose_call_transfer_complete_encode(struct pri *pri, q931_call *call)
 		ASN1_FIXUP(compstk, compsp, buffer, i);
 	}
 
-	/* callStatus */
-	/*  - not included, default: answered(0) -  */
-
+	if (call_status) {
+		/* callStatus  (0x0a,0x01,0x01) */
+		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1);		/* alerting(1) */
+	} else {
+		/* callStatus */
+		/*  - not included, default: answered(0) -  */
 #if 0
-	/* callStatus  (0x0a,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);		/* answered(0) */
+		/* callStatus  (0x0a,0x01,0x00) */
+		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);		/* answered(0) */
 #endif
+	}
 
 	ASN1_FIXUP(compstk, compsp, buffer, i);
 	ASN1_FIXUP(compstk, compsp, buffer, i);
@@ -4742,9 +4746,9 @@ int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call)
 	return 0;
 }
 
-int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call)
+int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call, int call_status)
 {
-	rose_call_transfer_complete_encode(pri, call);
+	rose_call_transfer_complete_encode(pri, call, call_status);
 
 	if (q931_facility(pri, call)) {
 		pri_message(pri, "Could not schedule facility message for callTransferComplete\n");
