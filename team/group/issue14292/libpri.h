@@ -807,7 +807,7 @@ int pri_sr_set_connection_call_independent(struct pri_sr *req);
 /* Set a no channel call (i.e. QSIG-CCBS/CCNR) */
 int pri_sr_set_no_channel_call(struct pri_sr *req);
 
-/* Send an MWI indication to a remote location.  If activate is non zero, activates, if zero, decativates */
+/* Send an MWI indication to a remote location.  If activate is non zero, activates, if zero, deactivates */
 int pri_mwi_activate(struct pri *pri, q931_call *c, char *caller, int callerplan, char *callername, int callerpres, char *called, int calledplan);
 
 /* Send an MWI deactivate request to a remote location */
