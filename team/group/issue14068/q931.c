@@ -992,8 +992,7 @@ static FUNC_DUMP(dump_redirecting_number)
 				prefix, ie->data[2] >> 7, redirection_reason2str(ie->data[2] & 0x7f), ie->data[2] & 0x7f);
 			break;
 		}
-	}
-	while(!(ie->data[i++]& 0x80));
+	} while(!(ie->data[i++]& 0x80));
 	q931_get_number(cnum, sizeof(cnum), ie->data + i, ie->len - i);
 	pri_message(pri, "  '%s' ]\n", cnum);
 }
@@ -1013,8 +1012,7 @@ static FUNC_RECV(receive_connected_number)
 			call->connectedpres = ie->data[i] & 0x7f;
 			break;
 		}
-	}
-	while(!(ie->data[i++] & 0x80));
+	} while(!(ie->data[i++] & 0x80));
 	q931_get_number((unsigned char *) call->connectednum, sizeof(call->connectednum), ie->data + i, ie->len - i);
 
 	return 0;
@@ -1050,8 +1048,7 @@ static FUNC_DUMP(dump_connected_number)
 				prefix, ie->data[1] >> 7, pri_pres2str(ie->data[1] & 0x7f), ie->data[1] & 0x7f);
 			break;
 		}
-	}
-	while(!(ie->data[i++]& 0x80));
+	} while(!(ie->data[i++]& 0x80));
 	q931_get_number(cnum, sizeof(cnum), ie->data + i, ie->len - i);
 	pri_message(pri, "  '%s' ]\n", cnum);
 }
@@ -1075,8 +1072,7 @@ static FUNC_RECV(receive_redirecting_number)
 			call->redirectingreason = ie->data[i] & 0x0f;
 			break;
 		}
-	}
-	while(!(ie->data[i++] & 0x80));
+	} while(!(ie->data[i++] & 0x80));
 	q931_get_number((unsigned char *) call->redirectingnum, sizeof(call->redirectingnum), ie->data + i, ie->len - i);
 	return 0;
 }
@@ -2513,8 +2509,7 @@ static int add_ie(struct pri *pri, q931_call *call, int msgtype, int ie, q931_ie
 						maxlen -= res;
 						iet = (q931_ie *)((char *)iet + res);
 					}
-				}
-				while (res > 0 && order < ies_count);
+				} while (res > 0 && order < ies_count);
 				if (have_shift && total_res) {
 					if (Q931_IE_CODESET(ies[x].ie))
 						*codeset = Q931_IE_CODESET(ies[x].ie);
@@ -3300,12 +3295,12 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 	return 0;
 }
 
-static void clr_subcommands(subcommands *sub)
+static void clr_subcommands(struct subcommands *sub)
 {
 	sub->counter_subcmd = 0;
 }
 
-static subcommand *get_ptr_subcommand(subcommands *sub)
+static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
 {
 	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
 		int count = sub->counter_subcmd;
@@ -3746,7 +3741,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 
 				if (c->ctcompletecallstatus == 0) {
 					/* answered(0) */
-					subcommand *subcmd;
+					struct subcommand *subcmd;
 
 					pri_message(pri, "Got CT-Complete, callStatus = answered(0)\n");
 					pri->ev.e = PRI_EVENT_FACILITY;
@@ -3755,8 +3750,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
+						struct cmd_connectedline *cmdcl = &subcmd->connectedline;
+
 						subcmd->cmd = CMD_CONNECTEDLINE;
-						cmd_connectedline *cmdcl = &subcmd->connectedline;
 						libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
 						libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
 						cmdcl->connected.id.number_type = c->ctcompleteplan;
@@ -3767,7 +3763,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 					}
 				} else if (c->ctcompletecallstatus == 1) {
 					/* alerting(1) */
-					subcommand *subcmd;
+					struct subcommand *subcmd;
 
 					pri_message(pri, "Got CT-Complete, callStatus = alerting(1)\n");
 					pri->ev.e = PRI_EVENT_FACILITY;
@@ -3776,8 +3772,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
+						struct cmd_redirecting *cmdr = &subcmd->redirecting;
+
 						subcmd->cmd = CMD_REDIRECTING;
-						cmd_redirecting *cmdr = &subcmd->redirecting;
 						libpri_copy_string(cmdr->redirecting.from.number, c->connectednum, sizeof(cmdr->redirecting.from.number));
 						libpri_copy_string(cmdr->redirecting.from.name, c->connectedname, sizeof(cmdr->redirecting.from.name));
 						cmdr->redirecting.from.number_type = c->connectedplan;
@@ -3795,7 +3792,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 					pri_message(pri, "illegal value for callStatus=%d\n", c->ctcompletecallstatus);
 				}
 			} else if (c->ctactiveflag) {
-				subcommand *subcmd;
+				struct subcommand *subcmd;
+
 				c->ctactiveflag = 0;
 
 				pri_message(pri, "Got CT-Active\n");
@@ -3805,8 +3803,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
+					struct cmd_connectedline *cmdcl = &subcmd->connectedline;
+
 					subcmd->cmd = CMD_CONNECTEDLINE;
-					cmd_connectedline *cmdcl = &subcmd->connectedline;
 					libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
 					libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
 					cmdcl->connected.id.number_type = c->ctcompleteplan;
@@ -3817,7 +3816,8 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 				}
 			}
 			else if (c->divleginfo1activeflag) {
-				subcommand *subcmd;
+				struct subcommand *subcmd;
+
 				c->divleginfo1activeflag = 0;
 
 				pri_message(pri, "Got DivertingLegInformation1\n");
@@ -3827,8 +3827,9 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
+					struct cmd_redirecting *cmdr = &subcmd->redirecting;
+
 					subcmd->cmd = CMD_REDIRECTING;
-					cmd_redirecting *cmdr = &subcmd->redirecting;
 					libpri_copy_string(cmdr->redirecting.from.number, c->callednum, sizeof(cmdr->redirecting.from.number));
 					cmdr->redirecting.from.name[0] = '\0';
 					cmdr->redirecting.from.number_type = c->calledplan;

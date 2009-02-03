@@ -339,8 +339,8 @@ typedef struct q931_call q931_call;
 enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
 	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,   /* Update for unknown reason (May be interpreted to mean from answer) */
 	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,    /* Update from normal call answering */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_DIVERSION, /* Update from call diversion */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER   /* Update from call transfer */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,   /* Update from call transfer(active) (Party has already answered) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING   /* Update from call transfer(alerting) (Party has not answered yet) */
 };
 
 /* Information needed to identify an endpoint in a call. */
@@ -356,7 +356,7 @@ struct pri_party_connected_line {
 	struct pri_party_id id;		/* Connected party ID */
 	int source;					/* Information about the source of an update .
 	 							 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-	 							 * for Normal-Answer, Call-transfer, Call-diversion */
+	 							 * for Normal-Answer, Call-transfer */
 };
 
 /* Redirecting Line information.
@@ -374,35 +374,35 @@ struct pri_party_redirecting {
 #define CMD_CONNECTEDLINE       2
 
 
-typedef struct cmd_connectedline {
+struct cmd_connectedline {
 	int e;
 	int channel;
 	q931_call *call;
 	struct pri_party_connected_line connected;
-} cmd_connectedline;
+};
 
-typedef struct cmd_redirecting {
+struct cmd_redirecting {
 	int e;
 	int channel;
 	q931_call *call;
 	struct pri_party_redirecting redirecting;
-} cmd_redirecting;
+};
 
-typedef	struct subcommand {
+struct subcommand {
 	int cmd;
 	union {
-		cmd_connectedline      connectedline;
-		cmd_redirecting        redirecting;
+		struct cmd_connectedline connectedline;
+		struct cmd_redirecting   redirecting;
 	};
-} subcommand;
+};
 
 /* Max number of subcommands per event message */
 #define MAX_SUBCOMMANDS	4
 
-typedef	struct subcommands {
+struct subcommands {
 	int counter_subcmd;
-	subcommand subcmd[MAX_SUBCOMMANDS];
-} subcommands;
+	struct subcommand subcmd[MAX_SUBCOMMANDS];
+};
 
 
 typedef struct pri_event_generic {
@@ -442,10 +442,10 @@ typedef struct pri_event_answer {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
-	int connectedpres;
-	int connectedplan;
 	char connectednum[256];
 	char connectedname[256];
+	int connectedpres;
+	int connectedplan;
 	int source;
 } pri_event_answer;
 
@@ -460,13 +460,13 @@ typedef struct pri_event_facname {
 	int callingplan;			/* Dialing plan of Calling entity */
 } pri_event_facname;
 
-typedef struct pri_event_facility {
+struct pri_event_facility {
 	int e;
 	int channel;
 	int cref;
 	q931_call *call;
 	struct subcommands subcmds;
-} pri_event_facility;
+};
 
 #define PRI_CALLINGPLANANI
 #define PRI_CALLINGPLANRDNIS
@@ -484,9 +484,7 @@ typedef struct pri_event_ring {
 	char callednum[256];		/* Called number */
 	char redirectingnum[256];	/* Redirecting number */
 	char redirectingname[256];	/* Redirecting name */
-	int redirectingpres;
 	int redirectingreason;		/* Reason for redirect */
-	int redirectingcount;
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
@@ -502,6 +500,8 @@ typedef struct pri_event_ring {
 	char origcallednum[256];
 	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
 	int origredirectingreason;
+	int redirectingpres;
+	int redirectingcount;
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -564,7 +564,7 @@ typedef union {
 	pri_event_setup_ack   setup_ack;	/* SETUP_ACKNOWLEDGE structure */
 	pri_event_notify notify;		/* Notification */
 	pri_event_keypad_digit digit;			/* Digits that come during a call */
-	pri_event_facility facility;
+	struct pri_event_facility facility;
 } pri_event;
 
 struct pri;
