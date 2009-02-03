@@ -3947,7 +3947,7 @@ int rose_reject_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned c
 }
 
 
-static subcommand *get_ptr_subcommand(subcommands *sub)
+static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
 {
 	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
 		int count = sub->counter_subcmd;

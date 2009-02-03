@@ -344,8 +344,8 @@ typedef struct q931_call q931_call;
 enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
 	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,   /* Update for unknown reason (May be interpreted to mean from answer) */
 	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,    /* Update from normal call answering */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_DIVERSION, /* Update from call diversion */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER   /* Update from call transfer */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,   /* Update from call transfer(active) (Party has already answered) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING   /* Update from call transfer(alerting) (Party has not answered yet) */
 };
 
 /* Information needed to identify an endpoint in a call. */
@@ -361,7 +361,7 @@ struct pri_party_connected_line {
 	struct pri_party_id id;		/* Connected party ID */
 	int source;					/* Information about the source of an update .
 	 							 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-	 							 * for Normal-Answer, Call-transfer, Call-diversion */
+	 							 * for Normal-Answer, Call-transfer */
 };
 
 /* Redirecting Line information.
@@ -377,20 +377,20 @@ struct pri_party_redirecting {
 /* Structures for qsig_cc_facilities */
 struct qsig_cc_extension {
 	int	cc_extension_tag;
-	char	extension[256];
+	char extension[256];
 };
 
 struct qsig_cc_optional_arg {
-	char	number_A[256];
-	char	number_B[256];
+	char number_A[256];
+	char number_B[256];
 	int	service;
-	struct qsig_cc_extension	cc_extension;
+	struct qsig_cc_extension cc_extension;
 };
 
 struct qsig_cc_request_res {
 	int	no_path_reservation;
 	int	retain_service;
-	struct qsig_cc_extension	cc_extension;
+	struct qsig_cc_extension cc_extension;
 };
 
 /* Command derived from Facility */
@@ -408,71 +408,70 @@ struct qsig_cc_request_res {
 #define CCERROR_REMOTE_USER_BUSY_AGAIN	1012
 #define CCERROR_FAILURE_TO_MATCH	1013
 
-
-typedef struct cmd_connectedline {
+struct cmd_connectedline {
 	int e;
 	int channel;
 	q931_call *call;
 	struct pri_party_connected_line connected;
-} cmd_connectedline;
+};
 
-typedef struct cmd_redirecting {
+struct cmd_redirecting {
 	int e;
 	int channel;
 	q931_call *call;
 	struct pri_party_redirecting redirecting;
-} cmd_redirecting;
+};
 
-typedef struct cmd_cc_ccbs_rr {
+struct cmd_cc_ccbs_rr {
 	struct qsig_cc_request_res	cc_request_res;
-} cmd_cc_ccbs_rr;
+};
 
-typedef struct cmd_cc_ccnr_rr {
+struct cmd_cc_ccnr_rr {
 	struct qsig_cc_request_res	cc_request_res;
-} cmd_cc_ccnr_rr;
+};
 
-typedef struct cmd_cc_cancel_inv {
+struct cmd_cc_cancel_inv {
 	struct qsig_cc_optional_arg	cc_optional_arg;
-} cmd_cc_cancel_inv;
+};
 
-typedef struct cmd_cc_execposible_inv {
+struct cmd_cc_execposible_inv {
 	struct qsig_cc_optional_arg	cc_optional_arg;
-} cmd_cc_execposible_inv;
+};
 
-typedef struct cmd_cc_suspend_inv {
+struct cmd_cc_suspend_inv {
 	struct qsig_cc_extension	cc_extension;
-} cmd_cc_suspend_inv;
+};
 
-typedef struct cmd_cc_ringout_inv {
+struct cmd_cc_ringout_inv {
 	struct qsig_cc_extension	cc_extension;
-} cmd_cc_ringout_inv;
+};
 
-typedef struct cmd_cc_error {
+struct cmd_cc_error {
 	int	error_value;
-} cmd_cc_error;
+};
 
-typedef	struct subcommand {
+struct subcommand {
 	int cmd;
 	union {
-		cmd_connectedline      connectedline;
-		cmd_redirecting        redirecting;
-		cmd_cc_ccbs_rr         cc_ccbs_rr;
-		cmd_cc_ccnr_rr         cc_ccnr_rr;
-		cmd_cc_cancel_inv      cc_cancel_inv;
-		cmd_cc_execposible_inv cc_execposible_inv;
-		cmd_cc_suspend_inv     cc_suspend_inv;
-		cmd_cc_ringout_inv     cc_ringout_inv;
-		cmd_cc_error           cc_error;
+		struct cmd_connectedline      connectedline;
+		struct cmd_redirecting        redirecting;
+		struct cmd_cc_ccbs_rr         cc_ccbs_rr;
+		struct cmd_cc_ccnr_rr         cc_ccnr_rr;
+		struct cmd_cc_cancel_inv      cc_cancel_inv;
+		struct cmd_cc_execposible_inv cc_execposible_inv;
+		struct cmd_cc_suspend_inv     cc_suspend_inv;
+		struct cmd_cc_ringout_inv     cc_ringout_inv;
+		struct cmd_cc_error           cc_error;
 	};
-} subcommand;
+};
 
 /* Max number of subcommands per event message */
 #define MAX_SUBCOMMANDS	4
 
-typedef	struct subcommands {
+struct subcommands {
 	int counter_subcmd;
-	subcommand subcmd[MAX_SUBCOMMANDS];
-} subcommands;
+	struct subcommand subcmd[MAX_SUBCOMMANDS];
+};
 
 
 typedef struct pri_event_generic {
@@ -513,10 +512,10 @@ typedef struct pri_event_answer {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
-	int connectedpres;
-	int connectedplan;
 	char connectednum[256];
 	char connectedname[256];
+	int connectedpres;
+	int connectedplan;
 	int source;
 	struct subcommands subcmds;
 } pri_event_answer;
@@ -532,13 +531,13 @@ typedef struct pri_event_facname {
 	int callingplan;			/* Dialing plan of Calling entity */
 } pri_event_facname;
 
-typedef struct pri_event_facility {
+struct pri_event_facility {
 	int e;
 	int channel;
 	int cref;
 	q931_call *call;
 	struct subcommands subcmds;
-} pri_event_facility;
+};
 
 #define PRI_CALLINGPLANANI
 #define PRI_CALLINGPLANRDNIS
@@ -556,9 +555,7 @@ typedef struct pri_event_ring {
 	char callednum[256];		/* Called number */
 	char redirectingnum[256];	/* Redirecting number */
 	char redirectingname[256];	/* Redirecting name */
-	int redirectingpres;
 	int redirectingreason;		/* Reason for redirect */
-	int redirectingcount;
 	int callingplanrdnis;			/* Dialing plan of Redirecting Number */
 	char useruserinfo[260];		/* User->User info */
 	int flexible;				/* Are we flexible with our channel selection? */
@@ -574,6 +571,8 @@ typedef struct pri_event_ring {
 	char origcallednum[256];
 	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
 	int origredirectingreason;
+	int redirectingpres;
+	int redirectingcount;
 	struct subcommands subcmds;
 } pri_event_ring;
 
@@ -638,7 +637,7 @@ typedef union {
 	pri_event_setup_ack   setup_ack;	/* SETUP_ACKNOWLEDGE structure */
 	pri_event_notify notify;		/* Notification */
 	pri_event_keypad_digit digit;			/* Digits that come during a call */
-	pri_event_facility facility;
+	struct pri_event_facility facility;
 } pri_event;
 
 struct pri;
