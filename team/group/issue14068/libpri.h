@@ -709,7 +709,8 @@ int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int nonisd
 int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
-int pri_sr_set_redirecting(struct pri_sr *sr, char *name, char *num, int plan, int pres, int reason);
+int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
+void pri_sr_set_redirecting_name(struct pri_sr *sr, char *name);
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
 void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);
