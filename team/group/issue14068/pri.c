@@ -1055,12 +1055,16 @@ int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int cal
 	return 0;
 }
 
-int pri_sr_set_redirecting(struct pri_sr *sr, char *name, char *num, int plan, int pres, int reason)
+int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason)
 {
-	sr->redirectingname = name;
 	sr->redirectingnum = num;
 	sr->redirectingplan = plan;
 	sr->redirectingpres = pres;
 	sr->redirectingreason = reason;
 	return 0;
+}
+
+void pri_sr_set_redirecting_name(struct pri_sr *sr, char *name)
+{
+	sr->redirectingname = name;
 }
