@@ -375,16 +375,10 @@ struct pri_party_redirecting {
 
 
 struct cmd_connectedline {
-	int e;
-	int channel;
-	q931_call *call;
 	struct pri_party_connected_line connected;
 };
 
 struct cmd_redirecting {
-	int e;
-	int channel;
-	q931_call *call;
 	struct pri_party_redirecting redirecting;
 };
 
