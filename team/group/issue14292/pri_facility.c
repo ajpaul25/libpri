@@ -1101,7 +1101,6 @@ static int rose_presented_number_unscreened_encode(struct pri *pri, unsigned cha
 		case PRES_UNAVAILABLE:
 			/* tag component [2] numberNotAvailableDueToInterworking (0x82,len) */
 			ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), dst, i);
-			ASN1_FIXUP(compstk, compsp, dst, i);
 			break;
 		default:
 			pri_message(pri, "!! Undefined presentation value for PresentedNumberUnscreened: 0x%x\n", presentation);
