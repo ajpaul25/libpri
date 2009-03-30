@@ -261,6 +261,20 @@ static char *code2str(int code, struct msgtype *codes, int max)
 	return "Unknown";
 }
 
+static char *pritype(int type)
+{
+	switch (type) {
+	case PRI_CPE:
+		return "CPE";
+		break;
+	case PRI_NETWORK:
+		return "NET";
+		break;
+	default:
+		return "UNKNOWN";
+	}
+}
+
 static void call_init(struct q931_call *c)
 {
 	c->forceinvert = -1;	
@@ -461,8 +475,8 @@ static FUNC_DUMP(dump_channel_id)
 		if (!(ie->data[pos] & 0x10)) {
 			/* Number specified */
 			pos++;
-			pri_message(pri, "%c                       Ext: %d  Channel: %d ]\n", prefix, (ie->data[pos] & 0x80) >> 7, 
-				(ie->data[pos]) & 0x7f);
+			pri_message(pri, "%c                       Ext: %d  Channel: %d Type: %s]\n", prefix, (ie->data[pos] & 0x80) >> 7, 
+				(ie->data[pos]) & 0x7f, pritype(pri->localtype));
 		} else {
 			pos++;
 			/* Map specified */
