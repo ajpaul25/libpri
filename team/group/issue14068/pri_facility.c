@@ -2608,7 +2608,6 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	
 	/* Channel 1 */
 	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
 	
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
 	ASN1_PUSH(compstk, compsp, comp);
@@ -2616,6 +2615,7 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
 	ASN1_FIXUP(compstk, compsp, buffer, i);
 	
+	/* Interpretation component */
 	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 2);    /* reject - to get feedback from QSIG switch */
 	
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
@@ -2630,15 +2630,22 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	
 	ASN1_ADD_SIMPLE(comp, (ASN1_SEQUENCE | ASN1_CONSTRUCTOR), buffer, i);
 	ASN1_PUSH(compstk, compsp, comp);
-	buffer[i++] = (0x0a);
-	buffer[i++] = (0x01);
-	buffer[i++] = (0x00);
-	buffer[i++] = (0x81);
-	buffer[i++] = (0x00);
-	buffer[i++] = (0x0a);
-	buffer[i++] = (0x01);
-	buffer[i++] = (0x01);
+	buffer[i++] = (0x0a);/* Enumeration endDesignation */
+	buffer[i++] = (0x01);/* Len */
+	buffer[i++] = (0x00);/* primaryEnd */
+	buffer[i++] = (0x81);/* redirectionNumber = presentationRestricted */
+	buffer[i++] = (0x00);/* Len */
+	buffer[i++] = (0x0a);/* Enumeration callStatus */
+	buffer[i++] = (0x01);/* Len */
+	buffer[i++] = (0x01);/* alerting */
+
+	/*
+	 * Where does this element come from?  It is not in Q.SIG ECMA-178.
+	 * We send this but we will not accept it.
+	 * This seems to be a cut and paste error from eect_initiate_transfer().
+	 */
 	ASN1_ADD_WORDCOMP(comp, ASN1_INTEGER, buffer, i, call_reference);
+
 	ASN1_FIXUP(compstk, compsp, buffer, i);
 	ASN1_FIXUP(compstk, compsp, buffer, i);
 	
@@ -2663,7 +2670,6 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	compsp = 0;
 	
 	buffer2[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
 	
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer2, i);
 	ASN1_PUSH(compstk, compsp, comp);
@@ -2671,6 +2677,7 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer2, i, 0);
 	ASN1_FIXUP(compstk, compsp, buffer2, i);
 	
+	/* Interpretation component */
 	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer2, i, 2);  /* reject */
 	
 	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer2, i);
@@ -2685,15 +2692,22 @@ int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	
 	ASN1_ADD_SIMPLE(comp, (ASN1_SEQUENCE | ASN1_CONSTRUCTOR), buffer2, i);
 	ASN1_PUSH(compstk, compsp, comp);
-	buffer2[i++] = (0x0a);
-	buffer2[i++] = (0x01);
-	buffer2[i++] = (0x01);
-	buffer2[i++] = (0x81);
-	buffer2[i++] = (0x00);
-	buffer2[i++] = (0x0a);
-	buffer2[i++] = (0x01);
-	buffer2[i++] = (0x01);
+	buffer2[i++] = (0x0a);/* Enumeration endDesignation */
+	buffer2[i++] = (0x01);/* Len */
+	buffer2[i++] = (0x01);/* secondaryEnd */
+	buffer2[i++] = (0x81);/* redirectionNumber = presentationRestricted */
+	buffer2[i++] = (0x00);/* Len */
+	buffer2[i++] = (0x0a);/* Enumeration callStatus */
+	buffer2[i++] = (0x01);/* Len */
+	buffer2[i++] = (0x01);/* alerting */
+
+	/*
+	 * Where does this element come from?  It is not in Q.SIG ECMA-178.
+	 * We send this but we will not accept it.
+	 * This seems to be a cut and paste error from eect_initiate_transfer().
+	 */
 	ASN1_ADD_WORDCOMP(comp, ASN1_INTEGER, buffer2, i, call_reference);
+
 	ASN1_FIXUP(compstk, compsp, buffer2, i);
 	ASN1_FIXUP(compstk, compsp, buffer2, i);
 	
@@ -3718,8 +3732,7 @@ int rose_return_error_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsi
 
 			return 0;
 		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
+			pri_message(pri, "Unable to handle return error on switchtype %d!\n", pri->switchtype);
 		}
 
 	} while(0);
