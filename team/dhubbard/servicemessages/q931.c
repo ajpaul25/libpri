@@ -2730,7 +2730,7 @@ int maintenance_service_ack(struct pri *pri, q931_call *c)
 int maintenance_service(struct pri *pri, int span, int channel, int changestatus)
 {
 	struct q931_call *c;
-	c = q931_getcall(pri, 0 | 0x8000, 0);
+	c = q931_getcall(pri, 0x8000, 0);
 	if (!c) {
 		return -1;
 	}
