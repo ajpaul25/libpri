@@ -120,6 +120,9 @@ struct pri {
 	/* do we do overlap dialing */
 	int overlapdial;
 
+	/* do we support SERVICE messages */
+	int service_message_support;
+
 	/* do not skip channel 16 */
 	int chan_mapping_logical;
 
@@ -306,6 +309,8 @@ struct q931_call {
 
 	/* Bridged call info */
 	q931_call *bridged_call;        /* Pointer to other leg of bridged call */
+
+	int changestatus;		/* SERVICE message changestatus */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
