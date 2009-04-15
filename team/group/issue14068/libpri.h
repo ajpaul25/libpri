@@ -104,13 +104,13 @@
 #define PRI_PROG_CALLER_RETURNED_TO_ISDN					(1 << 9)
 
 /* Numbering plan identifier */
-#define PRI_NPI_UNKNOWN					0x0
-#define PRI_NPI_E163_E164				0x1
-#define PRI_NPI_X121					0x3
-#define PRI_NPI_F69						0x4
-#define PRI_NPI_NATIONAL				0x8
-#define PRI_NPI_PRIVATE					0x9
-#define PRI_NPI_RESERVED				0xF
+#define PRI_NPI_UNKNOWN					0x0 /*!< Unknown numbering plan */
+#define PRI_NPI_E163_E164				0x1 /*!< ISDN/telephony numbering plan (public) */
+#define PRI_NPI_X121					0x3 /*!< Data numbering plan */
+#define PRI_NPI_F69						0x4 /*!< Telex numbering plan */
+#define PRI_NPI_NATIONAL				0x8 /*!< National standard numbering plan */
+#define PRI_NPI_PRIVATE					0x9 /*!< Private numbering plan */
+#define PRI_NPI_RESERVED				0xF /*!< Reserved for extension */
 
 /* Type of number */
 #define PRI_TON_UNKNOWN					0x0
