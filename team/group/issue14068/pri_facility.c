@@ -1970,7 +1970,31 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
+	case ROSE_ETSI_ActivationDiversion:
+		break;
+	case ROSE_ETSI_DeactivationDiversion:
+		break;
+	case ROSE_ETSI_InterrogationDiversion:
+		break;
+	case ROSE_ETSI_CallDeflection:
+		break;
+	case ROSE_ETSI_CallRerouting:
+		break;
+	case ROSE_ETSI_InterrogateServedUserNumbers:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
 	case ROSE_ETSI_ChargingRequest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_EctExecute:
+		break;
+	case ROSE_ETSI_ExplicitEctExecute:
+		break;
+	case ROSE_ETSI_EctLinkIdRequest:
+		break;
+	case ROSE_ETSI_EctLoopTest:
 		break;
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
@@ -2028,6 +2052,32 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_invoke *invoke)
 {
 	switch (invoke->operation) {
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_ActivationDiversion:
+		break;
+	case ROSE_ETSI_DeactivationDiversion:
+		break;
+	case ROSE_ETSI_ActivationStatusNotificationDiv:
+		break;
+	case ROSE_ETSI_DeactivationStatusNotificationDiv:
+		break;
+	case ROSE_ETSI_InterrogationDiversion:
+		break;
+	case ROSE_ETSI_DiversionInformation:
+		break;
+	case ROSE_ETSI_CallDeflection:
+		break;
+	case ROSE_ETSI_CallRerouting:
+		break;
+	case ROSE_ETSI_InterrogateServedUserNumbers:
+		break;
+	case ROSE_ETSI_DivertingLegInformation1:
+		break;
+	case ROSE_ETSI_DivertingLegInformation2:
+		break;
+	case ROSE_ETSI_DivertingLegInformation3:
+		break;
+#endif	/* Not handled yet */
 	case ROSE_ETSI_ChargingRequest:
 		/* Ignore messsage */
 		break;
@@ -2068,6 +2118,22 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_ITU_IdentificationOfCharge:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_EctExecute:
+		break;
+	case ROSE_ETSI_ExplicitEctExecute:
+		break;
+	case ROSE_ETSI_RequestSubaddress:
+		break;
+	case ROSE_ETSI_SubaddressTransfer:
+		break;
+	case ROSE_ETSI_EctLinkIdRequest:
+		break;
+	case ROSE_ETSI_EctInform:
+		break;
+	case ROSE_ETSI_EctLoopTest:
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CallingName:
