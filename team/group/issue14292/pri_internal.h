@@ -247,7 +247,7 @@ struct q931_call {
 	int ccrequestresult;
 	int cctimer2;			/* Timer for QSIG-timer2 */
 	/* QSIG cc infos (receive) */
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 
 	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 

@@ -334,22 +334,22 @@ static int presentation_from_q931(struct pri *ctrl, int presentation, int number
 {
 	int value;
 
-	switch (presentation & PRES_RESTRICTION) {
-	case PRES_ALLOWED:
+	switch (presentation & PRI_PRES_RESTRICTION) {
+	case PRI_PRES_ALLOWED:
 		value = 0;	/* presentationAllowed<Number/Address> */
 		break;
 	default:
 		pri_message(ctrl, "!! Unsupported Q.931 number presentation value (%d)\n",
 			presentation);
 		/* fall through */
-	case PRES_RESTRICTED:
+	case PRI_PRES_RESTRICTED:
 		if (number_present) {
 			value = 3;	/* presentationRestricted<Number/Address> */
 		} else {
 			value = 1;	/* presentationRestricted */
 		}
 		break;
-	case PRES_UNAVAILABLE:
+	case PRI_PRES_UNAVAILABLE:
 		value = 2;	/* numberNotAvailableDueToInterworking */
 		break;
 	}
@@ -373,7 +373,7 @@ static int presentation_for_q931(struct pri *ctrl, int presentation)
 
 	switch (presentation) {
 	case 0:	/* presentationAllowed<Number/Address> */
-		value = PRES_ALLOWED;
+		value = PRI_PRES_ALLOWED;
 		break;
 	default:
 		pri_message(ctrl,
@@ -382,10 +382,10 @@ static int presentation_for_q931(struct pri *ctrl, int presentation)
 		/* fall through */
 	case 1:	/* presentationRestricted */
 	case 3:	/* presentationRestricted<Number/Address> */
-		value = PRES_RESTRICTED;
+		value = PRI_PRES_RESTRICTED;
 		break;
 	case 2:	/* numberNotAvailableDueToInterworking */
-		value = PRES_UNAVAILABLE;
+		value = PRI_PRES_UNAVAILABLE;
 		break;
 	}
 
@@ -396,12 +396,12 @@ static int presentation_to_subscription(struct pri *pri, int presentation)
 {
 	/* derive subscription value from presentation value */
 
-	switch (presentation & PRES_RESTRICTION) {
-	case PRES_ALLOWED:
+	switch (presentation & PRI_PRES_RESTRICTION) {
+	case PRI_PRES_ALLOWED:
 		return QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR;
-	case PRES_RESTRICTED:
+	case PRI_PRES_RESTRICTED:
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;
-	case PRES_UNAVAILABLE:	/* Number not available due to interworking */
+	case PRI_PRES_UNAVAILABLE:	/* Number not available due to interworking */
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;	/* ?? QSIG_NO_NOTIFICATION */
 	default:
 		pri_message(pri, "!! Unknown Q.SIG presentationIndicator 0x%02x\n",
@@ -614,7 +614,7 @@ static unsigned char *enc_qsig_diverting_leg_information3(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 
 	/* 'connectedpres' also indicates if name presentation is allowed */
-	if ((call->divertedtopres & PRES_RESTRICTION) == PRES_ALLOWED) {
+	if ((call->divertedtopres & PRI_PRES_RESTRICTION) == PRI_PRES_ALLOWED) {
 		msg.args.qsig.DivertingLegInformation3.presentation_allowed_indicator = 1;	/* TRUE */
 
 		if (call->divertedtoname[0]) {
@@ -1793,9 +1793,9 @@ int add_qsigCcInv_facility_ie(struct pri *ctrl, q931_call *call, int messagetype
 }
 /* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
 
-static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
+static struct pri_subcommand *get_ptr_subcommand(struct pri_subcommands *sub)
 {
-	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
+	if (sub->counter_subcmd < PRI_MAX_SUBCOMMANDS) {
 		int count = sub->counter_subcmd;
 
 		sub->counter_subcmd++;
@@ -2096,7 +2096,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_error *error)
 {
 	const char *dms100_operation;
-	struct subcommand *c_subcmd;
+	struct pri_subcommand *c_subcmd;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
@@ -2105,8 +2105,8 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_ERROR;
-		c_subcmd->cc_error.error_value = CCERROR_UNSPECIFIED;
+		c_subcmd->cmd = PRI_SUBCMD_CC_ERROR;
+		c_subcmd->cc_error.error_value = PRI_CCERROR_UNSPECIFIED;
 		break;
 	default:
 		break;
@@ -2152,7 +2152,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_result *result)
 {
-	struct subcommand *c_subcmd;
+	struct pri_subcommand *c_subcmd;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
@@ -2273,7 +2273,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_CCBSREQUEST_RR;
+		c_subcmd->cmd = PRI_SUBCMD_CC_CCBSREQUEST_RR;
 		c_subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation =
 			result->args.qsig.CcbsRequest.no_path_reservation;
 		c_subcmd->cc_ccbs_rr.cc_request_res.retain_service =
@@ -2286,7 +2286,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_CCNRREQUEST_RR;
+		c_subcmd->cmd = PRI_SUBCMD_CC_CCNRREQUEST_RR;
 		c_subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation =
 			result->args.qsig.CcnrRequest.no_path_reservation;
 		c_subcmd->cc_ccnr_rr.cc_request_res.retain_service =
@@ -2328,7 +2328,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_invoke *invoke)
 {
-	struct subcommand *c_subcmd;
+	struct pri_subcommand *c_subcmd;
 
 	switch (invoke->operation) {
 #if 0	/* Not handled yet */
@@ -2663,7 +2663,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		}
 		call->redirectingreason = redirectingreason_for_q931(ctrl,
 			invoke->args.qsig.DivertingLegInformation2.diversion_reason);
-		call->redirectingpres = PRES_UNAVAILABLE;
+		call->redirectingpres = PRI_PRES_UNAVAILABLE;
 		call->redirectingnum[0] = '\0';
 		call->redirectingplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
 		if (invoke->args.qsig.DivertingLegInformation2.diverting_present) {
@@ -2773,7 +2773,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_CANCEL_INV;
+		c_subcmd->cmd = PRI_SUBCMD_CC_CANCEL_INV;
 		c_subcmd->cc_cancel_inv.cc_optional_arg.number_A[0] = '\0';
 		c_subcmd->cc_cancel_inv.cc_optional_arg.number_B[0] = '\0';
 		c_subcmd->cc_cancel_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
@@ -2792,7 +2792,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_EXECPOSIBLE_INV;
+		c_subcmd->cmd = PRI_SUBCMD_CC_EXECPOSIBLE_INV;
 		c_subcmd->cc_execposible_inv.cc_optional_arg.number_A[0] = '\0';
 		c_subcmd->cc_execposible_inv.cc_optional_arg.number_B[0] = '\0';
 		c_subcmd->cc_execposible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
@@ -2815,7 +2815,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = CMD_CC_RINGOUT_INV;
+		c_subcmd->cmd = PRI_SUBCMD_CC_RINGOUT_INV;
 		c_subcmd->cc_ringout_inv.cc_extension.cc_extension_tag = 0;
 		break;
 #if 0	/* Not handled yet */
