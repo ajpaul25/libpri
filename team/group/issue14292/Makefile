@@ -52,6 +52,7 @@ STATIC_OBJS= \
 	rose.o \
 	rose_address.o \
 	rose_etsi_aoc.o \
+	rose_etsi_cc.o \
 	rose_etsi_diversion.o \
 	rose_etsi_ect.o \
 	rose_other.o \
@@ -73,6 +74,7 @@ DYNAMIC_OBJS= \
 	rose.lo \
 	rose_address.lo \
 	rose_etsi_aoc.lo \
+	rose_etsi_cc.lo \
 	rose_etsi_diversion.lo \
 	rose_etsi_ect.lo \
 	rose_other.lo \

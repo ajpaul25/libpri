@@ -2221,6 +2221,30 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
+	case ROSE_ETSI_StatusRequest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_CCBSRequest:
+		break;
+	case ROSE_ETSI_CCBSDeactivate:
+		break;
+	case ROSE_ETSI_CCBSInterrogate:
+		break;
+	case ROSE_ETSI_CCBSStatusRequest:
+		break;
+	case ROSE_ETSI_CCBS_T_Request:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_CCNRRequest:
+		break;
+	case ROSE_ETSI_CCNRInterrogate:
+		break;
+	case ROSE_ETSI_CCNR_T_Request:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
 	case ROSE_QSIG_CallTransferIdentify:
 		break;
 	case ROSE_QSIG_CallTransferInitiate:
@@ -2389,6 +2413,54 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	case ROSE_ETSI_EctInform:
 		break;
 	case ROSE_ETSI_EctLoopTest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_StatusRequest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_CallInfoRetain:
+		break;
+	case ROSE_ETSI_CCBSRequest:
+		break;
+	case ROSE_ETSI_CCBSDeactivate:
+		break;
+	case ROSE_ETSI_CCBSInterrogate:
+		break;
+	case ROSE_ETSI_CCBSErase:
+		break;
+	case ROSE_ETSI_CCBSRemoteUserFree:
+		break;
+	case ROSE_ETSI_CCBSCall:
+		break;
+	case ROSE_ETSI_CCBSStatusRequest:
+		break;
+	case ROSE_ETSI_CCBSBFree:
+		break;
+	case ROSE_ETSI_EraseCallLinkageID:
+		break;
+	case ROSE_ETSI_CCBSStopAlerting:
+		break;
+	case ROSE_ETSI_CCBS_T_Request:
+		break;
+	case ROSE_ETSI_CCBS_T_Call:
+		break;
+	case ROSE_ETSI_CCBS_T_Suspend:
+		break;
+	case ROSE_ETSI_CCBS_T_Resume:
+		break;
+	case ROSE_ETSI_CCBS_T_RemoteUserFree:
+		break;
+	case ROSE_ETSI_CCBS_T_Available:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_CCNRRequest:
+		break;
+	case ROSE_ETSI_CCNRInterrogate:
+		break;
+	case ROSE_ETSI_CCNR_T_Request:
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CallingName:
