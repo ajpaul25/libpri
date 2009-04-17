@@ -344,67 +344,93 @@
 
 typedef struct q931_call q931_call;
 
-/* Connected line update source code */
+/*! \brief Connected line update source code */
 enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,   /* Update for unknown reason (May be interpreted to mean from answer) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,    /* Update from normal call answering */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,   /* Update from call transfer(active) (Party has already answered) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING   /* Update from call transfer(alerting) (Party has not answered yet) */
+	/*! Update for unknown reason (May be interpreted to mean from answer) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,
+	/*! Update from normal call answering */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,
+	/*! Update from call transfer(active) (Party has already answered) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,
+	/*! Update from call transfer(alerting) (Party has not answered yet) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING
 };
 
-/* Information needed to identify an endpoint in a call. */
+/*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
-	char number[256];			/* Subscriber phone number */
-	char name[256];				/* Subscriber name */
-	int number_type;			/* Q.931 encoded "type of number" and "numbering plan identification" */
-	int number_presentation;	/* Q.931 encoded "presentation indicator" and "screening indicator" */
+	/*! Subscriber phone number */
+	char number[256];
+	/*! Subscriber name */
+	char name[256];
+	/*! Q.931 encoded "type of number" and "numbering plan identification" */
+	int number_type;
+	/*! Q.931 encoded "presentation indicator" and "screening indicator" */
+	int number_presentation;
 };
 
-/* Connected Line/Party information */
+/*! \brief Connected Line/Party information */
 struct pri_party_connected_line {
-	struct pri_party_id id;		/* Connected party ID */
-	int source;					/* Information about the source of an update .
-	 							 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-	 							 * for Normal-Answer, Call-transfer */
+	/*! Connected party ID */
+	struct pri_party_id id;
+	/*!
+	 * \brief Information about the source of an update.
+	 * \details
+	 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
+     * for Normal-Answer, Call-transfer
+	 */
+	int source;
 };
 
-/* Redirecting Line information.
+/*!
+ * \brief Redirecting Line information.
+ * \details
  * RDNIS (Redirecting Directory Number Information Service)
- * Where a call diversion or transfer was invoked. */
+ * Where a call diversion or transfer was invoked.
+ */
 struct pri_party_redirecting {
-	struct pri_party_id from;	/* Who is redirecting the call (Sent to the party the call is redirected toward) */
-	struct pri_party_id to;		/* Call is redirecting to a new party (Sent to the caller) */
-	int count;					/* Number of times the call was redirected */
-	int reason;					/* Redirection reasons */
+	/*! Who is redirecting the call (Sent to the party the call is redirected toward) */
+	struct pri_party_id from;
+	/*! Call is redirecting to a new party (Sent to the caller) */
+	struct pri_party_id to;
+	/*! Number of times the call was redirected */
+	int count;
+	/*! Redirection reasons */
+	int reason;
 };
 
-/* Subcommand derived from Facility */
-#define CMD_REDIRECTING         1
-#define CMD_CONNECTEDLINE       2
+/* Subcommands derived from supplementary services. */
+#define PRI_SUBCMD_REDIRECTING		1
+#define PRI_SUBCMD_CONNECTED_LINE	2
 
 
-struct cmd_connectedline {
-	struct pri_party_connected_line connected;
+struct pri_subcmd_connected_line {
+	struct pri_party_connected_line party;
 };
 
-struct cmd_redirecting {
-	struct pri_party_redirecting redirecting;
+struct pri_subcmd_redirecting {
+	struct pri_party_redirecting party;
 };
 
-struct subcommand {
+struct pri_subcommand {
+	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
 	union {
-		struct cmd_connectedline connectedline;
-		struct cmd_redirecting   redirecting;
+		struct pri_subcmd_connected_line connected_line;
+		struct pri_subcmd_redirecting redirecting;
 	};
 };
 
 /* Max number of subcommands per event message */
-#define MAX_SUBCOMMANDS	4
+#define PRI_MAX_SUBCOMMANDS	4
 
-struct subcommands {
+struct pri_subcommands {
 	int counter_subcmd;
-	struct subcommand subcmd[MAX_SUBCOMMANDS];
+	/*!
+	 * \note This is set to sizeof(struct pri_subcommand) to
+     * maintain ABI compatibility if more subcommand events are addd.
+	 */
+	unsigned size_subcmd;
+	struct pri_subcommand subcmd[PRI_MAX_SUBCOMMANDS];
 };
 
 
@@ -468,7 +494,7 @@ struct pri_event_facility {
 	int channel;
 	int cref;
 	q931_call *call;
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 };
 
 #define PRI_CALLINGPLANANI
@@ -668,10 +694,10 @@ int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisd
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
-/* Give connected line information to a call */
+/*! \brief Give connected line information to a call */
 int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party_connected_line *connected);
 
-/* Give redirection information to a call */
+/*! \brief Give redirection information to a call */
 int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_redirecting *redirecting);
 
 /* Set CRV reference for GR-303 calls */

@@ -3351,14 +3351,15 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 	return 0;
 }
 
-static void clr_subcommands(struct subcommands *sub)
+static void clr_subcommands(struct pri_subcommands *sub)
 {
 	sub->counter_subcmd = 0;
+	sub->size_subcmd = sizeof(struct pri_subcommand);
 }
 
-static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
+static struct pri_subcommand *get_ptr_subcommand(struct pri_subcommands *sub)
 {
-	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
+	if (sub->counter_subcmd < PRI_MAX_SUBCOMMANDS) {
 		int count = sub->counter_subcmd;
 		sub->counter_subcmd++;
 		return &sub->subcmd[count];
@@ -3905,7 +3906,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				if (c->ctcompletecallstatus == 0) {
 					/* answered(0) */
-					struct subcommand *subcmd;
+					struct pri_subcommand *subcmd;
 
 					pri_message(pri, "Got CT-Complete, callStatus = answered(0)\n");
 					pri->ev.e = PRI_EVENT_FACILITY;
@@ -3914,20 +3915,20 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
-						struct cmd_connectedline *cmdcl = &subcmd->connectedline;
+						struct pri_subcmd_connected_line *cmdcl = &subcmd->connected_line;
 
-						subcmd->cmd = CMD_CONNECTEDLINE;
-						libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
-						libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
-						cmdcl->connected.id.number_type = c->ctcompleteplan;
-						cmdcl->connected.id.number_presentation = c->ctcompletepres;
-						cmdcl->connected.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
+						subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
+						libpri_copy_string(cmdcl->party.id.number, c->ctcompletenum, sizeof(cmdcl->party.id.number));
+						libpri_copy_string(cmdcl->party.id.name, c->ctcompletename, sizeof(cmdcl->party.id.name));
+						cmdcl->party.id.number_type = c->ctcompleteplan;
+						cmdcl->party.id.number_presentation = c->ctcompletepres;
+						cmdcl->party.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
 						haveevent = 1;
-						pri_message(pri, "CT-Complete, sending facility/CMD_CONNECTEDLINE (%s/%s)\n", cmdcl->connected.id.name, cmdcl->connected.id.number);
+						pri_message(pri, "CT-Complete, sending facility/PRI_SUBCMD_CONNECTED_LINE (%s/%s)\n", cmdcl->party.id.name, cmdcl->party.id.number);
 					}
 				} else if (c->ctcompletecallstatus == 1) {
 					/* alerting(1) */
-					struct subcommand *subcmd;
+					struct pri_subcommand *subcmd;
 
 					pri_message(pri, "Got CT-Complete, callStatus = alerting(1)\n");
 					pri->ev.e = PRI_EVENT_FACILITY;
@@ -3936,27 +3937,27 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
-						struct cmd_redirecting *cmdr = &subcmd->redirecting;
+						struct pri_subcmd_redirecting *cmdr = &subcmd->redirecting;
 
-						subcmd->cmd = CMD_REDIRECTING;
-						libpri_copy_string(cmdr->redirecting.from.number, c->connectednum, sizeof(cmdr->redirecting.from.number));
-						libpri_copy_string(cmdr->redirecting.from.name, c->connectedname, sizeof(cmdr->redirecting.from.name));
-						cmdr->redirecting.from.number_type = c->connectedplan;
-						cmdr->redirecting.from.number_presentation = c->connectedpres;
-						libpri_copy_string(cmdr->redirecting.to.number, c->ctcompletenum, sizeof(cmdr->redirecting.to.number));
-						libpri_copy_string(cmdr->redirecting.to.name, c->ctcompletename, sizeof(cmdr->redirecting.to.name));
-						cmdr->redirecting.to.number_type = c->ctcompleteplan;
-						cmdr->redirecting.to.number_presentation = c->ctcompletepres;
-						cmdr->redirecting.count = 0;
-						cmdr->redirecting.reason = PRI_REDIR_UNKNOWN;
+						subcmd->cmd = PRI_SUBCMD_REDIRECTING;
+						libpri_copy_string(cmdr->party.from.number, c->connectednum, sizeof(cmdr->party.from.number));
+						libpri_copy_string(cmdr->party.from.name, c->connectedname, sizeof(cmdr->party.from.name));
+						cmdr->party.from.number_type = c->connectedplan;
+						cmdr->party.from.number_presentation = c->connectedpres;
+						libpri_copy_string(cmdr->party.to.number, c->ctcompletenum, sizeof(cmdr->party.to.number));
+						libpri_copy_string(cmdr->party.to.name, c->ctcompletename, sizeof(cmdr->party.to.name));
+						cmdr->party.to.number_type = c->ctcompleteplan;
+						cmdr->party.to.number_presentation = c->ctcompletepres;
+						cmdr->party.count = 0;
+						cmdr->party.reason = PRI_REDIR_UNKNOWN;
 						haveevent = 1;
-						pri_message(pri, "CT-Complete, sending facility/CMD_REDIRECTING (%s/%s)\n", cmdr->redirecting.to.name, cmdr->redirecting.to.number);
+						pri_message(pri, "CT-Complete, sending facility/PRI_SUBCMD_REDIRECTING (%s/%s)\n", cmdr->party.to.name, cmdr->party.to.number);
 					}
 				} else {
 					pri_message(pri, "illegal value for callStatus=%d\n", c->ctcompletecallstatus);
 				}
 			} else if (c->ctactiveflag) {
-				struct subcommand *subcmd;
+				struct pri_subcommand *subcmd;
 
 				c->ctactiveflag = 0;
 
@@ -3967,20 +3968,20 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
-					struct cmd_connectedline *cmdcl = &subcmd->connectedline;
+					struct pri_subcmd_connected_line *cmdcl = &subcmd->connected_line;
 
-					subcmd->cmd = CMD_CONNECTEDLINE;
-					libpri_copy_string(cmdcl->connected.id.number, c->ctcompletenum, sizeof(cmdcl->connected.id.number));
-					libpri_copy_string(cmdcl->connected.id.name, c->ctcompletename, sizeof(cmdcl->connected.id.name));
-					cmdcl->connected.id.number_type = c->ctcompleteplan;
-					cmdcl->connected.id.number_presentation = c->ctcompletepres;
-					cmdcl->connected.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
+					subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
+					libpri_copy_string(cmdcl->party.id.number, c->ctcompletenum, sizeof(cmdcl->party.id.number));
+					libpri_copy_string(cmdcl->party.id.name, c->ctcompletename, sizeof(cmdcl->party.id.name));
+					cmdcl->party.id.number_type = c->ctcompleteplan;
+					cmdcl->party.id.number_presentation = c->ctcompletepres;
+					cmdcl->party.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
 					haveevent = 1;
-					pri_message(pri, "CT-Active, sending facility CMD_CONNECTEDLINE (%s/%s)\n", cmdcl->connected.id.name, cmdcl->connected.id.number);
+					pri_message(pri, "CT-Active, sending facility PRI_SUBCMD_CONNECTED_LINE (%s/%s)\n", cmdcl->party.id.name, cmdcl->party.id.number);
 				}
 			}
 			else if (c->divleginfo1activeflag) {
-				struct subcommand *subcmd;
+				struct pri_subcommand *subcmd;
 
 				c->divleginfo1activeflag = 0;
 
@@ -3991,21 +3992,21 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
-					struct cmd_redirecting *cmdr = &subcmd->redirecting;
+					struct pri_subcmd_redirecting *cmdr = &subcmd->redirecting;
 
-					subcmd->cmd = CMD_REDIRECTING;
-					libpri_copy_string(cmdr->redirecting.from.number, c->callednum, sizeof(cmdr->redirecting.from.number));
-					cmdr->redirecting.from.name[0] = '\0';
-					cmdr->redirecting.from.number_type = c->calledplan;
-					cmdr->redirecting.from.number_presentation = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
-					libpri_copy_string(cmdr->redirecting.to.number, c->divertedtonum, sizeof(cmdr->redirecting.to.number));
-					cmdr->redirecting.to.name[0] = '\0';
-					cmdr->redirecting.to.number_type = c->divertedtoplan;
-					cmdr->redirecting.to.number_presentation = c->divertedtopres;
-					cmdr->redirecting.count = c->divertedtocount;
-					cmdr->redirecting.reason = c->divertedtoreason;
+					subcmd->cmd = PRI_SUBCMD_REDIRECTING;
+					libpri_copy_string(cmdr->party.from.number, c->callednum, sizeof(cmdr->party.from.number));
+					cmdr->party.from.name[0] = '\0';
+					cmdr->party.from.number_type = c->calledplan;
+					cmdr->party.from.number_presentation = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
+					libpri_copy_string(cmdr->party.to.number, c->divertedtonum, sizeof(cmdr->party.to.number));
+					cmdr->party.to.name[0] = '\0';
+					cmdr->party.to.number_type = c->divertedtoplan;
+					cmdr->party.to.number_presentation = c->divertedtopres;
+					cmdr->party.count = c->divertedtocount;
+					cmdr->party.reason = c->divertedtoreason;
 					haveevent = 1;
-					pri_message(pri, "DivertingLegInformation1, sending facility/CMD_REDIRECTING (%s/%s)\n", cmdr->redirecting.to.name, cmdr->redirecting.to.number);
+					pri_message(pri, "DivertingLegInformation1, sending facility/PRI_SUBCMD_REDIRECTING (%s/%s)\n", cmdr->party.to.name, cmdr->party.to.number);
 				}
 			}
 
