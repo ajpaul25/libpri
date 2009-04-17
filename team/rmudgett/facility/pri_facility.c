@@ -334,22 +334,22 @@ static int presentation_from_q931(struct pri *ctrl, int presentation, int number
 {
 	int value;
 
-	switch (presentation & PRES_RESTRICTION) {
-	case PRES_ALLOWED:
+	switch (presentation & PRI_PRES_RESTRICTION) {
+	case PRI_PRES_ALLOWED:
 		value = 0;	/* presentationAllowed<Number/Address> */
 		break;
 	default:
 		pri_message(ctrl, "!! Unsupported Q.931 number presentation value (%d)\n",
 			presentation);
 		/* fall through */
-	case PRES_RESTRICTED:
+	case PRI_PRES_RESTRICTED:
 		if (number_present) {
 			value = 3;	/* presentationRestricted<Number/Address> */
 		} else {
 			value = 1;	/* presentationRestricted */
 		}
 		break;
-	case PRES_UNAVAILABLE:
+	case PRI_PRES_UNAVAILABLE:
 		value = 2;	/* numberNotAvailableDueToInterworking */
 		break;
 	}
@@ -373,7 +373,7 @@ static int presentation_for_q931(struct pri *ctrl, int presentation)
 
 	switch (presentation) {
 	case 0:	/* presentationAllowed<Number/Address> */
-		value = PRES_ALLOWED;
+		value = PRI_PRES_ALLOWED;
 		break;
 	default:
 		pri_message(ctrl,
@@ -382,10 +382,10 @@ static int presentation_for_q931(struct pri *ctrl, int presentation)
 		/* fall through */
 	case 1:	/* presentationRestricted */
 	case 3:	/* presentationRestricted<Number/Address> */
-		value = PRES_RESTRICTED;
+		value = PRI_PRES_RESTRICTED;
 		break;
 	case 2:	/* numberNotAvailableDueToInterworking */
-		value = PRES_UNAVAILABLE;
+		value = PRI_PRES_UNAVAILABLE;
 		break;
 	}
 
@@ -1770,7 +1770,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		}
 		call->redirectingreason = redirectingreason_for_q931(ctrl,
 			invoke->args.qsig.DivertingLegInformation2.diversion_reason);
-		call->redirectingpres = PRES_UNAVAILABLE;
+		call->redirectingpres = PRI_PRES_UNAVAILABLE;
 		call->redirectingnum[0] = '\0';
 		call->redirectingplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
 		if (invoke->args.qsig.DivertingLegInformation2.diverting_present) {
