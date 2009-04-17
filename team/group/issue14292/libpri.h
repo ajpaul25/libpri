@@ -26,7 +26,14 @@
  * provided with that copy of Asterisk, instead of the license
  * terms granted here.
  */
- 
+
+/*
+ * NOTE:
+ * All new global identifiers that are added to this file MUST be
+ * prefixed with PRI_ or pri_ to indicate that they are part of this
+ * library and to reduce potential naming conflicts.
+ */
+
 #ifndef _LIBPRI_H
 #define _LIBPRI_H
 
@@ -138,44 +145,44 @@
 #define PRI_UNKNOWN					0x0
 
 /* Presentation */
-#define PRES_NUMBER_TYPE					0x03
-#define PRES_USER_NUMBER_UNSCREENED			0x00
-#define PRES_USER_NUMBER_PASSED_SCREEN		0x01
-#define PRES_USER_NUMBER_FAILED_SCREEN		0x02
-#define PRES_NETWORK_NUMBER					0x03
+#define PRI_PRES_NUMBER_TYPE				0x03
+#define PRI_PRES_USER_NUMBER_UNSCREENED		0x00
+#define PRI_PRES_USER_NUMBER_PASSED_SCREEN	0x01
+#define PRI_PRES_USER_NUMBER_FAILED_SCREEN	0x02
+#define PRI_PRES_NETWORK_NUMBER				0x03
 
-#define PRES_RESTRICTION					0x60
-#define PRES_ALLOWED						0x00
-#define PRES_RESTRICTED						0x20
-#define PRES_UNAVAILABLE					0x40
-#define PRES_RESERVED						0x60
+#define PRI_PRES_RESTRICTION				0x60
+#define PRI_PRES_ALLOWED					0x00
+#define PRI_PRES_RESTRICTED					0x20
+#define PRI_PRES_UNAVAILABLE				0x40
+#define PRI_PRES_RESERVED					0x60
 
 #define PRES_ALLOWED_USER_NUMBER_NOT_SCREENED \
-	(PRES_ALLOWED | PRES_USER_NUMBER_UNSCREENED)
+	(PRI_PRES_ALLOWED | PRI_PRES_USER_NUMBER_UNSCREENED)
 
 #define PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN \
-	(PRES_ALLOWED | PRES_USER_NUMBER_PASSED_SCREEN)
+	(PRI_PRES_ALLOWED | PRI_PRES_USER_NUMBER_PASSED_SCREEN)
 
 #define PRES_ALLOWED_USER_NUMBER_FAILED_SCREEN \
-	(PRES_ALLOWED | PRES_USER_NUMBER_FAILED_SCREEN)
+	(PRI_PRES_ALLOWED | PRI_PRES_USER_NUMBER_FAILED_SCREEN)
 
 #define PRES_ALLOWED_NETWORK_NUMBER	\
-	(PRES_ALLOWED | PRES_NETWORK_NUMBER)
+	(PRI_PRES_ALLOWED | PRI_PRES_NETWORK_NUMBER)
 
 #define PRES_PROHIB_USER_NUMBER_NOT_SCREENED \
-	(PRES_RESTRICTED | PRES_USER_NUMBER_UNSCREENED)
+	(PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED)
 
 #define PRES_PROHIB_USER_NUMBER_PASSED_SCREEN \
-	(PRES_RESTRICTED | PRES_USER_NUMBER_PASSED_SCREEN)
+	(PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_PASSED_SCREEN)
 
 #define PRES_PROHIB_USER_NUMBER_FAILED_SCREEN \
-	(PRES_RESTRICTED | PRES_USER_NUMBER_FAILED_SCREEN)
+	(PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_FAILED_SCREEN)
 
 #define PRES_PROHIB_NETWORK_NUMBER \
-	(PRES_RESTRICTED | PRES_NETWORK_NUMBER)
+	(PRI_PRES_RESTRICTED | PRI_PRES_NETWORK_NUMBER)
 
 #define PRES_NUMBER_NOT_AVAILABLE \
-	(PRES_UNAVAILABLE | PRES_NETWORK_NUMBER)
+	(PRI_PRES_UNAVAILABLE | PRI_PRES_NETWORK_NUMBER)
 
 /* Causes for disconnection */
 #define PRI_CAUSE_UNALLOCATED					1
@@ -343,131 +350,157 @@
 
 typedef struct q931_call q931_call;
 
-/* Connected line update source code */
+/*! \brief Connected line update source code */
 enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,   /* Update for unknown reason (May be interpreted to mean from answer) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,    /* Update from normal call answering */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,   /* Update from call transfer(active) (Party has already answered) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING   /* Update from call transfer(alerting) (Party has not answered yet) */
+	/*! Update for unknown reason (May be interpreted to mean from answer) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,
+	/*! Update from normal call answering */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,
+	/*! Update from call transfer(active) (Party has already answered) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,
+	/*! Update from call transfer(alerting) (Party has not answered yet) */
+	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING
 };
 
-/* Information needed to identify an endpoint in a call. */
+/*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
-	char number[256];			/* Subscriber phone number */
-	char name[256];				/* Subscriber name */
-	int number_type;			/* Q.931 encoded "type of number" and "numbering plan identification" */
-	int number_presentation;	/* Q.931 encoded "presentation indicator" and "screening indicator" */
+	/*! Subscriber phone number */
+	char number[256];
+	/*! Subscriber name */
+	char name[256];
+	/*! Q.931 encoded "type of number" and "numbering plan identification" */
+	int number_type;
+	/*! Q.931 encoded "presentation indicator" and "screening indicator" */
+	int number_presentation;
 };
 
-/* Connected Line/Party information */
+/*! \brief Connected Line/Party information */
 struct pri_party_connected_line {
-	struct pri_party_id id;		/* Connected party ID */
-	int source;					/* Information about the source of an update .
-	 							 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-	 							 * for Normal-Answer, Call-transfer */
+	/*! Connected party ID */
+	struct pri_party_id id;
+	/*!
+	 * \brief Information about the source of an update.
+	 * \details
+	 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
+     * for Normal-Answer, Call-transfer
+	 */
+	int source;
 };
 
-/* Redirecting Line information.
+/*!
+ * \brief Redirecting Line information.
+ * \details
  * RDNIS (Redirecting Directory Number Information Service)
- * Where a call diversion or transfer was invoked. */
+ * Where a call diversion or transfer was invoked.
+ */
 struct pri_party_redirecting {
-	struct pri_party_id from;	/* Who is redirecting the call (Sent to the party the call is redirected toward) */
-	struct pri_party_id to;		/* Call is redirecting to a new party (Sent to the caller) */
-	int count;					/* Number of times the call was redirected */
-	int reason;					/* Redirection reasons */
+	/*! Who is redirecting the call (Sent to the party the call is redirected toward) */
+	struct pri_party_id from;
+	/*! Call is redirecting to a new party (Sent to the caller) */
+	struct pri_party_id to;
+	/*! Number of times the call was redirected */
+	int count;
+	/*! Redirection reasons */
+	int reason;
 };
 
 /* Structures for qsig_cc_facilities */
-struct qsig_cc_extension {
+struct pri_qsig_cc_extension {
 	int	cc_extension_tag;
 	char extension[256];
 };
 
-struct qsig_cc_optional_arg {
+struct pri_qsig_cc_optional_arg {
 	char number_A[256];
 	char number_B[256];
 	int	service;
-	struct qsig_cc_extension cc_extension;
+	struct pri_qsig_cc_extension cc_extension;
 };
 
-struct qsig_cc_request_res {
+struct pri_qsig_cc_request_res {
 	int	no_path_reservation;
 	int	retain_service;
-	struct qsig_cc_extension cc_extension;
+	struct pri_qsig_cc_extension cc_extension;
 };
 
-/* Subcommand derived from Facility */
-#define CMD_REDIRECTING         1
-#define CMD_CONNECTEDLINE       2
-#define CMD_CC_CCBSREQUEST_RR   3
-#define CMD_CC_CCNRREQUEST_RR   4
-#define CMD_CC_CANCEL_INV       5
-#define CMD_CC_EXECPOSIBLE_INV  6
-#define CMD_CC_RINGOUT_INV      7
-#define CMD_CC_SUSPEND_INV      8
-#define CMD_CC_ERROR            9
+/* Subcommands derived from supplementary services. */
+#define PRI_SUBCMD_REDIRECTING			1
+#define PRI_SUBCMD_CONNECTED_LINE		2
+#define PRI_SUBCMD_CC_CCBSREQUEST_RR	3
+#define PRI_SUBCMD_CC_CCNRREQUEST_RR	4
+#define PRI_SUBCMD_CC_CANCEL_INV		5
+#define PRI_SUBCMD_CC_EXECPOSIBLE_INV	6
+#define PRI_SUBCMD_CC_RINGOUT_INV		7
+#define PRI_SUBCMD_CC_SUSPEND_INV		8
+#define PRI_SUBCMD_CC_ERROR				9
 
-#define CCERROR_UNSPECIFIED		1008
-#define CCERROR_REMOTE_USER_BUSY_AGAIN	1012
-#define CCERROR_FAILURE_TO_MATCH	1013
+#define PRI_CCERROR_UNSPECIFIED				1008
+#define PRI_CCERROR_REMOTE_USER_BUSY_AGAIN	1012
+#define PRI_CCERROR_FAILURE_TO_MATCH		1013
 
-struct cmd_connectedline {
-	struct pri_party_connected_line connected;
+struct pri_subcmd_connected_line {
+	struct pri_party_connected_line party;
 };
 
-struct cmd_redirecting {
-	struct pri_party_redirecting redirecting;
+struct pri_subcmd_redirecting {
+	struct pri_party_redirecting party;
 };
 
-struct cmd_cc_ccbs_rr {
-	struct qsig_cc_request_res	cc_request_res;
+struct pri_subcmd_cc_ccbs_rr {
+	struct pri_qsig_cc_request_res cc_request_res;
 };
 
-struct cmd_cc_ccnr_rr {
-	struct qsig_cc_request_res	cc_request_res;
+struct pri_subcmd_cc_ccnr_rr {
+	struct pri_qsig_cc_request_res cc_request_res;
 };
 
-struct cmd_cc_cancel_inv {
-	struct qsig_cc_optional_arg	cc_optional_arg;
+struct pri_subcmd_cc_cancel_inv {
+	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
-struct cmd_cc_execposible_inv {
-	struct qsig_cc_optional_arg	cc_optional_arg;
+struct pri_subcmd_cc_execposible_inv {
+	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
-struct cmd_cc_suspend_inv {
-	struct qsig_cc_extension	cc_extension;
+struct pri_subcmd_cc_suspend_inv {
+	struct pri_qsig_cc_extension cc_extension;
 };
 
-struct cmd_cc_ringout_inv {
-	struct qsig_cc_extension	cc_extension;
+struct pri_subcmd_cc_ringout_inv {
+	struct pri_qsig_cc_extension cc_extension;
 };
 
-struct cmd_cc_error {
+struct pri_subcmd_cc_error {
 	int	error_value;
 };
 
-struct subcommand {
+struct pri_subcommand {
+	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
 	union {
-		struct cmd_connectedline      connectedline;
-		struct cmd_redirecting        redirecting;
-		struct cmd_cc_ccbs_rr         cc_ccbs_rr;
-		struct cmd_cc_ccnr_rr         cc_ccnr_rr;
-		struct cmd_cc_cancel_inv      cc_cancel_inv;
-		struct cmd_cc_execposible_inv cc_execposible_inv;
-		struct cmd_cc_suspend_inv     cc_suspend_inv;
-		struct cmd_cc_ringout_inv     cc_ringout_inv;
-		struct cmd_cc_error           cc_error;
+		struct pri_subcmd_connected_line connected_line;
+		struct pri_subcmd_redirecting redirecting;
+		struct pri_subcmd_cc_ccbs_rr cc_ccbs_rr;
+		struct pri_subcmd_cc_ccnr_rr cc_ccnr_rr;
+		struct pri_subcmd_cc_cancel_inv cc_cancel_inv;
+		struct pri_subcmd_cc_execposible_inv cc_execposible_inv;
+		struct pri_subcmd_cc_suspend_inv cc_suspend_inv;
+		struct pri_subcmd_cc_ringout_inv cc_ringout_inv;
+		struct pri_subcmd_cc_error cc_error;
 	};
 };
 
 /* Max number of subcommands per event message */
-#define MAX_SUBCOMMANDS	4
+#define PRI_MAX_SUBCOMMANDS	4
 
-struct subcommands {
+struct pri_subcommands {
 	int counter_subcmd;
-	struct subcommand subcmd[MAX_SUBCOMMANDS];
+	/*!
+	 * \note This is set to sizeof(struct pri_subcommand) to
+     * maintain ABI compatibility if more subcommand events are addd.
+	 */
+	unsigned size_subcmd;
+	struct pri_subcommand subcmd[PRI_MAX_SUBCOMMANDS];
 };
 
 
@@ -498,7 +531,7 @@ typedef struct pri_event_ringing {
 	char callednum[256];
 	int calledpres;
 	int calledplan;
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -514,7 +547,7 @@ typedef struct pri_event_answer {
 	int connectedpres;
 	int connectedplan;
 	int source;
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 } pri_event_answer;
 
 typedef struct pri_event_facname {
@@ -533,7 +566,7 @@ struct pri_event_facility {
 	int channel;
 	int cref;
 	q931_call *call;
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 };
 
 #define PRI_CALLINGPLANANI
@@ -570,7 +603,7 @@ typedef struct pri_event_ring {
 	int origredirectingreason;
 	int redirectingpres;
 	int redirectingcount;
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -581,7 +614,7 @@ typedef struct pri_event_hangup {
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
-	struct subcommands subcmds;
+	struct pri_subcommands subcmds;
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -735,10 +768,10 @@ int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisd
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
-/* Give connected line information to a call */
+/*! \brief Give connected line information to a call */
 int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party_connected_line *connected);
 
-/* Give redirection information to a call */
+/*! \brief Give redirection information to a call */
 int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_redirecting *redirecting);
 
 /* Set CRV reference for GR-303 calls */
