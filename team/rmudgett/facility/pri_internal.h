@@ -131,7 +131,7 @@ struct pri {
 	unsigned int q931_rxcount;
 #endif
 
-	unsigned char last_invoke;	/* Last ROSE invoke ID */
+	short last_invoke;	/* Last ROSE invoke ID */
 	unsigned char sendfacility;
 };
 
