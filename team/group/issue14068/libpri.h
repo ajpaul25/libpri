@@ -83,7 +83,7 @@
 #define PRI_EVENT_KEYPAD_DIGIT	18	/* When we receive during ACTIVE state (INFORMATION) */
 #define PRI_EVENT_SERVICE       19	/* SERVICE maintenance message */
 #define PRI_EVENT_SERVICE_ACK   20	/* SERVICE maintenance acknowledgement message */
-#define PRI_EVENT_FACILITY		21	/* Facility received */
+#define PRI_EVENT_FACILITY		21	/* Facility received (FACILITY) */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -371,7 +371,7 @@ struct pri_party_redirecting {
 	int reason;					/* Redirection reasons */
 };
 
-/* Command derived from Facility */
+/* Subcommand derived from Facility */
 #define CMD_REDIRECTING         1
 #define CMD_CONNECTEDLINE       2
 
