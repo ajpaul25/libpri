@@ -376,7 +376,7 @@ struct pri_party_connected_line {
 	 * \brief Information about the source of an update.
 	 * \details
 	 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-     * for Normal-Answer, Call-transfer
+	 * for Normal-Answer, Call-transfer
 	 */
 	int source;
 };
@@ -427,7 +427,7 @@ struct pri_subcommands {
 	int counter_subcmd;
 	/*!
 	 * \note This is set to sizeof(struct pri_subcommand) to
-     * maintain ABI compatibility if more subcommand events are addd.
+	 * maintain ABI compatibility if more subcommand events are addd.
 	 */
 	unsigned size_subcmd;
 	struct pri_subcommand subcmd[PRI_MAX_SUBCOMMANDS];
