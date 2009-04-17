@@ -200,6 +200,46 @@ static const struct asn1_oid rose_etsi_ect = {
 /* *INDENT-ON* */
 };
 
+/*! \brief ETSI Status Request OID prefix. */
+static const struct asn1_oid rose_etsi_status_request = {
+/* *INDENT-OFF* */
+	/* {itu-t(0) identified-organization(4) etsi(0) 196 status-request-procedure(9)} */
+	4, { 4, 0, 196, 9 }
+/* *INDENT-ON* */
+};
+
+/*! \brief ETSI Call Completion Busy Status OID prefix. */
+static const struct asn1_oid rose_etsi_ccbs = {
+/* *INDENT-OFF* */
+	/* {ccitt(0) identified-organization(4) etsi(0) 359 operations-and-errors(1)} */
+	4, { 4, 0, 359, 1 }
+/* *INDENT-ON* */
+};
+
+/*! \brief ETSI Call Completion Busy Status public-private interworking OID prefix. */
+static const struct asn1_oid rose_etsi_ccbs_t = {
+/* *INDENT-OFF* */
+	/* {ccitt(0) identified-organization(4) etsi(0) 359 private-networks-operations-and-errors(2)} */
+	4, { 4, 0, 359, 2 }
+/* *INDENT-ON* */
+};
+
+/*! \brief ETSI Call Completion No Reply OID prefix. */
+static const struct asn1_oid rose_etsi_ccnr = {
+/* *INDENT-OFF* */
+	/* {ccitt(0) identified-organization(4) etsi(0) 1065 operations-and-errors(1)} */
+	4, { 4, 0, 1065, 1 }
+/* *INDENT-ON* */
+};
+
+/*! \brief ETSI Call Completion No Reply public-private interworking OID prefix. */
+static const struct asn1_oid rose_etsi_ccnr_t = {
+/* *INDENT-OFF* */
+	/* {ccitt(0) identified-organization(4) etsi(0) 1065 private-networks-operations-and-errors(2)} */
+	4, { 4, 0, 1065, 2 }
+/* *INDENT-ON* */
+};
+
 /*! \brief ETSI specific invoke/result encode/decode message table */
 static const struct rose_convert_msg rose_etsi_msgs[] = {
 /* *INDENT-OFF* */
@@ -361,6 +401,136 @@ static const struct rose_convert_msg rose_etsi_msgs[] = {
 			rose_enc_etsi_EctLoopTest_ARG,			rose_enc_etsi_EctLoopTest_RES,
 			rose_dec_etsi_EctLoopTest_ARG,			rose_dec_etsi_EctLoopTest_RES
 	},
+
+	/*
+	 * globalValue's (OIDs) from Status-Request-Procedure
+	 * {itu-t identified-organization etsi(0) 196 status-request-procedure(9)}
+	 */
+	{
+		ROSE_ETSI_StatusRequest,					&rose_etsi_status_request, 1,
+			rose_enc_etsi_StatusRequest_ARG,		rose_enc_etsi_StatusRequest_RES,
+			rose_dec_etsi_StatusRequest_ARG,		rose_dec_etsi_StatusRequest_RES
+	},
+
+	/*
+	 * globalValue's (OIDs) from CCBS-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 359 operations-and-errors(1)}
+	 */
+	{
+		ROSE_ETSI_CallInfoRetain,					&rose_etsi_ccbs, 1,
+			rose_enc_etsi_CallInfoRetain_ARG,		NULL,
+			rose_dec_etsi_CallInfoRetain_ARG,		NULL
+	},
+	{
+		ROSE_ETSI_CCBSRequest,						&rose_etsi_ccbs, 2,
+			rose_enc_etsi_CCBSRequest_ARG,			rose_enc_etsi_CCBSRequest_RES,
+			rose_dec_etsi_CCBSRequest_ARG,			rose_dec_etsi_CCBSRequest_RES
+	},
+	{
+		ROSE_ETSI_CCBSDeactivate,					&rose_etsi_ccbs, 3,
+			rose_enc_etsi_CCBSDeactivate_ARG,		NULL,
+			rose_dec_etsi_CCBSDeactivate_ARG,		NULL
+	},
+	{
+		ROSE_ETSI_CCBSInterrogate,					&rose_etsi_ccbs, 4,
+			rose_enc_etsi_CCBSInterrogate_ARG,		rose_enc_etsi_CCBSInterrogate_RES,
+			rose_dec_etsi_CCBSInterrogate_ARG,		rose_dec_etsi_CCBSInterrogate_RES
+	},
+	{
+		ROSE_ETSI_CCBSErase,						&rose_etsi_ccbs, 5,
+			rose_enc_etsi_CCBSErase_ARG,			NULL,
+			rose_dec_etsi_CCBSErase_ARG,			NULL
+	},
+	{
+		ROSE_ETSI_CCBSRemoteUserFree,				&rose_etsi_ccbs, 6,
+			rose_enc_etsi_CCBSRemoteUserFree_ARG,	NULL,
+			rose_dec_etsi_CCBSRemoteUserFree_ARG,	NULL
+	},
+	{
+		ROSE_ETSI_CCBSCall,							&rose_etsi_ccbs, 7,
+			rose_enc_etsi_CCBSCall_ARG,				NULL,
+			rose_dec_etsi_CCBSCall_ARG,				NULL
+	},
+	{
+		ROSE_ETSI_CCBSStatusRequest,				&rose_etsi_ccbs, 8,
+			rose_enc_etsi_CCBSStatusRequest_ARG,	rose_enc_etsi_CCBSStatusRequest_RES,
+			rose_dec_etsi_CCBSStatusRequest_ARG,	rose_dec_etsi_CCBSStatusRequest_RES
+	},
+	{
+		ROSE_ETSI_CCBSBFree,						&rose_etsi_ccbs, 9,
+			rose_enc_etsi_CCBSBFree_ARG,			NULL,
+			rose_dec_etsi_CCBSBFree_ARG,			NULL
+	},
+	{
+		ROSE_ETSI_EraseCallLinkageID,				&rose_etsi_ccbs, 10,
+			rose_enc_etsi_EraseCallLinkageID_ARG,	NULL,
+			rose_dec_etsi_EraseCallLinkageID_ARG,	NULL
+	},
+	{
+		ROSE_ETSI_CCBSStopAlerting,					&rose_etsi_ccbs, 11,
+			rose_enc_etsi_CCBSStopAlerting_ARG,		NULL,
+			rose_dec_etsi_CCBSStopAlerting_ARG,		NULL
+	},
+
+	/*
+	 * globalValue's (OIDs) from CCBS-private-networks-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 359 private-networks-operations-and-errors(2)}
+	 */
+	{
+		ROSE_ETSI_CCBS_T_Request,					&rose_etsi_ccbs_t, 1,
+			rose_enc_etsi_CCBS_T_Request_ARG,		rose_enc_etsi_CCBS_T_Request_RES,
+			rose_dec_etsi_CCBS_T_Request_ARG,		rose_dec_etsi_CCBS_T_Request_RES
+	},
+	{
+		ROSE_ETSI_CCBS_T_Call,						&rose_etsi_ccbs_t, 2,
+			NULL,									NULL,
+			NULL,									NULL
+	},
+	{
+		ROSE_ETSI_CCBS_T_Suspend,					&rose_etsi_ccbs_t, 3,
+			NULL,									NULL,
+			NULL,									NULL
+	},
+	{
+		ROSE_ETSI_CCBS_T_Resume,					&rose_etsi_ccbs_t, 4,
+			NULL,									NULL,
+			NULL,									NULL
+	},
+	{
+		ROSE_ETSI_CCBS_T_RemoteUserFree,			&rose_etsi_ccbs_t, 5,
+			NULL,									NULL,
+			NULL,									NULL
+	},
+	{
+		ROSE_ETSI_CCBS_T_Available,					&rose_etsi_ccbs_t, 6,
+			NULL,									NULL,
+			NULL,									NULL
+	},
+
+	/*
+	 * globalValue's (OIDs) from CCNR-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 1065 operations-and-errors(1)}
+	 */
+	{
+		ROSE_ETSI_CCNRRequest,						&rose_etsi_ccnr, 1,
+			rose_enc_etsi_CCNRRequest_ARG,			rose_enc_etsi_CCNRRequest_RES,
+			rose_dec_etsi_CCNRRequest_ARG,			rose_dec_etsi_CCNRRequest_RES
+	},
+	{
+		ROSE_ETSI_CCNRInterrogate,					&rose_etsi_ccnr, 2,
+			rose_enc_etsi_CCNRInterrogate_ARG,		rose_enc_etsi_CCNRInterrogate_RES,
+			rose_dec_etsi_CCNRInterrogate_ARG,		rose_dec_etsi_CCNRInterrogate_RES
+	},
+
+	/*
+	 * globalValue's (OIDs) from CCNR-private-networks-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 1065 private-networks-operations-and-errors(2)}
+	 */
+	{
+		ROSE_ETSI_CCNR_T_Request,					&rose_etsi_ccnr_t, 1,
+			rose_enc_etsi_CCNR_T_Request_ARG,		rose_enc_etsi_CCNR_T_Request_RES,
+			rose_dec_etsi_CCNR_T_Request_ARG,		rose_dec_etsi_CCNR_T_Request_RES
+	},
 /* *INDENT-ON* */
 };
 
@@ -461,6 +631,60 @@ static const struct rose_convert_error rose_etsi_errors[] = {
 	 */
 	{
 		ROSE_ERROR_ECT_LinkIdNotAssignedByNetwork,	&rose_etsi_ect, 21,
+			NULL,									NULL
+	},
+
+	/*
+	 * globalValue Errors (OIDs) from CCBS-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 359 operations-and-errors(1)}
+	 */
+	{
+		ROSE_ERROR_CCBS_InvalidCallLinkageID,		&rose_etsi_ccbs, 20,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_InvalidCCBSReference,		&rose_etsi_ccbs, 21,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_LongTermDenial,				&rose_etsi_ccbs, 22,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_ShortTermDenial,			&rose_etsi_ccbs, 23,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_IsAlreadyActivated,			&rose_etsi_ccbs, 24,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_AlreadyAccepted,			&rose_etsi_ccbs, 25,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_OutgoingCCBSQueueFull,		&rose_etsi_ccbs, 26,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_CallFailureReasonNotBusy,	&rose_etsi_ccbs, 27,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_NotReadyForCall,			&rose_etsi_ccbs, 28,
+			NULL,									NULL
+	},
+
+	/*
+	 * globalValue Errors (OIDs) from CCBS-private-networks-Operations-and-Errors
+	 * {ccitt identified-organization etsi(0) 359 private-networks-operations-and-errors(2)}
+	 */
+	{
+		ROSE_ERROR_CCBS_T_LongTermDenial,			&rose_etsi_ccbs_t, 20,
+			NULL,									NULL
+	},
+	{
+		ROSE_ERROR_CCBS_T_ShortTermDenial,			&rose_etsi_ccbs_t, 21,
 			NULL,									NULL
 	},
 /* *INDENT-ON* */
@@ -1090,6 +1314,34 @@ const char *rose_operation2str(enum rose_operation operation)
 		{ ROSE_ETSI_AOCECurrency,                   "ROSE_ETSI_AOCECurrency" },
 		{ ROSE_ETSI_AOCEChargingUnit,               "ROSE_ETSI_AOCEChargingUnit" },
 
+		{ ROSE_ETSI_StatusRequest,                  "ROSE_ETSI_StatusRequest" },
+
+		{ ROSE_ETSI_CallInfoRetain,                 "ROSE_ETSI_CallInfoRetain" },
+		{ ROSE_ETSI_EraseCallLinkageID,             "ROSE_ETSI_EraseCallLinkageID" },
+		{ ROSE_ETSI_CCBSDeactivate,                 "ROSE_ETSI_CCBSDeactivate" },
+		{ ROSE_ETSI_CCBSErase,                      "ROSE_ETSI_CCBSErase" },
+		{ ROSE_ETSI_CCBSRemoteUserFree,             "ROSE_ETSI_CCBSRemoteUserFree" },
+		{ ROSE_ETSI_CCBSCall,                       "ROSE_ETSI_CCBSCall" },
+		{ ROSE_ETSI_CCBSStatusRequest,              "ROSE_ETSI_CCBSStatusRequest" },
+		{ ROSE_ETSI_CCBSBFree,                      "ROSE_ETSI_CCBSBFree" },
+		{ ROSE_ETSI_CCBSStopAlerting,               "ROSE_ETSI_CCBSStopAlerting" },
+
+		{ ROSE_ETSI_CCBSRequest,                    "ROSE_ETSI_CCBSRequest" },
+		{ ROSE_ETSI_CCBSInterrogate,                "ROSE_ETSI_CCBSInterrogate" },
+
+		{ ROSE_ETSI_CCNRRequest,                    "ROSE_ETSI_CCNRRequest" },
+		{ ROSE_ETSI_CCNRInterrogate,                "ROSE_ETSI_CCNRInterrogate" },
+
+		{ ROSE_ETSI_CCBS_T_Call,                    "ROSE_ETSI_CCBS_T_Call" },
+		{ ROSE_ETSI_CCBS_T_Suspend,                 "ROSE_ETSI_CCBS_T_Suspend" },
+		{ ROSE_ETSI_CCBS_T_Resume,                  "ROSE_ETSI_CCBS_T_Resume" },
+		{ ROSE_ETSI_CCBS_T_RemoteUserFree,          "ROSE_ETSI_CCBS_T_RemoteUserFree" },
+		{ ROSE_ETSI_CCBS_T_Available,               "ROSE_ETSI_CCBS_T_Available" },
+
+		{ ROSE_ETSI_CCBS_T_Request,                 "ROSE_ETSI_CCBS_T_Request" },
+
+		{ ROSE_ETSI_CCNR_T_Request,                 "ROSE_ETSI_CCNR_T_Request" },
+
 		{ ROSE_QSIG_CallingName,                    "ROSE_QSIG_CallingName" },
 		{ ROSE_QSIG_CalledName,                     "ROSE_QSIG_CalledName" },
 		{ ROSE_QSIG_ConnectedName,                  "ROSE_QSIG_ConnectedName" },
@@ -1182,6 +1434,19 @@ const char *rose_error2str(enum rose_error_code code)
 		{ ROSE_ERROR_AOC_NoChargingInfoAvailable,     "AOC: No Charging Info Available" },
 
 		{ ROSE_ERROR_ECT_LinkIdNotAssignedByNetwork,  "ECT: Link ID Not Assigned By Network" },
+
+		{ ROSE_ERROR_CCBS_InvalidCallLinkageID,       "CCBS: Invalid Call Linkage ID" },
+		{ ROSE_ERROR_CCBS_InvalidCCBSReference,       "CCBS: Invalid CCBS Reference" },
+		{ ROSE_ERROR_CCBS_LongTermDenial,             "CCBS: Long Term Denial" },
+		{ ROSE_ERROR_CCBS_ShortTermDenial,            "CCBS: Short Term Denial" },
+		{ ROSE_ERROR_CCBS_IsAlreadyActivated,         "CCBS: Is Already Activated" },
+		{ ROSE_ERROR_CCBS_AlreadyAccepted,            "CCBS: Already Accepted" },
+		{ ROSE_ERROR_CCBS_OutgoingCCBSQueueFull,      "CCBS: Outgoing CCBS Queue Full" },
+		{ ROSE_ERROR_CCBS_CallFailureReasonNotBusy,   "CCBS: Call Failure Reason Not Busy" },
+		{ ROSE_ERROR_CCBS_NotReadyForCall,            "CCBS: Not Ready For Call" },
+
+		{ ROSE_ERROR_CCBS_T_LongTermDenial,           "CCBS-T: Long Term Denial" },
+		{ ROSE_ERROR_CCBS_T_ShortTermDenial,          "CCBS-T: Short Term Denial" },
 
 		/* Q.SIG specific errors */
 		{ ROSE_ERROR_QSIG_Unspecified,                "Unspecified" },

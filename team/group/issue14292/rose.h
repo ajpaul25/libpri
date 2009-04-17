@@ -103,6 +103,37 @@ enum rose_operation {
 	ROSE_ETSI_EctInform,                    /*!< Invoke only */
 	ROSE_ETSI_EctLoopTest,                  /*!< Invoke/Result */
 
+	/* ETSI Status-Request-Procedure */
+	ROSE_ETSI_StatusRequest,                /*!< Invoke/Result */
+
+	/* ETSI CCBS-Operations-and-Errors */
+	ROSE_ETSI_CallInfoRetain,               /*!< Invoke only */
+	ROSE_ETSI_CCBSRequest,                  /*!< Invoke/Result */
+	ROSE_ETSI_CCBSDeactivate,               /*!< Invoke/Result */
+	ROSE_ETSI_CCBSInterrogate,              /*!< Invoke/Result */
+	ROSE_ETSI_CCBSErase,                    /*!< Invoke only */
+	ROSE_ETSI_CCBSRemoteUserFree,           /*!< Invoke only */
+	ROSE_ETSI_CCBSCall,                     /*!< Invoke only */
+	ROSE_ETSI_CCBSStatusRequest,            /*!< Invoke/Result */
+	ROSE_ETSI_CCBSBFree,                    /*!< Invoke only */
+	ROSE_ETSI_EraseCallLinkageID,           /*!< Invoke only */
+	ROSE_ETSI_CCBSStopAlerting,             /*!< Invoke only */
+
+	/* ETSI CCBS-private-networks-Operations-and-Errors */
+	ROSE_ETSI_CCBS_T_Request,               /*!< Invoke/Result */
+	ROSE_ETSI_CCBS_T_Call,                  /*!< Invoke only */
+	ROSE_ETSI_CCBS_T_Suspend,               /*!< Invoke only */
+	ROSE_ETSI_CCBS_T_Resume,                /*!< Invoke only */
+	ROSE_ETSI_CCBS_T_RemoteUserFree,        /*!< Invoke only */
+	ROSE_ETSI_CCBS_T_Available,             /*!< Invoke only */
+
+	/* ETSI CCNR-Operations-and-Errors */
+	ROSE_ETSI_CCNRRequest,                  /*!< Invoke/Result */
+	ROSE_ETSI_CCNRInterrogate,              /*!< Invoke/Result */
+
+	/* ETSI CCNR-private-networks-Operations-and-Errors */
+	ROSE_ETSI_CCNR_T_Request,               /*!< Invoke/Result */
+
 	/* Q.SIG Name-Operations */
 	ROSE_QSIG_CallingName,                  /*!< Invoke only */
 	ROSE_QSIG_CalledName,                   /*!< Invoke only */
@@ -198,6 +229,21 @@ enum rose_error_code {
 
 	/* ETSI Explicit-Call-Transfer-Operations-and-Errors */
 	ROSE_ERROR_ECT_LinkIdNotAssignedByNetwork,
+
+	/* ETSI CCBS-Operations-and-Errors */
+	ROSE_ERROR_CCBS_InvalidCallLinkageID,
+	ROSE_ERROR_CCBS_InvalidCCBSReference,
+	ROSE_ERROR_CCBS_LongTermDenial,
+	ROSE_ERROR_CCBS_ShortTermDenial,
+	ROSE_ERROR_CCBS_IsAlreadyActivated,
+	ROSE_ERROR_CCBS_AlreadyAccepted,
+	ROSE_ERROR_CCBS_OutgoingCCBSQueueFull,
+	ROSE_ERROR_CCBS_CallFailureReasonNotBusy,
+	ROSE_ERROR_CCBS_NotReadyForCall,
+
+	/* ETSI CCBS-private-networks-Operations-and-Errors */
+	ROSE_ERROR_CCBS_T_LongTermDenial,
+	ROSE_ERROR_CCBS_T_ShortTermDenial,
 
 	/* Q.SIG from various specifications */
 	ROSE_ERROR_QSIG_Unspecified,
@@ -1677,6 +1723,351 @@ struct roseEtsiEctLoopTest_RES {
 
 
 /*
+ * ARGUMENT SEQUENCE {
+ *     compatibilityMode CompatibilityMode,
+ *
+ *     -- The BC, HLC (optional) and LLC (optional) information
+ *     -- elements shall be embedded in q931InfoElement
+ *     q931InformationElement Q931InformationElement
+ * }
+ */
+struct roseEtsiStatusRequest_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \details allBasicServices(0), oneOrMoreBasicServices(1) */
+	u_int8_t compatibility_mode;
+};
+
+/*
+ * RESULT StatusResult
+ */
+struct roseEtsiStatusRequest_RES {
+	/*! \details compatibleAndFree(0), compatibleAndBusy(1), incompatible(2) */
+	u_int8_t status;
+};
+
+
+/* ------------------------------------------------------------------- */
+
+
+/*
+ * CallLinkageID ::= INTEGER (0..127)
+ * CCBSReference ::= INTEGER (0..127)
+ */
+
+/*
+ * ARGUMENT callLinkageID CallLinkageID
+ */
+struct roseEtsiCallInfoRetain_ARG {
+	/*! \brief Call Linkage Record ID */
+	u_int8_t call_linkage_id;
+};
+
+/*
+ * ARGUMENT callLinkageID CallLinkageID
+ */
+struct roseEtsiEraseCallLinkageID_ARG {
+	/*! \brief Call Linkage Record ID */
+	u_int8_t call_linkage_id;
+};
+
+
+/*
+ * ARGUMENT callLinkageID CallLinkageID
+ */
+struct roseEtsiCCBSRequest_ARG {
+	/*! \brief Call Linkage Record ID */
+	u_int8_t call_linkage_id;
+};
+
+/*
+ * RESULT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     cCBSReference       CCBSReference
+ * }
+ */
+struct roseEtsiCCBSRequest_RES {
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+
+/*
+ * ARGUMENT cCBSReference CCBSReference
+ */
+struct roseEtsiCCBSDeactivate_ARG {
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     cCBSReference       CCBSReference OPTIONAL,
+ *     partyNumberOfA      PartyNumber OPTIONAL
+ * }
+ */
+struct roseEtsiCCBSInterrogate_ARG {
+	/*! \brief Party A number (Optional) */
+	struct rosePartyNumber a_party_number;
+
+	/*! \brief TRUE if CCBSReference present */
+	u_int8_t ccbs_reference_present;
+
+	/*! \brief CCBS Record ID (optional) */
+	u_int8_t ccbs_reference;
+};
+
+/*
+ * -- The Bearer capability, High layer compatibility (optional)
+ * -- and Low layer compatibility (optional) information elements
+ * -- shall be embedded in q931InfoElement.
+ * CallInformation ::= SEQUENCE {
+ *     addressOfB          Address,
+ *     q931InfoElement     Q931InformationElement,
+ *     cCBSReference       CCBSReference,
+ *     subAddressOfA       PartySubaddress OPTIONAL
+ * }
+ */
+struct roseEtsiCallInformation {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \brief Address of B */
+	struct roseAddress address_of_b;
+
+	/*! \brief Subaddress of A (Optional) */
+	struct rosePartySubaddress subaddress_of_a;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+/*
+ * CallDetails ::= SEQUENCE SIZE(1..5) OF CallInformation
+ */
+struct roseEtsiCallDetailsList {
+	struct roseEtsiCallInformation list[5];
+
+	/*! \brief Number of CallDetails records present */
+	u_int8_t num_records;
+};
+
+/*
+ * RESULT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     callDetails         CallDetails OPTIONAL
+ * }
+ */
+struct roseEtsiCCBSInterrogate_RES {
+	struct roseEtsiCallDetailsList call_details;
+
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+};
+
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     cCBSReference       CCBSReference,
+ *     addressOfB          Address,
+ *     q931InfoElement     Q931InformationElement,
+ *     eraseReason         CCBSEraseReason
+ * }
+ */
+struct roseEtsiCCBSErase_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \brief Address of B */
+	struct roseAddress address_of_b;
+
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+
+	/*!
+	 * \brief CCBS Erase reason
+	 * \details
+	 * normal-unspecified(0),
+	 * t-CCBS2-timeout(1),
+	 * t-CCBS3-timeout(2),
+	 * basic-call-failed(3)
+	 */
+	u_int8_t reason;
+};
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     cCBSReference       CCBSReference,
+ *     addressOfB          Address,
+ *     q931InfoElement     Q931InformationElement
+ * }
+ */
+struct roseEtsiCCBSRemoteUserFree_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \brief Address of B */
+	struct roseAddress address_of_b;
+
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+/*
+ * ARGUMENT cCBSReference CCBSReference
+ */
+struct roseEtsiCCBSCall_ARG {
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     cCBSReference       CCBSReference,
+ *     q931InfoElement     Q931InformationElement
+ * }
+ */
+struct roseEtsiCCBSStatusRequest_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+/*
+ * RESULT BOOLEAN -- free=TRUE, busy=FALSE
+ */
+struct roseEtsiCCBSStatusRequest_RES {
+	/*! \brief TRUE if User A is free */
+	u_int8_t free;
+};
+
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     recallMode          RecallMode,
+ *     cCBSReference       CCBSReference,
+ *     addressOfB          Address,
+ *     q931InfoElement     Q931InformationElement
+ * }
+ */
+struct roseEtsiCCBSBFree_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \brief Address of B */
+	struct roseAddress address_of_b;
+
+	/*! \details globalRecall(0), specificRecall(1) */
+	u_int8_t recall_mode;
+
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+/*
+ * ARGUMENT cCBSReference CCBSReference
+ */
+struct roseEtsiCCBSStopAlerting_ARG {
+	/*! \brief CCBS Record ID */
+	u_int8_t ccbs_reference;
+};
+
+
+/* ------------------------------------------------------------------- */
+
+
+/*
+ * ARGUMENT SEQUENCE {
+ *     destinationAddress           Address,
+ *
+ *     -- contains HLC, LLC and BC information
+ *     q931InfoElement              Q931InformationElement,
+ *
+ *     retentionSupported           [1] IMPLICIT BOOLEAN DEFAULT FALSE,
+ *
+ *     -- The use of this parameter is specified in
+ *     -- EN 300 195-1 for interaction of CCBS with CLIP
+ *     presentationAllowedIndicator [2] IMPLICIT BOOLEAN OPTIONAL,
+ *
+ *     -- The use of this parameter is specified in
+ *     -- EN 300 195-1 for interaction of CCBS with CLIP
+ *     originatingAddress           Address OPTIONAL
+ * }
+ */
+struct roseEtsiCCBS_T_Request_ARG {
+	/*! \brief The BC, HLC (optional) and LLC (optional) information */
+	struct roseQ931ie q931ie;
+	/*! \brief q931ie.contents "allocated" after the stucture. */
+	unsigned char q931ie_contents[ROSE_Q931_MAX_BC + ROSE_Q931_MAX_HLC +
+		ROSE_Q931_MAX_LLC + 1];
+
+	/*! \brief Address of B */
+	struct roseAddress destination;
+
+	/*! \brief Caller-ID Address (Present if Originating.Party.LengthOfNumber is nonzero) */
+	struct roseAddress originating;
+
+	/*! \brief TRUE if the PresentationAllowedIndicator is present */
+	u_int8_t presentation_allowed_indicator_present;
+
+	/*! \brief TRUE if presentation is allowed for the originating address (optional) */
+	u_int8_t presentation_allowed_indicator;
+
+	/*! \brief TRUE if User A's CCBS request is continued if user B is busy again. */
+	u_int8_t retention_supported;
+};
+
+/*
+ * RESULT retentionSupported BOOLEAN   -- Default False
+ */
+struct roseEtsiCCBS_T_Request_RES {
+	/*! \brief TRUE if User A's CCBS request is continued if user B is busy again. */
+	u_int8_t retention_supported;
+};
+
+
+/* ------------------------------------------------------------------- */
+
+
+/*
  * Name ::= CHOICE {
  *     -- iso8859-1 is implied in namePresentationAllowedSimple.
  *     namePresentationAllowedSimple   [0] IMPLICIT NameData,
@@ -2979,6 +3370,34 @@ union rose_msg_invoke_etsi_args {
 	struct roseEtsiSubaddressTransfer_ARG SubaddressTransfer;
 	struct roseEtsiEctInform_ARG EctInform;
 	struct roseEtsiEctLoopTest_ARG EctLoopTest;
+
+	/* ETSI Status Request (CCBS/CCNR support) */
+	struct roseEtsiStatusRequest_ARG StatusRequest;
+
+	/* ETSI CCBS/CCNR support */
+	struct roseEtsiCallInfoRetain_ARG CallInfoRetain;
+	struct roseEtsiEraseCallLinkageID_ARG EraseCallLinkageID;
+	struct roseEtsiCCBSDeactivate_ARG CCBSDeactivate;
+	struct roseEtsiCCBSErase_ARG CCBSErase;
+	struct roseEtsiCCBSRemoteUserFree_ARG CCBSRemoteUserFree;
+	struct roseEtsiCCBSCall_ARG CCBSCall;
+	struct roseEtsiCCBSStatusRequest_ARG CCBSStatusRequest;
+	struct roseEtsiCCBSBFree_ARG CCBSBFree;
+	struct roseEtsiCCBSStopAlerting_ARG CCBSStopAlerting;
+
+	/* ETSI CCBS */
+	struct roseEtsiCCBSRequest_ARG CCBSRequest;
+	struct roseEtsiCCBSInterrogate_ARG CCBSInterrogate;
+
+	/* ETSI CCNR */
+	struct roseEtsiCCBSRequest_ARG CCNRRequest;
+	struct roseEtsiCCBSInterrogate_ARG CCNRInterrogate;
+
+	/* ETSI CCBS-T */
+	struct roseEtsiCCBS_T_Request_ARG CCBS_T_Request;
+
+	/* ETSI CCNR-T */
+	struct roseEtsiCCBS_T_Request_ARG CCNR_T_Request;
 };
 
 /*! \brief Facility ie result etsi messages with arguments. */
@@ -2993,6 +3412,26 @@ union rose_msg_result_etsi_args {
 	/* ETSI Explicit Call Transfer (ECT) */
 	struct roseEtsiEctLinkIdRequest_RES EctLinkIdRequest;
 	struct roseEtsiEctLoopTest_RES EctLoopTest;
+
+	/* ETSI Status Request (CCBS/CCNR support) */
+	struct roseEtsiStatusRequest_RES StatusRequest;
+
+	/* ETSI CCBS/CCNR support */
+	struct roseEtsiCCBSStatusRequest_RES CCBSStatusRequest;
+
+	/* ETSI CCBS */
+	struct roseEtsiCCBSRequest_RES CCBSRequest;
+	struct roseEtsiCCBSInterrogate_RES CCBSInterrogate;
+
+	/* ETSI CCNR */
+	struct roseEtsiCCBSRequest_RES CCNRRequest;
+	struct roseEtsiCCBSInterrogate_RES CCNRInterrogate;
+
+	/* ETSI CCBS-T */
+	struct roseEtsiCCBS_T_Request_RES CCBS_T_Request;
+
+	/* ETSI CCNR-T */
+	struct roseEtsiCCBS_T_Request_RES CCNR_T_Request;
 };
 
 /*! \brief Facility ie invoke qsig messages with arguments. */
