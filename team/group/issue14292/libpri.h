@@ -83,7 +83,7 @@
 #define PRI_EVENT_KEYPAD_DIGIT	18	/* When we receive during ACTIVE state (INFORMATION) */
 #define PRI_EVENT_SERVICE       19	/* SERVICE maintenance message */
 #define PRI_EVENT_SERVICE_ACK   20	/* SERVICE maintenance acknowledgement message */
-#define PRI_EVENT_FACILITY		21	/* Facility received */
+#define PRI_EVENT_FACILITY		21	/* Facility received (FACILITY) */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -104,13 +104,13 @@
 #define PRI_PROG_CALLER_RETURNED_TO_ISDN					(1 << 9)
 
 /* Numbering plan identifier */
-#define PRI_NPI_UNKNOWN					0x0
-#define PRI_NPI_E163_E164				0x1
-#define PRI_NPI_X121					0x3
-#define PRI_NPI_F69						0x4
-#define PRI_NPI_NATIONAL				0x8
-#define PRI_NPI_PRIVATE					0x9
-#define PRI_NPI_RESERVED				0xF
+#define PRI_NPI_UNKNOWN					0x0 /*!< Unknown numbering plan */
+#define PRI_NPI_E163_E164				0x1 /*!< ISDN/telephony numbering plan (public) */
+#define PRI_NPI_X121					0x3 /*!< Data numbering plan */
+#define PRI_NPI_F69						0x4 /*!< Telex numbering plan */
+#define PRI_NPI_NATIONAL				0x8 /*!< National standard numbering plan */
+#define PRI_NPI_PRIVATE					0x9 /*!< Private numbering plan */
+#define PRI_NPI_RESERVED				0xF /*!< Reserved for extension */
 
 /* Type of number */
 #define PRI_TON_UNKNOWN					0x0
@@ -338,6 +338,7 @@
 /* ECMA 186 */
 #define PRI_CC_CCNRREQUEST		27
 #define PRI_CC_CANCEL			28
+#define PRI_CC_RINGOUT			31
 #define PRI_CC_CCBSREQUEST		40
 
 typedef struct q931_call q931_call;
@@ -395,7 +396,7 @@ struct qsig_cc_request_res {
 	struct qsig_cc_extension cc_extension;
 };
 
-/* Command derived from Facility */
+/* Subcommand derived from Facility */
 #define CMD_REDIRECTING         1
 #define CMD_CONNECTEDLINE       2
 #define CMD_CC_CCBSREQUEST_RR   3

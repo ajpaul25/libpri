@@ -33,445 +33,363 @@
 #include "pri_q921.h"
 #include "pri_q931.h"
 #include "pri_facility.h"
+#include "rose.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 
-static char *asn1id2text(int id)
+static short get_invokeid(struct pri *ctrl)
 {
-	static char data[32];
-	static char *strings[] = {
-		"none",
-		"Boolean",
-		"Integer",
-		"Bit String",
-		"Octet String",
-		"NULL",
-		"Object Identifier",
-		"Object Descriptor",
-		"External Reference",
-		"Real Number",
-		"Enumerated",
-		"Embedded PDV",
-		"UTF-8 String",
-		"Relative Object ID",
-		"Reserved (0e)",
-		"Reserved (0f)",
-		"Sequence",
-		"Set",
-		"Numeric String",
-		"Printable String",
-		"Tele-Text String",
-		"IA-5 String",
-		"UTC Time",
-		"Generalized Time",
-	};
-	if (id > 0 && id <= 0x18) {
-		return strings[id];
-	} else {
-		sprintf(data, "Unknown (%02x)", id);
-		return data;
-	}
+	return ++ctrl->last_invoke;
 }
 
-static int asn1_dumprecursive(struct pri *pri, void *comp_ptr, int len, int level)
+static int redirectingreason_from_q931(struct pri *ctrl, int redirectingreason)
 {
-	unsigned char *vdata = (unsigned char *)comp_ptr;
-	struct rose_component *comp;
-	int i = 0;
-	int j, k, l;
-	int clen = 0;
+	int value;
 
-	while (len > 0) {
-		GET_COMPONENT(comp, i, vdata, len);
-		pri_message(pri, "%*s%02X %04X", 2 * level, "", comp->type, comp->len);
-		if ((comp->type == 0) && (comp->len == 0))
-			return clen + 2;
-		if ((comp->type & ASN1_PC_MASK) == ASN1_PRIMITIVE) {
-			for (j = 0; j < comp->len; ++j)
-				pri_message(pri, " %02X", comp->data[j]);
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		switch (redirectingreason) {
+		case PRI_REDIR_UNKNOWN:
+			value = QSIG_DIVERT_REASON_UNKNOWN;
+			break;
+		case PRI_REDIR_FORWARD_ON_BUSY:
+			value = QSIG_DIVERT_REASON_CFB;
+			break;
+		case PRI_REDIR_FORWARD_ON_NO_REPLY:
+			value = QSIG_DIVERT_REASON_CFNR;
+			break;
+		case PRI_REDIR_UNCONDITIONAL:
+			value = QSIG_DIVERT_REASON_CFU;
+			break;
+		case PRI_REDIR_DEFLECTION:
+		case PRI_REDIR_DTE_OUT_OF_ORDER:
+		case PRI_REDIR_FORWARDED_BY_DTE:
+			pri_message(ctrl,
+				"!! Don't know how to convert Q.931 redirection reason %d to Q.SIG\n",
+				redirectingreason);
+			/* Fall through */
+		default:
+			value = QSIG_DIVERT_REASON_UNKNOWN;
+			break;
 		}
-		if ((comp->type & ASN1_CLAN_MASK) == ASN1_UNIVERSAL) {
-			switch (comp->type & ASN1_TYPE_MASK) {
-			case 0:
-				pri_message(pri, " (none)");
-				break;
-			case ASN1_BOOLEAN:
-				pri_message(pri, " (BOOLEAN: %d)", comp->data[0]);
-				break;
-			case ASN1_INTEGER:
-				for (k = l = 0; k < comp->len; ++k)
-					l = (l << 8) | comp->data[k];
-				pri_message(pri, " (INTEGER: %d)", l);
-				break;
-			case ASN1_BITSTRING:
-				pri_message(pri, " (BITSTRING:");
-				for (k = 0; k < comp->len; ++k)
-				pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_OCTETSTRING:
-				pri_message(pri, " (OCTETSTRING:");
-				for (k = 0; k < comp->len; ++k)
-					pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_NULL:
-				pri_message(pri, " (NULL)");
-				break;
-			case ASN1_OBJECTIDENTIFIER:
-				pri_message(pri, " (OBJECTIDENTIFIER:");
-				for (k = 0; k < comp->len; ++k)
-					pri_message(pri, " %02x", comp->data[k]);
-				pri_message(pri, ")");
-				break;
-			case ASN1_ENUMERATED:
-				for (k = l = 0; k < comp->len; ++k)
-					l = (l << 8) | comp->data[k];
-				pri_message(pri, " (ENUMERATED: %d)", l);
-				break;
-			case ASN1_SEQUENCE:
-				pri_message(pri, " (SEQUENCE)");
-				break;
-			default:
-				pri_message(pri, " (component %02x - %s)", comp->type, asn1id2text(comp->type & ASN1_TYPE_MASK));
-				break;
-			}
-		}
-		else if ((comp->type & ASN1_CLAN_MASK) == ASN1_CONTEXT_SPECIFIC) {
-			pri_message(pri, " (CONTEXT SPECIFIC [%d])", comp->type & ASN1_TYPE_MASK);
-		}
-		else {
-			pri_message(pri, " (component %02x)", comp->type);
-		}
-		pri_message(pri, "\n");
-		if ((comp->type & ASN1_PC_MASK) == ASN1_CONSTRUCTOR)
-			j = asn1_dumprecursive(pri, comp->data, (comp->len ? comp->len : INT_MAX), level+1);
-		else
-			j = comp->len;
-		j += 2;
-		len -= j;
-		vdata += j;
-		clen += j;
-	}
-	return clen;
-}
-
-int asn1_dump(struct pri *pri, void *comp, int len)
-{
-	return asn1_dumprecursive(pri, comp, len, 0);
-}
-
-static unsigned char get_invokeid(struct pri *pri)
-{
-	return ++pri->last_invoke;
-}
-
-struct addressingdataelements_presentednumberunscreened {
-	char partyaddress[21];
-	char notused[21];
-	int  npi;       /* Numbering Plan Indicator */
-	int  ton;       /* Type Of Number */
-	int  pres;      /* Presentation */
-};
-
-struct addressingdataelements_presentednumberscreened {
-	char partyaddress[21];
-	char notused[21];
-	int  npi;       /* Numbering Plan Indicator */
-	int  ton;       /* Type Of Number */
-	int  pres;      /* Presentation */
-	int  scrind;    /* Screening Indicator */
-};
-
-struct addressingdataelements_presentedaddressscreened {
-	char partyaddress[21];
-	char partysubaddress[21];
-	int  npi;       /* Numbering Plan Indicator */
-	int  ton;       /* Type Of Number */
-	int  pres;      /* Presentation */
-	int  scrind;    /* Screening Indicator */
-};
-
-struct addressingdataelements_addressscreened {
-	char partyaddress[21];
-	char partysubaddress[21];
-	int  npi;       /* Numbering Plan Indicator */
-	int  ton;       /* Type Of Number */
-	int  notused;
-	int  scrind;    /* Screening Indicator */
-};
-
-struct addressingdataelements_partysubaddress {
-	char notused[21];
-	char partysubaddress[21];
-};
-
-struct nameelements_name {
-	char name[51];
-	int  characterset;
-	int  namepres;
-};
-
-struct nameelements_nameset {
-	char name[51];
-	int  characterset;
-};
-
-struct nameelements_namedata {
-	char name[51];
-};
-
-#define PRI_CHECKOVERFLOW(size) \
-		if (msgptr - message + (size) >= sizeof(message)) { \
-			*msgptr = '\0'; \
-			pri_message(pri, "%s", message); \
-			msgptr = message; \
-		}
-
-static void dump_apdu(struct pri *pri, unsigned char *c, int len) 
-{
-	#define MAX_APDU_LENGTH	255
-	static char hexs[16] = "0123456789ABCDEF";
-	int i;
-	char message[(2 + MAX_APDU_LENGTH * 3 + 6 + MAX_APDU_LENGTH + 3)] = "";	/* please adjust here, if you make changes below! */
-	char *msgptr;
-	
-	msgptr = message;
-	*msgptr++ = ' ';
-	*msgptr++ = '[';
-	for (i=0; i<len; i++) {
-		PRI_CHECKOVERFLOW(3);
-		*msgptr++ = ' ';
-		*msgptr++ = hexs[(c[i] >> 4) & 0x0f];
-		*msgptr++ = hexs[(c[i]) & 0x0f];
-	}
-	PRI_CHECKOVERFLOW(6);
-	strcpy(msgptr, " ] - [");
-	msgptr += strlen(msgptr);
-	for (i=0; i<len; i++) {
-		PRI_CHECKOVERFLOW(1);
-		*msgptr++ = ((c[i] < ' ') || (c[i] > '~')) ? '.' : c[i];
-	}
-	PRI_CHECKOVERFLOW(2);
-	*msgptr++ = ']';
-	*msgptr++ = '\n';
-	*msgptr = '\0';
-	pri_message(pri, "%s", message);
-}
-#undef PRI_CHECKOVERFLOW
-
-static const char *namepres_to_str(int namepres)
-{
-	return (namepres == 0) ? "Restricted" : "Allowed";
-}
-
-static const char *characterset_to_str(int characterset)
-{
-	switch (characterset) {
-	case CHARACTER_SET_UNKNOWN:
-		return "Unknown";
-	case CHARACTER_SET_ISO8859_1:
-		return "ISO8859-1";
-	case CHARACTER_SET_ISO8859_2:
-		return "ISO8859-2";
-	case CHARACTER_SET_ISO8859_3:
-		return "ISO8859-3";
-	case CHARACTER_SET_ISO8859_4:
-		return "ISO8859-4";
-	case CHARACTER_SET_ISO8859_5:
-		return "ISO8859-5";
-	case CHARACTER_SET_ISO8859_7:
-		return "ISO8859-7";
+		break;
 	default:
-		return "illegal value";
+		switch (redirectingreason) {
+		case PRI_REDIR_UNKNOWN:
+			value = Q952_DIVERT_REASON_UNKNOWN;
+			break;
+		case PRI_REDIR_FORWARD_ON_BUSY:
+			value = Q952_DIVERT_REASON_CFB;
+			break;
+		case PRI_REDIR_FORWARD_ON_NO_REPLY:
+			value = Q952_DIVERT_REASON_CFNR;
+			break;
+		case PRI_REDIR_DEFLECTION:
+			value = Q952_DIVERT_REASON_CD;
+			break;
+		case PRI_REDIR_UNCONDITIONAL:
+			value = Q952_DIVERT_REASON_CFU;
+			break;
+		case PRI_REDIR_DTE_OUT_OF_ORDER:
+		case PRI_REDIR_FORWARDED_BY_DTE:
+			pri_message(ctrl,
+				"!! Don't know how to convert Q.931 redirection reason %d to Q.952\n",
+				redirectingreason);
+			/* Fall through */
+		default:
+			value = Q952_DIVERT_REASON_UNKNOWN;
+			break;
+		}
+		break;
 	}
+
+	return value;
 }
 
-static const char *diversionreason_to_str(struct pri *pri, int diversionreason)
+static int redirectingreason_for_q931(struct pri *ctrl, int redirectingreason)
 {
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		switch (diversionreason) {
+	int value;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		switch (redirectingreason) {
 		case QSIG_DIVERT_REASON_UNKNOWN:
-			return "Unknown";
+			value = PRI_REDIR_UNKNOWN;
+			break;
 		case QSIG_DIVERT_REASON_CFU:
-			return "Call Forwarding Unconditional";
+			value = PRI_REDIR_UNCONDITIONAL;
+			break;
 		case QSIG_DIVERT_REASON_CFB:
-			return "Call Forwarding Busy";
+			value = PRI_REDIR_FORWARD_ON_BUSY;
+			break;
 		case QSIG_DIVERT_REASON_CFNR:
-			return "Call Forwarding No Reply";
+			value = PRI_REDIR_FORWARD_ON_NO_REPLY;
+			break;
 		default:
-			return "invalid value";
+			pri_message(ctrl, "!! Unknown Q.SIG diversion reason %d\n",
+				redirectingreason);
+			value = PRI_REDIR_UNKNOWN;
+			break;
 		}
-	} else {
-		switch(diversionreason) {
+		break;
+	default:
+		switch (redirectingreason) {
 		case Q952_DIVERT_REASON_UNKNOWN:
-			return "Unknown";
+			value = PRI_REDIR_UNKNOWN;
+			break;
 		case Q952_DIVERT_REASON_CFU:
-			return "Call Forwarding Unconditional";
+			value = PRI_REDIR_UNCONDITIONAL;
+			break;
 		case Q952_DIVERT_REASON_CFB:
-			return "Call Forwarding Busy";
+			value = PRI_REDIR_FORWARD_ON_BUSY;
+			break;
 		case Q952_DIVERT_REASON_CFNR:
-			return "Call Forwarding No Reply";
+			value = PRI_REDIR_FORWARD_ON_NO_REPLY;
+			break;
 		case Q952_DIVERT_REASON_CD:
-			return "Call Deflection";
+			value = PRI_REDIR_DEFLECTION;
+			break;
 		case Q952_DIVERT_REASON_IMMEDIATE:
-			return "Call Deflection Immediate";
+			pri_message(ctrl,
+				"!! Dont' know how to convert Q.952 diversion reason IMMEDIATE to PRI analog\n");
+			value = PRI_REDIR_UNKNOWN;	/* ??? */
+			break;
 		default:
-			return "invalid value";
+			pri_message(ctrl, "!! Unknown Q.952 diversion reason %d\n",
+				redirectingreason);
+			value = PRI_REDIR_UNKNOWN;
+			break;
 		}
+		break;
 	}
+
+	return value;
 }
 
-static const char *callstatus_to_str(int callstatus)
+/*!
+ * \brief Convert the Q.931 type-of-number field to facility.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param ton Q.931 ton/plan octet.
+ *
+ * \return PartyNumber enumeration value.
+ */
+static int typeofnumber_from_q931(struct pri *ctrl, int ton)
 {
-	switch (callstatus) {
-	case 0:
-		return "answered";
-	case 1:
-		return "alerting";
+	int value;
+
+	switch ((ton >> 4) & 0x03) {
 	default:
-		return "illegal value";
+		pri_message(ctrl, "!! Unsupported Q.931 TypeOfNumber value (%d)\n", ton);
+		/* fall through */
+	case PRI_TON_UNKNOWN:
+		value = Q932_TON_UNKNOWN;
+		break;
+	case PRI_TON_INTERNATIONAL:
+		value = Q932_TON_INTERNATIONAL;
+		break;
+	case PRI_TON_NATIONAL:
+		value = Q932_TON_NATIONAL;
+		break;
+	case PRI_TON_NET_SPECIFIC:
+		value = Q932_TON_NET_SPECIFIC;
+		break;
+	case PRI_TON_SUBSCRIBER:
+		value = Q932_TON_SUBSCRIBER;
+		break;
+	case PRI_TON_ABBREVIATED:
+		value = Q932_TON_ABBREVIATED;
+		break;
 	}
+
+	return value;
 }
 
-static const char *enddesignation_to_str(int enddesignation)
+static int typeofnumber_for_q931(struct pri *ctrl, int ton)
 {
-	switch (enddesignation) {
-	case 0:
-		return "primaryEnd";
-	case 1:
-		return "secondaryEnd";
-	default:
-		return "illegal value";
-	}
-}
+	int value;
 
-int redirectingreason_from_q931(struct pri *pri, int redirectingreason)
-{
-	switch(pri->switchtype) {
-		case PRI_SWITCH_QSIG:
-			switch(redirectingreason) {
-				case PRI_REDIR_UNKNOWN:
-					return QSIG_DIVERT_REASON_UNKNOWN;
-				case PRI_REDIR_FORWARD_ON_BUSY:
-					return QSIG_DIVERT_REASON_CFB;
-				case PRI_REDIR_FORWARD_ON_NO_REPLY:
-					return QSIG_DIVERT_REASON_CFNR;
-				case PRI_REDIR_UNCONDITIONAL:
-					return QSIG_DIVERT_REASON_CFU;
-				case PRI_REDIR_DEFLECTION:
-				case PRI_REDIR_DTE_OUT_OF_ORDER:
-				case PRI_REDIR_FORWARDED_BY_DTE:
-					pri_message(pri, "!! Don't know how to convert Q.931 redirection reason %d to Q.SIG\n", redirectingreason);
-					/* Fall through */
-				default:
-					return QSIG_DIVERT_REASON_UNKNOWN;
-			}
-		default:
-			switch(redirectingreason) {
-				case PRI_REDIR_UNKNOWN:
-					return Q952_DIVERT_REASON_UNKNOWN;
-				case PRI_REDIR_FORWARD_ON_BUSY:
-					return Q952_DIVERT_REASON_CFB;
-				case PRI_REDIR_FORWARD_ON_NO_REPLY:
-					return Q952_DIVERT_REASON_CFNR;
-				case PRI_REDIR_DEFLECTION:
-					return Q952_DIVERT_REASON_CD;
-				case PRI_REDIR_UNCONDITIONAL:
-					return Q952_DIVERT_REASON_CFU;
-				case PRI_REDIR_DTE_OUT_OF_ORDER:
-				case PRI_REDIR_FORWARDED_BY_DTE:
-					pri_message(pri, "!! Don't know how to convert Q.931 redirection reason %d to Q.952\n", redirectingreason);
-					/* Fall through */
-				default:
-					return Q952_DIVERT_REASON_UNKNOWN;
-			}
-	}
-}
-
-static int redirectingreason_for_q931(struct pri *pri, int redirectingreason)
-{
-	switch(pri->switchtype) {
-		case PRI_SWITCH_QSIG:
-			switch(redirectingreason) {
-				case QSIG_DIVERT_REASON_UNKNOWN:
-					return PRI_REDIR_UNKNOWN;
-				case QSIG_DIVERT_REASON_CFU:
-					return PRI_REDIR_UNCONDITIONAL;
-				case QSIG_DIVERT_REASON_CFB:
-					return PRI_REDIR_FORWARD_ON_BUSY;
-				case QSIG_DIVERT_REASON_CFNR:
-					return PRI_REDIR_FORWARD_ON_NO_REPLY;
-				default:
-					pri_message(pri, "!! Unknown Q.SIG diversion reason %d\n", redirectingreason);
-					return PRI_REDIR_UNKNOWN;
-			}
-		default:
-			switch(redirectingreason) {
-				case Q952_DIVERT_REASON_UNKNOWN:
-					return PRI_REDIR_UNKNOWN;
-				case Q952_DIVERT_REASON_CFU:
-					return PRI_REDIR_UNCONDITIONAL;
-				case Q952_DIVERT_REASON_CFB:
-					return PRI_REDIR_FORWARD_ON_BUSY;
-				case Q952_DIVERT_REASON_CFNR:
-					return PRI_REDIR_FORWARD_ON_NO_REPLY;
-				case Q952_DIVERT_REASON_CD:
-					return PRI_REDIR_DEFLECTION;
-				case Q952_DIVERT_REASON_IMMEDIATE:
-					pri_message(pri, "!! Dont' know how to convert Q.952 diversion reason IMMEDIATE to PRI analog\n");
-					return PRI_REDIR_UNKNOWN;	/* ??? */
-				default:
-					pri_message(pri, "!! Unknown Q.952 diversion reason %d\n", redirectingreason);
-					return PRI_REDIR_UNKNOWN;
-			}
-	}
-}
-
-int typeofnumber_from_q931(struct pri *pri, int ton)
-{
-	switch(ton) {
-		case PRI_TON_INTERNATIONAL:
-			return Q932_TON_INTERNATIONAL;
-		case PRI_TON_NATIONAL:
-			return Q932_TON_NATIONAL;
-		case PRI_TON_NET_SPECIFIC:
-			return Q932_TON_NET_SPECIFIC;
-		case PRI_TON_SUBSCRIBER:
-			return Q932_TON_SUBSCRIBER;
-		case PRI_TON_ABBREVIATED:
-			return Q932_TON_ABBREVIATED;
-		case PRI_TON_RESERVED:
-		default:
-			pri_message(pri, "!! Unsupported Q.931 TypeOfNumber value (%d)\n", ton);
-			/* fall through */
-		case PRI_TON_UNKNOWN:
-			return Q932_TON_UNKNOWN;
-	}
-}
-
-static int typeofnumber_for_q931(struct pri *pri, int ton)
-{
 	switch (ton) {
-		case Q932_TON_UNKNOWN:
-			return PRI_TON_UNKNOWN;
-		case Q932_TON_INTERNATIONAL:
-			return PRI_TON_INTERNATIONAL;
-		case Q932_TON_NATIONAL:
-			return PRI_TON_NATIONAL;
-		case Q932_TON_NET_SPECIFIC:
-			return PRI_TON_NET_SPECIFIC;
-		case Q932_TON_SUBSCRIBER:
-			return PRI_TON_SUBSCRIBER;
-		case Q932_TON_ABBREVIATED:
-			return PRI_TON_ABBREVIATED;
-		default:
-			pri_message(pri, "!! Invalid Q.932 TypeOfNumber %d\n", ton);
-			return PRI_TON_UNKNOWN;
+	default:
+		pri_message(ctrl, "!! Invalid TypeOfNumber %d\n", ton);
+		/* fall through */
+	case Q932_TON_UNKNOWN:
+		value = PRI_TON_UNKNOWN;
+		break;
+	case Q932_TON_INTERNATIONAL:
+		value = PRI_TON_INTERNATIONAL;
+		break;
+	case Q932_TON_NATIONAL:
+		value = PRI_TON_NATIONAL;
+		break;
+	case Q932_TON_NET_SPECIFIC:
+		value = PRI_TON_NET_SPECIFIC;
+		break;
+	case Q932_TON_SUBSCRIBER:
+		value = PRI_TON_SUBSCRIBER;
+		break;
+	case Q932_TON_ABBREVIATED:
+		value = PRI_TON_ABBREVIATED;
+		break;
 	}
+
+	return value << 4;
+}
+
+/*!
+ * \internal
+ * \brief Convert the Q.931 numbering plan field to facility.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param plan Q.931 ton/plan octet.
+ *
+ * \return PartyNumber enumeration value.
+ */
+static int numbering_plan_from_q931(struct pri *ctrl, int plan)
+{
+	int value;
+
+	switch (plan & 0x0F) {
+	default:
+		pri_message(ctrl, "!! Unsupported Q.931 numbering plan value (%d)\n", plan);
+		/* fall through */
+	case PRI_NPI_UNKNOWN:
+		value = 0;	/* unknown */
+		break;
+	case PRI_NPI_E163_E164:
+		value = 1;	/* public */
+		break;
+	case PRI_NPI_X121:
+		value = 3;	/* data */
+		break;
+	case PRI_NPI_F69:
+		value = 4;	/* telex */
+		break;
+	case PRI_NPI_NATIONAL:
+		value = 8;	/* nationalStandard */
+		break;
+	case PRI_NPI_PRIVATE:
+		value = 5;	/* private */
+		break;
+	}
+
+	return value;
+}
+
+/*!
+ * \internal
+ * \brief Convert the PartyNumber numbering plan to Q.931 plan field value.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param plan PartyNumber enumeration value.
+ *
+ * \return Q.931 plan field value.
+ */
+static int numbering_plan_for_q931(struct pri *ctrl, int plan)
+{
+	int value;
+
+	switch (plan) {
+	default:
+		pri_message(ctrl,
+			"!! Unsupported PartyNumber to Q.931 numbering plan value (%d)\n", plan);
+		/* fall through */
+	case 0:	/* unknown */
+		value = PRI_NPI_UNKNOWN;
+		break;
+	case 1:	/* public */
+		value = PRI_NPI_E163_E164;
+		break;
+	case 3:	/* data */
+		value = PRI_NPI_X121;
+		break;
+	case 4:	/* telex */
+		value = PRI_NPI_F69;
+		break;
+	case 5:	/* private */
+		value = PRI_NPI_PRIVATE;
+		break;
+	case 8:	/* nationalStandard */
+		value = PRI_NPI_NATIONAL;
+		break;
+	}
+
+	return value;
+}
+
+/*!
+ * \internal
+ * \brief Convert the Q.931 number presentation field to facility.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param presentation Q.931 presentation/screening octet.
+ * \param number_present Non-zero if the number is available.
+ *
+ * \return Presented<Number/Address><Screened/Unscreened> enumeration value.
+ */
+static int presentation_from_q931(struct pri *ctrl, int presentation, int number_present)
+{
+	int value;
+
+	switch (presentation & PRES_RESTRICTION) {
+	case PRES_ALLOWED:
+		value = 0;	/* presentationAllowed<Number/Address> */
+		break;
+	default:
+		pri_message(ctrl, "!! Unsupported Q.931 number presentation value (%d)\n",
+			presentation);
+		/* fall through */
+	case PRES_RESTRICTED:
+		if (number_present) {
+			value = 3;	/* presentationRestricted<Number/Address> */
+		} else {
+			value = 1;	/* presentationRestricted */
+		}
+		break;
+	case PRES_UNAVAILABLE:
+		value = 2;	/* numberNotAvailableDueToInterworking */
+		break;
+	}
+
+	return value;
+}
+
+/*!
+ * \internal
+ * \brief Convert the Presented<Number/Address><Screened/Unscreened> presentation
+ * to Q.931 presentation field value.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param presentation Presented<Number/Address><Screened/Unscreened> value.
+ *
+ * \return Q.931 presentation field value.
+ */
+static int presentation_for_q931(struct pri *ctrl, int presentation)
+{
+	int value;
+
+	switch (presentation) {
+	case 0:	/* presentationAllowed<Number/Address> */
+		value = PRES_ALLOWED;
+		break;
+	default:
+		pri_message(ctrl,
+			"!! Unsupported Presented<Number/Address><Screened/Unscreened> to Q.931 value (%d)\n",
+			presentation);
+		/* fall through */
+	case 1:	/* presentationRestricted */
+	case 3:	/* presentationRestricted<Number/Address> */
+		value = PRES_RESTRICTED;
+		break;
+	case 2:	/* numberNotAvailableDueToInterworking */
+		value = PRES_UNAVAILABLE;
+		break;
+	}
+
+	return value;
 }
 
 static int presentation_to_subscription(struct pri *pri, int presentation)
@@ -483,1605 +401,306 @@ static int presentation_to_subscription(struct pri *pri, int presentation)
 		return QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR;
 	case PRES_RESTRICTED:
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;
-	case PRES_UNAVAILABLE:			/* Number not available due to interworking */
+	case PRES_UNAVAILABLE:	/* Number not available due to interworking */
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;	/* ?? QSIG_NO_NOTIFICATION */
 	default:
-		pri_message(pri, "!! Unknown Q.SIG presentationIndicator 0x%02x\n", presentation);
+		pri_message(pri, "!! Unknown Q.SIG presentationIndicator 0x%02x\n",
+			presentation);
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;
 	}
 }
 
-int asn1_name_decode(void *data, int len, char *namebuf, int buflen)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG DivertingLegInformation1 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 1.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_diverting_leg_information1(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
 {
-	struct rose_component *comp = (struct rose_component*)data;
-	int datalen = 0, res = 0;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	if (comp->len == ASN1_LEN_INDEF) {
-		datalen = strlen((char *)comp->data);
-		res = datalen + 2;
-	} else
-		datalen = res = comp->len;
-
-	if (datalen > buflen - 1) {
-		/* Truncate */
-		datalen = buflen;
-	}
-	memcpy(namebuf, comp->data, datalen);
-	namebuf[datalen] = '\0';
-
-	return res + 2;
-}
-
-int asn1_string_encode(unsigned char asn1_type, void *data, int len, int max_len, void *src, int src_len)
-{
-	struct rose_component *comp = NULL;
-	
-	if (len < 2 + src_len)
-		return -1;
-
-	if (max_len && (src_len > max_len))
-		src_len = max_len;
-
-	comp = (struct rose_component *)data;
-	comp->type = asn1_type;
-	comp->len = src_len;
-	memcpy(comp->data, src, src_len);
-	
-	return 2 + src_len;
-}
-
-int asn1_copy_string(char * buf, int buflen, struct rose_component *comp)
-{
-	int res;
-	int datalen;
-
-	if ((comp->len > buflen) && (comp->len != ASN1_LEN_INDEF))
-		return -1;
-
-	if (comp->len == ASN1_LEN_INDEF) {
-		datalen = strlen((char*)comp->data);
-		res = datalen + 2;
-	} else
-		res = datalen = comp->len;
-
-	memcpy(buf, comp->data, datalen);
-	buf[datalen] = 0;
-
-	return res;
-}
-
-static int rose_namedata_decode(struct pri *pri, unsigned char *data, int len, int implicit, struct nameelements_namedata *value)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-	int res;
-
-	do {
-		/* NameData */
-		if (!implicit) {
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_OCTETSTRING, "Don't know what to do if NameData is of type 0x%x\n");
-
-			data = comp->data;
-			if (comp->len == ASN1_LEN_INDEF) {
-				len = strlen((char *)comp->data);
-				res = len + 2 + 2;
-			} else {
-				len = comp->len;
-				res = len + 2;
-			}
-		} else
-			res = len;
-
-		if (len > sizeof(value->name)-1) {
-			pri_message(pri, "!! Oversized NameData component (%d)\n", len);
-			return -1;
-		}
-
-		memcpy(value->name, data, len);
-		value->name[len] = '\0';
-
-		return res;
-	}
-	while(0);
-
-	return -1;
-}
-
-static int rose_namedata_encode(struct pri *pri, unsigned char *dst, int implicit, char *name)
-{
-	int size = 0;
-	struct rose_component *comp;
-	int namesize;
-
-	namesize = strlen(name);
-	if (namesize > 50 ) {
-		pri_message(pri, "!! Encoding of oversized NameData component failed (%d)\n", namesize);
-		return -1;
-	} else if (namesize == 0){
-		pri_message(pri, "!! Encoding of undersized NameData component failed (%d)\n", namesize);
-		return -1;
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
-	if (!implicit) {
-		/* constructor component  (0x04,len) */
-		comp = (struct rose_component *)dst;
-		comp->type = ASN1_OCTETSTRING;
-		comp->len = 2 + namesize;
-		size += 2;
-		dst += 2;
-	}
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_DivertingLegInformation1;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.DivertingLegInformation1.diversion_reason =
+		redirectingreason_from_q931(ctrl, call->divertedtoreason);
+	msg.args.qsig.DivertingLegInformation1.subscription_option =
+		presentation_to_subscription(ctrl, call->divertedtopres);
+	msg.args.qsig.DivertingLegInformation1.nominated_number.plan =
+		numbering_plan_from_q931(ctrl, call->divertedtoplan);
+	msg.args.qsig.DivertingLegInformation1.nominated_number.ton =
+		typeofnumber_from_q931(ctrl, call->divertedtoplan);
+	libpri_copy_string((char *)
+		msg.args.qsig.DivertingLegInformation1.nominated_number.str, call->divertedtonum,
+		sizeof(msg.args.qsig.DivertingLegInformation1.nominated_number.str));
+	msg.args.qsig.DivertingLegInformation1.nominated_number.length =
+		strlen((char *) msg.args.qsig.DivertingLegInformation1.nominated_number.str);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
-	memcpy(dst, name, namesize);
-	size += namesize;
-
-	return size;
+	return pos;
 }
 
-static int rose_nameset_decode(struct pri *pri, unsigned char *data, int len, int implicit, struct nameelements_nameset *value)
+/*!
+ * \internal
+ * \brief Encode and queue the Q.SIG DivertingLegInformation1 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode diversion leg 1.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rose_diverting_leg_information1_encode(struct pri *ctrl, q931_call *call)
 {
-	int size;
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
- 	int characterset;
-
-	value->characterset = CHARACTER_SET_ISO8859_1;
-
-	do {
-		/* NameSet */
-		if (!implicit) {
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_SEQUENCE, "Don't know what to do if NameSet is of type 0x%x\n");
-			SUB_COMPONENT(comp, i);
-		}
-
-		/* nameData NameData */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_namedata_decode(pri, (u_int8_t *)comp, len, 0, (struct nameelements_namedata *)value);
-		if (size < 0)
-			return -1;
-		i += size;
-
-		if (i < len) {
-			/* characterSet CharacterSet OPTIONAL */
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if CharacterSet is of type 0x%x\n");
-			ASN1_GET_INTEGER(comp, characterset);
-			NEXT_COMPONENT(comp, i);
-			if (pri->debug & PRI_DEBUG_APDU)
-				pri_message(pri, "     NameSet: Received characterSet=%s(%d)\n", characterset_to_str(characterset), characterset);
-			value->characterset = characterset;
-		}
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     NameSet: '%s', characterSet=%s(%d) i=%d len=%d\n", value->name, characterset_to_str(value->characterset), value->characterset, i, len);
-
-		return i;
-	}
-	while(0);
-	
-	return -1;
-}
-
-static int rose_name_decode(struct pri *pri, unsigned char *data, int len, struct nameelements_name *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	value->name[0] = '\0';
-	value->characterset = CHARACTER_SET_UNKNOWN;
-	value->namepres = -1;
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):			/* [0] namePresentationAllowedSimple */
-			size = rose_namedata_decode(pri, comp->data, comp->len, 1, (struct nameelements_namedata *)value);
-			if (size < 0)
-				return -1;
-			i += (size + 2);
-			value->characterset = CHARACTER_SET_ISO8859_1;
-			value->namepres = 1;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):	/* [1] namePresentationAllowedExtended */
-			size = rose_nameset_decode(pri, comp->data, comp->len, 1, (struct nameelements_nameset *)value);
-			if (size < 0)
-				return -1;
-			i += (size + 2);
-			value->namepres = 1;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):			/* [2] namePresentationRestrictedSimple */
-			size = rose_namedata_decode(pri, comp->data, comp->len, 1, (struct nameelements_namedata *)value);
-			if (size < 0)
-				return -1;
-			i += (size + 2);
-			value->characterset = CHARACTER_SET_ISO8859_1;
-			value->namepres = 0;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):	/* [3] namePresentationRestrictedExtended */
-			size = rose_nameset_decode(pri, comp->data, comp->len, 1, (struct nameelements_nameset *)value);
-			if (size < 0)
-				return -1;
-			i += (size + 2);
-			value->namepres = 0;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_4):			/* [4] nameNotAvailable */
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_7):			/* [7] namePresentationRestrictedNull */
-			i += (comp->len + 2);
-			value->name[0] = '\0';
-			value->characterset = CHARACTER_SET_UNKNOWN;
-			value->namepres = 0;
-			break;
-		default:
-			pri_message(pri, "!! Unknown Name component received 0x%x\n", comp->type);
-			return -1;
-		}
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     Name: '%s' i=%d len=%d\n", value->name, i, len);
-		return i;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_number_digits_decode(struct pri *pri, unsigned char *data, int len, int implicit, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-	int res = 0;
-
-	do {
-		if (!implicit) {
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_NUMERICSTRING, "Don't know what to do with NumberDigits ROSE component type 0x%x\n");
-
-			data = comp->data;
-			if (comp->len == ASN1_LEN_INDEF) {
-				len = strlen((char *)comp->data);
-				res = len + 2 + 2;
-			} else {
-				len = comp->len;
-				res = len + 2;
-			}
-		} else
-			res = len;
-
-		if (len > sizeof(value->partyaddress)-1) {
-			pri_message(pri, "!! Oversized NumberDigits component (%d)\n", len);
-			return -1;
-		}
-
-		memcpy(value->partyaddress, data, len);
-		value->partyaddress[len] = '\0';
-
-		return res;
-	}
-	while(0);
-
-	return -1;
-}
-
-static int rose_public_party_number_decode(struct pri *pri, unsigned char *data, int len, int implicit, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-	int ton;
-	int res = 0;
-
-	if (len < 2)
-		return -1;
-
-	do {
-		if (!implicit) {
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_SEQUENCE, "Don't know what to do if PublicPartyNumber is of type 0x%x\n");
-			SUB_COMPONENT(comp, i);
-		}
-
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Don't know what to do with PublicPartyNumber ROSE component type 0x%x\n");
-		ASN1_GET_INTEGER(comp, ton);
-		NEXT_COMPONENT(comp, i);
-		ton = typeofnumber_for_q931(pri, ton);
-
-		res = rose_number_digits_decode(pri, &vdata[i], len-i, 0, value);
-		if (res < 0)
-			return -1;
-		value->ton = ton;
-
-		return res + 3;
-
-	} while(0);
-	return -1;
-}
-
-static int rose_public_party_number_encode(struct pri *pri, unsigned char *dst, int implicit, unsigned char ton, char *num)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	int numsize;
-
-	numsize = strlen(num);
-	if (numsize > 20 ) {
-		pri_message(pri, "!! Encoding of oversized PublicPartyNumber component failed (%d)\n", numsize);
-		return -1;
-	}
-
-	if (!implicit) {
-		/* constructor component  (0x30,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), dst, i);
-		ASN1_PUSH(compstk, compsp, comp);
-	} else
-		comp = (struct rose_component *)dst;
-
-	/* publicTypeOfNumber   (0x0a,0x01,ton)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, dst, i, ton);
-
-	/* publicNumberDigits */
-
-	/* tag component NumericString  (0x12,len) */
-	ASN1_ADD_SIMPLE(comp, ASN1_NUMERICSTRING, dst, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* NumericString */
-	memcpy(comp->data, num, numsize);
-	i += numsize;
-
-	ASN1_FIXUP(compstk, compsp, dst, i);
-
-	if (!implicit)
-		ASN1_FIXUP(compstk, compsp, dst, i);
-
-	return i;
-}
-
-static int rose_private_party_number_decode(struct pri *pri, unsigned char *data, int len, int implicit, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-	int ton;
-	int res = 0;
-
-	if (len < 2)
-		return -1;
-
-	do {
-		if (!implicit) {
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_SEQUENCE, "Don't know what to do if PrivatePartyNumber is of type 0x%x\n");
-			SUB_COMPONENT(comp, i);
-		}
-
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Don't know what to do with PrivatePartyNumber ROSE component type 0x%x\n");
-		ASN1_GET_INTEGER(comp, ton);
-		NEXT_COMPONENT(comp, i);
-		ton = typeofnumber_for_q931(pri, ton);
-
-		res = rose_number_digits_decode(pri, &vdata[i], len-i, 0, value);
-		if (res < 0)
-			return -1;
-		value->ton = ton;
-
-		return res + 3;
-
-	} while(0);
-	return -1;
-}
-
-static int rose_address_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-	int res = 0;
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		/* PartyNumber */
-		switch(comp->type) {
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):	/* [0] unknownPartyNumber, IMPLICIT NumberDigits */
-			res = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_UNKNOWN;
-			value->ton = PRI_TON_UNKNOWN;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):	/* [1] publicPartyNumber, IMPLICIT PublicPartyNumber */
-			res = rose_public_party_number_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_E163_E164;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_3):	/* [3] dataPartyNumber, IMPLICIT NumberDigits */
-			res = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_X121 /* ??? */;
-			value->ton = PRI_TON_UNKNOWN /* ??? */;
-			pri_message(pri, "!! dataPartyNumber isn't handled\n");
-			return -1;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_4):	/* [4] telexPartyNumber, IMPLICIT NumberDigits */
-			res = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_F69 /* ??? */;
-			value->ton = PRI_TON_UNKNOWN /* ??? */;
-			pri_message(pri, "!! telexPartyNumber isn't handled\n");
-			return -1;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_5):	/* [5] privatePartyNumber, IMPLICIT PrivatePartyNumber */
-			res = rose_private_party_number_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_PRIVATE;
-			break;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_8):	/* [8] nationalStandardPartyNumber, IMPLICIT NumberDigits */
-			res = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-			if (res < 0)
-				return -1;
-			value->npi = PRI_NPI_NATIONAL;
-			value->ton = PRI_TON_NATIONAL;
-			break;
-		default:
-			pri_message(pri, "!! Unknown PartyNumber component received 0x%X\n", comp->type);
-			return -1;
-		}
-		ASN1_FIXUP_LEN(comp, res);
-		NEXT_COMPONENT(comp, i);
-
-		/* PartySubaddress OPTIONAL */
-		if (i < len)
-			pri_message(pri, "!! not all information is handled from Address component\n");
-		return res + 2;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_party_number_encode(struct pri *pri, unsigned char *dst, unsigned char ton, char *num)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	int numsize, size;
-
-	numsize = strlen(num);
-	if (numsize > 20 ) {
-		pri_message(pri, "!! Encoding of oversized PartyNumber component failed (%d)\n", numsize);
-		return -1;
-	}
-
-#if 0
-	/* tag component unknownPartyNumber  (0x80,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), dst, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* unknownPartyNumber, implicid NumberDigits */
-	memcpy(comp->data, num, numsize);
-	i += numsize;
-
-	ASN1_FIXUP(compstk, compsp, dst, i);
-#endif
-
-	/* tag component publicPartyNumber  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), dst, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* publicPartyNumber, implicid PublicPartyNumber */
-	size = rose_public_party_number_encode(pri, comp->data, 1, ton, num);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	ASN1_FIXUP(compstk, compsp, dst, i);
-
-	return i;
-}
-
-static int rose_party_number_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):   /* [0] IMPLICIT NumberDigits -- default: unknownPartyNumber */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PartyNumber: UnknownPartyNumber len=%d\n", len);
-				size = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
-				value->npi = PRI_NPI_UNKNOWN;
-				value->ton = PRI_TON_UNKNOWN;
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):   /* [1] IMPLICIT PublicPartyNumber */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PartyNumber: PublicPartyNumber len=%d\n", len);
-				size = rose_public_party_number_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
-				value->npi = PRI_NPI_E163_E164;
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_3):   /* [3] IMPLICIT NumberDigits -- not used: dataPartyNumber */
-				pri_message(pri, "!! PartyNumber: dataPartyNumber is reserved!\n");
-				size = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
-				value->npi = PRI_NPI_X121 /* ??? */;
-				value->ton = PRI_TON_UNKNOWN /* ??? */;
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_4):   /* [4] IMPLICIT NumberDigits -- not used: telexPartyNumber */
-				pri_message(pri, "!! PartyNumber: telexPartyNumber is reserved!\n");
-				size = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
-				value->npi = PRI_NPI_F69 /* ??? */;
-				value->ton = PRI_TON_UNKNOWN /* ??? */;
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_5):   /* [5] IMPLICIT PrivatePartyNumber */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PartyNumber: PrivatePartyNumber len=%d\n", len);
-				size = rose_private_party_number_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
- 				value->npi = PRI_NPI_PRIVATE;
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_8):   /* [8] IMPLICIT NumberDigits -- not used: nationalStandatdPartyNumber */
-				pri_message(pri, "!! PartyNumber: nationalStandardPartyNumber is reserved!\n");
-				size = rose_number_digits_decode(pri, comp->data, comp->len, 1, value);
-				if (size < 0)
-					return -1;
-				value->npi = PRI_NPI_NATIONAL;
-				value->ton = PRI_TON_NATIONAL;
-				break;
-
-			default:
-				pri_message(pri, "Invalid PartyNumber component 0x%X\n", comp->type);
-				return -1;
-		}
-		ASN1_FIXUP_LEN(comp, size);
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     PartyNumber: '%s' size=%d len=%d\n", value->partyaddress, size, len);
-		return size;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_presented_number_unscreened_encode(struct pri *pri, unsigned char *dst, unsigned char presentation, unsigned char ton, char *num)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	int numsize, size;
-
-	numsize = strlen(num);
-	if (numsize > 20 ) {
-		pri_message(pri, "!! Encoding of oversized PresentedNumberUnscreened component failed (%d)\n", numsize);
-		return -1;
-	}
-
-	switch (presentation & PRES_RESTRICTION) {
-		case PRES_ALLOWED:
-			/* tag component [0] presentationAllowedAddress (0xa0,len) */
-			ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0), dst, i);
-			ASN1_PUSH(compstk, compsp, comp);
-
-			/* PartyNumber */
-			size = rose_party_number_encode(pri, comp->data, ton, num);
-			if (size < 0)
-				return -1;
-			i += size;
-			ASN1_FIXUP(compstk, compsp, dst, i);
-			break;
-		case PRES_RESTRICTED:
-			/* tag component [1] presentationRestricted (0x81,len) */
-			ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1), dst, i);
-			break;
-		case PRES_UNAVAILABLE:
-			/* tag component [2] numberNotAvailableDueToInterworking (0x82,len) */
-			ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), dst, i);
-			break;
-		default:
-			pri_message(pri, "!! Undefined presentation value for PresentedNumberUnscreened: 0x%x\n", presentation);
-			return -1;
-	}
-
-	return i;
-}
-
-static int rose_presented_number_unscreened_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentednumberunscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	/* Fill in default values */
-	value->partyaddress[0] = '\0';
-	value->ton = PRI_TON_UNKNOWN;
-	value->npi = PRI_NPI_E163_E164;
-	value->pres = -1;	/* Data is not available */
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):		/* [0] presentationAllowedNumber */
-			value->pres = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
-			size = rose_address_decode(pri, comp->data, comp->len, value);
-			ASN1_FIXUP_LEN(comp, size);
-			return size + 2;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1):		/* [1] IMPLICIT presentationRestricted */
-			if (comp->len != 0) { /* must be NULL */
-				pri_error(pri, "!! Invalid PresentationRestricted component received (len != 0)\n");
-				return -1;
-			}
-			value->pres = PRES_PROHIB_USER_NUMBER_NOT_SCREENED;
-			return 2;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):		/* [2] IMPLICIT numberNotAvailableDueToInterworking */
-			if (comp->len != 0) { /* must be NULL */
-				pri_error(pri, "!! Invalid NumberNotAvailableDueToInterworking component received (len != 0)\n");
-				return -1;
-			}
-			value->pres = PRES_NUMBER_NOT_AVAILABLE;
-			return 2;
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):		/* [3] presentationRestrictedNumber */
-			value->pres = PRES_PROHIB_USER_NUMBER_NOT_SCREENED;
-			size = rose_address_decode(pri, comp->data, comp->len, value) + 2;
-			ASN1_FIXUP_LEN(comp, size);
-			return size + 2;
-		default:
-			pri_message(pri, "Invalid PresentedNumberUnscreened component 0x%X\n", comp->type);
-		}
-		return -1;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_number_screened_encode(struct pri *pri, unsigned char *dst, int implicit, unsigned char ton, unsigned char screenind, char *num)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	int numsize, size;
-
-	numsize = strlen(num);
-	if (numsize > 20 ) {
-		pri_message(pri, "!! Encoding of oversized NumberScreened component failed (%d)\n", numsize);
-		return -1;
-	}
-
-	if (!implicit) {
-		/* constructor component  (0x30,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), dst, i);
-		ASN1_PUSH(compstk, compsp, comp);
-	} else
-		comp = (struct rose_component *)dst;
-
-	/* PartyNumber */
-	size = rose_party_number_encode(pri, (u_int8_t *)comp, ton, num);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	/* ScreeningIndicator  (0x0a,0x01,screenind) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, dst, i, screenind);
-
-	if (!implicit)
-		ASN1_FIXUP(compstk, compsp, dst, i);
-
-	return i;
-}
-
-static int rose_number_screened_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentednumberscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	int scrind = -1;
-
-	do {
-		/* Party Number */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, (struct addressingdataelements_presentednumberunscreened*) value);
-		if (size < 0)
-			return -1;
-		comp->len = size;
-		NEXT_COMPONENT(comp, i);
-
-		/* Screening Indicator */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Don't know what to do with NumberScreened ROSE component type 0x%x\n");
-		ASN1_GET_INTEGER(comp, scrind);
-		// Todo: scrind = screeningindicator_for_q931(pri, scrind);
-		NEXT_COMPONENT(comp, i);
-
-		value->scrind = scrind;
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     NumberScreened: '%s' ScreeningIndicator=%d  i=%d  len=%d\n", value->partyaddress, scrind, i, len);
-
-		return i-2;  // We do not have a sequence header here.
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_presented_number_screened_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentednumberscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	/* Fill in default values */
-	value->partyaddress[0] = '\0';
-	value->ton = PRI_TON_UNKNOWN;
-	value->npi = PRI_NPI_UNKNOWN;
-	value->pres = -1; /* Data is not available */
-	value->scrind = 0;
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):   /* [0] IMPLICIT presentationAllowedNumber */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedNumberScreened: presentationAllowedNumber comp->len=%d\n", comp->len);
-				value->pres = PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN;
-				size = rose_number_screened_decode(pri, comp->data, comp->len, value);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				return size + 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1):    /* [1] IMPLICIT presentationRestricted */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedNumberScreened: presentationRestricted comp->len=%d\n", comp->len);
-				if (comp->len != 0) { /* must be NULL */
-					pri_error(pri, "!! Invalid PresentationRestricted component received (len != 0)\n");
-					return -1;
-				}
-				value->pres = PRES_PROHIB_USER_NUMBER_PASSED_SCREEN;
-				return 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):    /* [2] IMPLICIT numberNotAvailableDueToInterworking */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedNumberScreened: NumberNotAvailableDueToInterworking comp->len=%d\n", comp->len);
-				if (comp->len != 0) { /* must be NULL */
-					pri_error(pri, "!! Invalid NumberNotAvailableDueToInterworking component received (len != 0)\n");
-					return -1;
-				}
-				value->pres = PRES_NUMBER_NOT_AVAILABLE;
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedNumberScreened: numberNotAvailableDueToInterworking Type=0x%X  i=%d len=%d size=%d\n", comp->type, i, len);
-				return 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):    /* [3] IMPLICIT presentationRestrictedNumber */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedNumberScreened: presentationRestrictedNumber comp->len=%d\n", comp->len);
-				value->pres = PRES_PROHIB_USER_NUMBER_PASSED_SCREEN;
-				size = rose_number_screened_decode(pri, comp->data, comp->len, value);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				return size + 2;
-
-			default:
-				pri_message(pri, "Invalid PresentedNumberScreened component 0x%X\n", comp->type);
-		}
-		return -1;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_partysubaddress_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_partysubaddress *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	int odd_count_indicator = -1;
-	value->partysubaddress[0] = '\0';
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-		case (ASN1_CONSTRUCTOR | ASN1_SEQUENCE):    /* UserSpecifiedSubaddress */
-			/* SubaddressInformation */
-			SUB_COMPONENT(comp, i);
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_OCTETSTRING, "Don't know what to do if SubaddressInformation is of type 0x%x\n");
-			size = asn1_name_decode(comp->data, comp->len, value->partysubaddress, sizeof(value->partysubaddress));
-			if (size < 0)
-				return -1;
-			i += size;
-
-			/* oddCountIndicator BOOLEAN OPTIONAL */
-			if (i < len) {
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_BOOLEAN, "Don't know what to do if SubaddressInformation is of type 0x%x\n");
-
-				ASN1_GET_INTEGER(comp, odd_count_indicator);
-				NEXT_COMPONENT(comp, i);
-			}
-		case (ASN1_OCTETSTRING):    /* NSAPSubaddress */
-			size = asn1_name_decode((u_int8_t *)comp, comp->len + 2, value->partysubaddress, sizeof(value->partysubaddress));
-			if (size < 0)
-				return -1;
-			i += size;
-			break;
-		default:
-			pri_message(pri, "Invalid PartySubaddress component 0x%X\n", comp->type);
-			return -1;
-		}
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     PartySubaddress: '%s', oddCountIndicator=%d, i=%d len=%d\n", value->partysubaddress, odd_count_indicator, i, len);
-
-		return i;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_address_screened_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_addressscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	int scrind;
-	value->partysubaddress[0] = '\0';
-
-	/* SEQUENCE AddressScreened */
-	do {
-		/* PartyNumber */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, (struct addressingdataelements_presentednumberunscreened *)value);
-		if (size < 0)
-			return -1;
-		comp->len = size;
-		NEXT_COMPONENT(comp, i);
-
-		/* ScreeningIndicator */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Don't know what to do with AddressScreened ROSE component type 0x%x\n");
-		ASN1_GET_INTEGER(comp, scrind);
-		NEXT_COMPONENT(comp, i);
-
-		if (i < len) {
-			/* PartySubaddress OPTIONAL */
-			GET_COMPONENT(comp, i, vdata, len);
-			size = rose_partysubaddress_decode(pri, (u_int8_t *)comp, comp->len + 2, (struct addressingdataelements_partysubaddress *)value);
-			if (size < 0)
-				return -1;
-			i += size;
-		}
-
-		value->scrind = scrind;
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     AddressScreened: '%s' ScreeningIndicator=%d  i=%d  len=%d\n", value->partyaddress, scrind, i, len);
-
-		return i-2;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_presented_address_screened_decode(struct pri *pri, unsigned char *data, int len, struct addressingdataelements_presentedaddressscreened *value)
-{
-	int i = 0;
-	int size = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = data;
-
-	/* Fill in default values */
-	value->partyaddress[0] = '\0';
-	value->partysubaddress[0] = '\0';
-	value->npi = PRI_NPI_UNKNOWN;
-	value->ton = PRI_TON_UNKNOWN;
-	value->pres = -1; /* Data is not available */
-	value->scrind = 0;
-
-	do {
-		GET_COMPONENT(comp, i, vdata, len);
-
-		switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):   /* [0] IMPLICIT presentationAllowedAddress */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedAddressScreened: presentationAllowedAddress comp->len=%d\n", comp->len);
-				value->pres = PRES_ALLOWED_USER_NUMBER_PASSED_SCREEN;
-				size = rose_address_screened_decode(pri, comp->data, comp->len, (struct addressingdataelements_addressscreened *)value);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				return size + 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1):    /* [1] IMPLICIT presentationRestricted */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedAddressScreened: presentationRestricted comp->len=%d\n", comp->len);
-				if (comp->len != 0) { /* must be NULL */
-					pri_error(pri, "!! Invalid PresentationRestricted component received (len != 0)\n");
-					return -1;
-				}
-				value->pres = PRES_PROHIB_USER_NUMBER_PASSED_SCREEN;
-				return 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):    /* [2] IMPLICIT numberNotAvailableDueToInterworking */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedAddressScreened: NumberNotAvailableDueToInterworking comp->len=%d\n", comp->len);
-				if (comp->len != 0) { /* must be NULL */
-					pri_error(pri, "!! Invalid NumberNotAvailableDueToInterworking component received (len != 0)\n");
-					return -1;
-				}
-				value->pres = PRES_NUMBER_NOT_AVAILABLE;
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedAddressScreened: numberNotAvailableDueToInterworking Type=0x%X  i=%d len=%d size=%d\n", comp->type, i, len);
-				return 2;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):    /* [3] IMPLICIT presentationRestrictedAddress */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     PresentedAddressScreened: presentationRestrictedAddress comp->len=%d\n", comp->len);
-				value->pres = PRES_PROHIB_USER_NUMBER_PASSED_SCREEN;
-				size = rose_address_screened_decode(pri, comp->data, comp->len, (struct addressingdataelements_addressscreened *)value);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				return size + 2;
-
-			default:
-				pri_message(pri, "Invalid PresentedAddressScreened component 0x%X\n", comp->type);
-		}
-		return -1;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_diverting_leg_information1_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
-{
-	int i = 0;
-	struct addressingdataelements_presentednumberunscreened nominatednr;
-	int diversion_reason;
-	int subscription_option;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int size = 0;
-	memset(&nominatednr, 0, sizeof(nominatednr));
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid DivertingLegInformation1Type argument\n");
-		return -1;
-	}
-
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	do {
-		/* diversionReason DiversionReason */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Invalid diversionReason type 0x%X of ROSE divertingLegInformation1 component received\n");
-		ASN1_GET_INTEGER(comp, diversion_reason);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "    Received diversionReason: %s(%d)\n", diversionreason_to_str(pri, diversion_reason), diversion_reason);
-
-		diversion_reason = redirectingreason_for_q931(pri, diversion_reason);
-
-		/* subscriptionOption SubscriptionOption */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Invalid subscriptionOption type 0x%X of ROSE divertingLegInformation1 component received\n");
-		ASN1_GET_INTEGER(comp, subscription_option);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "    Received subscriptionOption: %d\n", subscription_option);
-
-		/* nominatedNr PartyNumber */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, &nominatednr);
-		if (size < 0)
-			return -1;
-
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "    Received nominatedNr '%s'\n", nominatednr.partyaddress);
-			pri_message(pri, "      ton = %d, npi = %d\n\n", nominatednr.ton, nominatednr.npi);
-		}
-
-		call->divleginfo1activeflag = 1;
-		if (subscription_option == QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR) {
-			libpri_copy_string(call->divertedtonum, nominatednr.partyaddress, sizeof(call->divertedtonum));
-		} else {
-			call->divertedtonum[0] = '\0';
-		}
-		call->divertedtopres = (subscription_option == QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR) ? PRES_ALLOWED_USER_NUMBER_NOT_SCREENED : PRES_PROHIB_USER_NUMBER_NOT_SCREENED;
-		call->divertedtoplan = ((nominatednr.ton & 0x07) << 4) | (nominatednr.npi & 0x0f);
-		call->divertedtoreason = diversion_reason;
-		call->divertedtocount++;
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-int rose_diverting_leg_information1_encode(struct pri *pri, q931_call *call)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
 	unsigned char buffer[256];
-	int size;
+	unsigned char *end;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode divertingLegInformation1\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+	end =
+		enc_qsig_diverting_leg_information1(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
+		return -1;
 	}
 
-	/* Network Protocol Profile */
-	/*  - not included - */
-
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
-
-	/* Service APDU(s): */
-
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x14)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, ROSE_DIVERTING_LEG_INFORMATION1);
-
-	/* constructor component  (0x30,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* diversionReason  (0x0a,0x01,diversionreason) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, redirectingreason_from_q931(pri, call->divertedtoreason));
-
-	/* subscriptionOption  (0x0a,0x01,subscriptionoption) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, presentation_to_subscription(pri, call->divertedtopres));
-
-	/* nominatedNr */
-
-	/* tag component publicPartyNumber  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* publicPartyNumber, implicid PublicPartyNumber */
-	size = rose_public_party_number_encode(pri, &buffer[i], 1, (call->divertedtoplan & 0x70) >> 4, call->divertedtonum);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL, NULL);
 }
 
-static int rose_diverting_leg_information2_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG DivertingLegInformation2 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 2.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_diverting_leg_information2(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
 {
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int size = 0;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	int diversion_counter;
-	int diversion_reason;
-	int original_diversion_reason = QSIG_DIVERT_REASON_UNKNOWN;
-	struct nameelements_name redirectingname = { "", CHARACTER_SET_UNKNOWN, 0 };
-	struct nameelements_name origcalledname = { "", CHARACTER_SET_UNKNOWN, 0 };;
-	struct addressingdataelements_presentednumberunscreened divertingnr;
-	struct addressingdataelements_presentednumberunscreened originalcallednr;
-	memset(&divertingnr, 0, sizeof(divertingnr));
-	memset(&originalcallednr, 0, sizeof(originalcallednr));
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid DivertingLegInformation2Type argument\n");
-		return -1;
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	do {
-		/* diversionCounter */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if diversionCounter is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, diversion_counter);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "    Received diversionCounter: %d\n",  diversion_counter);
-
-		/* diversionReason DiversionReason */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Invalid diversionReason type 0x%X of ROSE divertingLegInformation2 component received\n");
-		ASN1_GET_INTEGER(comp, diversion_reason);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "    Received diversionReason: %s(%d)\n", diversionreason_to_str(pri, diversion_reason), diversion_reason);
-
-		diversion_reason = redirectingreason_for_q931(pri, diversion_reason);
-
-		/* Type SEQUENCE specifies an ordered list of component types.           *
-		 * We decode all components but for simplicity we don't check the order. */
-		while (i < len) {
-			GET_COMPONENT(comp, i, vdata, len);
-
-			switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):
-				/* originalDiversionReason */
-				ASN1_GET_INTEGER(comp, original_diversion_reason);
-				NEXT_COMPONENT(comp,i);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "    Received originalDiversionReason: %s(%d)\n", diversionreason_to_str(pri, original_diversion_reason), original_diversion_reason);
-				original_diversion_reason = redirectingreason_for_q931(pri, original_diversion_reason);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):
-				/* divertingNr */
-				size = rose_presented_number_unscreened_decode(pri, comp->data, comp->len, &divertingnr);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				comp->len = size;
-				NEXT_COMPONENT(comp,i);
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "    Received divertingNr '%s'\n", divertingnr.partyaddress);
-					pri_message(pri, "      ton = %d, pres = %d, npi = %d\n", divertingnr.ton, divertingnr.pres, divertingnr.npi);
-				}
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_2):
-				/* originalCalledNr */
-				size = rose_presented_number_unscreened_decode(pri, comp->data, comp->len, &originalcallednr);
-				if (size < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, size);
-				comp->len = size;
-				NEXT_COMPONENT(comp,i);
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "    Received originalCalledNr '%s'\n", originalcallednr.partyaddress);
-					pri_message(pri, "      ton = %d, pres = %d, npi = %d\n", originalcallednr.ton, originalcallednr.pres, originalcallednr.npi);
-				}
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):
-				/* redirectingName */
-				size = rose_name_decode(pri, comp->data, comp->len, &redirectingname);
-				if (size < 0)
-					return -1;
-				i += (size + 2);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     Received RedirectingName '%s', namepres %s(%d), characterset %s(%d)\n",
-						        redirectingname.name, namepres_to_str(redirectingname.namepres), redirectingname.namepres,
-						        characterset_to_str(redirectingname.characterset), redirectingname.characterset);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_4):
-				/* originalCalledName */
-				size = rose_name_decode(pri, comp->data, comp->len, &origcalledname);
-				if (size < 0)
-					return -1;
-				i += (size + 2);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     Received OriginalCalledName '%s', namepres %s(%d), characterset %s(%d)\n",
-						        origcalledname.name, namepres_to_str(origcalledname.namepres), origcalledname.namepres,
-						        characterset_to_str(origcalledname.characterset), origcalledname.characterset);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_5):	/* [5] IMPLICIT Extension */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_6):	/* [6] IMPLICIT SEQUENCE OF Extension */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "!!     Ignoring DivertingLegInformation2 component 0x%X\n", comp->type);
-				NEXT_COMPONENT(comp, i);
-				break;
-			default:
-				pri_message(pri, "!!     Invalid DivertingLegInformation2 component received 0x%X\n", comp->type);
-				return -1;
-			}
-		}
-
-		if (divertingnr.pres >= 0) {
-			call->redirectingplan = ((divertingnr.ton & 0x07) << 4) | (divertingnr.npi & 0x0f);
-			call->redirectingpres = divertingnr.pres;
-			call->redirectingreason = diversion_reason;
-			libpri_copy_string(call->redirectingnum, divertingnr.partyaddress, sizeof(call->redirectingnum));
-		}
-		if (originalcallednr.pres >= 0) {
-			call->origcalledplan = ((originalcallednr.ton & 0x07) << 4) | (originalcallednr.npi & 0x0f);
-			call->origcalledpres = originalcallednr.pres;
-			libpri_copy_string(call->origcallednum, originalcallednr.partyaddress, sizeof(call->origcallednum));
-		}
-
-		if (redirectingname.namepres != 0) {
-			libpri_copy_string(call->redirectingname, redirectingname.name, sizeof(call->redirectingname));
-		} else {
-			call->redirectingname[0] = '\0';
-		}
-
-		if (origcalledname.namepres != 0) {
-			libpri_copy_string(call->origcalledname, origcalledname.name, sizeof(call->origcalledname));
-		} else {
-			call->origcalledname[0] = '\0';
-		}
-
-		call->origredirectingreason = original_diversion_reason;
-		call->redirectingcount = diversion_counter;
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_diverting_leg_information2_encode(struct pri *pri, q931_call *call)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	unsigned char buffer[256];
-	int size;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode divertingLegInformation2\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-	}
-
-	/* Network Protocol Profile */
-	/*  - not included - */
-
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
-
-	/* Service APDU(s): */
-
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x15)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, ROSE_DIVERTING_LEG_INFORMATION2);
-
-	/* constructor component  (0x30,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_DivertingLegInformation2;
+	msg.invoke_id = get_invokeid(ctrl);
 
 	/* diversionCounter always is 1 because other isn't available in the current design */
-	/* diversionCounter  (0x02,0x01,0x01) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, 1);
+	msg.args.qsig.DivertingLegInformation2.diversion_counter = 1;
 
-	/* diversionReason  (0x0a,0x01,redirectingreason) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, redirectingreason_from_q931(pri, call->redirectingreason));
-
-	/* originalDiversionReason */
-	/*  - not included - */
+	msg.args.qsig.DivertingLegInformation2.diversion_reason =
+		redirectingreason_from_q931(ctrl, call->redirectingreason);
 
 	/* divertingNr */
-
-	/* tag component divertingNr  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	size = rose_presented_number_unscreened_encode(pri, &buffer[i], call->redirectingpres, typeofnumber_from_q931(pri, (call->redirectingplan & 0x70) >> 4), call->redirectingnum);
-	if (size < 0)
-		return -1;
-	i += size;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	/* originalCalledNr */
-	/*  - not included - */
-
-#if 0
-	/* The originalCalledNr is unknown here. Its the same as divertingNr if the call *
-	 * is diverted only once but we don't know if its diverted one ore more times.   */
-
-	/* originalCalledNr */
-
-	/* tag component originalCalledNr  (0xa2,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_2), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	size = rose_presented_number_unscreened_encode(pri, &buffer[i], call->redirectingpres, typeofnumber_from_q931(pri, (call->redirectingplan & 0x70) >> 4), call->redirectingnum);
-	if (size < 0)
-		return -1;
-	i += size;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-#endif
+	msg.args.qsig.DivertingLegInformation2.diverting_present = 1;
+	msg.args.qsig.DivertingLegInformation2.diverting.presentation =
+		presentation_from_q931(ctrl, call->redirectingpres, call->redirectingnum[0]);
+	msg.args.qsig.DivertingLegInformation2.diverting.number.plan =
+		numbering_plan_from_q931(ctrl, call->redirectingplan);
+	msg.args.qsig.DivertingLegInformation2.diverting.number.ton =
+		typeofnumber_from_q931(ctrl, call->redirectingplan);
+	libpri_copy_string((char *)
+		msg.args.qsig.DivertingLegInformation2.diverting.number.str,
+		call->redirectingnum,
+		sizeof(msg.args.qsig.DivertingLegInformation2.diverting.number.str));
+	msg.args.qsig.DivertingLegInformation2.diverting.number.length =
+		strlen((char *) msg.args.qsig.DivertingLegInformation2.diverting.number.str);
 
 	/* redirectingName */
 	if (call->redirectingname[0]) {
-		/* tag component redirectingName  (0xa3,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* tag component namePresentationAllowedSimple  (0x80,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* namePresentationAllowedSimple, implicid NameData */
-		size = rose_namedata_encode(pri, &buffer[i], 1, call->redirectingname);
-		if (size < 0)
-			return -1;
-		i += size;
-
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+		msg.args.qsig.DivertingLegInformation2.redirecting_name_present = 1;
+		msg.args.qsig.DivertingLegInformation2.redirecting_name.presentation = 1;	/* presentation_allowed */
+		msg.args.qsig.DivertingLegInformation2.redirecting_name.char_set = 1;	/* iso8859-1 */
+		libpri_copy_string((char *)
+			msg.args.qsig.DivertingLegInformation2.redirecting_name.data,
+			call->redirectingname,
+			sizeof(msg.args.qsig.DivertingLegInformation2.redirecting_name.data));
+		msg.args.qsig.DivertingLegInformation2.redirecting_name.length = strlen((char *)
+			msg.args.qsig.DivertingLegInformation2.redirecting_name.data);
 	}
 
-	/* originalCalledName */
-	/*  - not included - */
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(call, Q931_SETUP, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pos;
 }
 
-static int rose_diverting_leg_information3_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode and queue the Q.SIG DivertingLegInformation2 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode diversion leg 2.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_diverting_leg_information2_encode(struct pri *ctrl, q931_call *call)
 {
-	int i = 0;
-	struct nameelements_name redirectionname = { "", CHARACTER_SET_UNKNOWN, 0 };
-	int presentation_allowed_indicator;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int size = 0;
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid DivertingLegInformation3Type argument\n");
-		return -1;
-	}
-
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	do {
-		/* presentationAllowedIndicator */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_BOOLEAN, "Don't know what to do if presentationAllowedIndicator is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, presentation_allowed_indicator);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "    Received presentationAllowedIndicator: %d\n", presentation_allowed_indicator);
-
-		/* Type SEQUENCE specifies an ordered list of component types.           *
-		 * We decode all components but for simplicity we don't check the order. */
-		while (i < len) {
-			GET_COMPONENT(comp, i, vdata, len);
-
-			switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):
-				/* redirectionName */
-				size = rose_name_decode(pri, comp->data, comp->len, &redirectionname);
-				if (size < 0)
-					return -1;
-				i += (size + 2);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     Received RedirectionName '%s', namepres %s(%d), characterset %s(%d)\n",
-					            redirectionname.name, namepres_to_str(redirectionname.namepres), redirectionname.namepres,
-					            characterset_to_str(redirectionname.characterset), redirectionname.characterset);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):	/* [1] IMPLICIT Extension */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_2):	/* [2] IMPLICIT SEQUENCE OF Extension */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "!!     Ignoring DivertingLegInformation3 component 0x%X\n", comp->type);
-				NEXT_COMPONENT(comp, i);
-				break;
-			default:
-				pri_message(pri, "!! Invalid DivertingLegInformation3 component received 0x%X\n", comp->type);
-				return -1;
-			}
-		}
-
-		call->divleginfo3activeflag = 1;
-		if ((redirectionname.namepres != 0) && (presentation_allowed_indicator != 0)) {
-			libpri_copy_string(call->divertedtoname, redirectionname.name, sizeof(call->divertedtoname));
-		} else {
-			call->divertedtoname[0] = '\0';
-		}
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-int rose_diverting_leg_information3_encode(struct pri *pri, q931_call *call, int messagetype)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
 	unsigned char buffer[256];
-	int size;
+	unsigned char *end;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode divertingLegInformation3\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+	end =
+		enc_qsig_diverting_leg_information2(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
+		return -1;
 	}
 
-	/* Network Protocol Profile */
-	/*  - not included - */
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL, NULL);
+}
 
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
+/*!
+ * \internal
+ * \brief Encode the Q.SIG DivertingLegInformation3 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 3.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_diverting_leg_information3(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
+{
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	/* Service APDU(s): */
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
 
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x16)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, ROSE_DIVERTING_LEG_INFORMATION3);
-
-	/* constructor component  (0x30,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_DivertingLegInformation3;
+	msg.invoke_id = get_invokeid(ctrl);
 
 	/* 'connectedpres' also indicates if name presentation is allowed */
-	if (((call->divertedtopres & 0x60) >> 5) == 0) {
-		/* presentation allowed */
-
-		/* presentationAllowedIndicator  (0x01,0x01,0xff) */
-		ASN1_ADD_BYTECOMP(comp, ASN1_BOOLEAN, buffer, i, 0xff);			/* true(255) */
-
-		/* redirectionName */
-
-		/* tag component redirectionName  (0xa0,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
+	if ((call->divertedtopres & PRES_RESTRICTION) == PRES_ALLOWED) {
+		msg.args.qsig.DivertingLegInformation3.presentation_allowed_indicator = 1;	/* TRUE */
 
 		if (call->divertedtoname[0]) {
-			/* tag component namePresentationAllowedSimple  (0x80,len) */
-			ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i);
-			ASN1_PUSH(compstk, compsp, comp);
-
-			/* namePresentationAllowedSimple, implicid NameData */
-			size = rose_namedata_encode(pri, &buffer[i], 1, call->divertedtoname);
-			if (size < 0)
-				return -1;
-			i += size;
-
-			ASN1_FIXUP(compstk, compsp, buffer, i);
+			msg.args.qsig.DivertingLegInformation3.redirection_name_present = 1;
+			msg.args.qsig.DivertingLegInformation3.redirection_name.presentation = 1;	/* presentation_allowed */
+			msg.args.qsig.DivertingLegInformation3.redirection_name.char_set = 1;	/* iso8859-1 */
+			libpri_copy_string((char *)
+				msg.args.qsig.DivertingLegInformation3.redirection_name.data,
+				call->divertedtoname,
+				sizeof(msg.args.qsig.DivertingLegInformation3.redirection_name.data));
+			msg.args.qsig.DivertingLegInformation3.redirection_name.length =
+				strlen((char *)
+					msg.args.qsig.DivertingLegInformation3.redirection_name.data);
 		}
-
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-	} else {
-		/* presentation restricted */
-
-		/* presentationAllowedIndicator  (0x01,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, ASN1_BOOLEAN, buffer, i, 0);			/* false(0) */
-
-		/* - don't include redirectionName, component is optional - */
 	}
 
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
-	if (pri_call_apdu_queue(call, messagetype, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pos;
 }
 
-/* Send the rltThirdParty: Invoke */
-int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
+int rose_diverting_leg_information3_encode(struct pri *ctrl, q931_call *call,
+	int messagetype)
 {
-	int i = 0;
 	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	const unsigned char rlt_3rd_pty = RLT_THIRD_PARTY;
-	q931_call *callwithid = NULL, *apdubearer = NULL;
-	int compsp = 0;
+	unsigned char *end;
+
+	end =
+		enc_qsig_diverting_leg_information3(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer, NULL, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Encode the rltThirdParty invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param callwithid Call-ID information to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_dms100_rlt_initiate_transfer(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, const q931_call *callwithid)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_DMS100_RLT_ThirdParty;
+	msg.invoke_id = ROSE_DMS100_RLT_THIRD_PARTY;
+	msg.args.dms100.RLT_ThirdParty.call_id = callwithid->rlt_call_id & 0xFFFFFF;
+	msg.args.dms100.RLT_ThirdParty.reason = 0;	/* unused, set to 129 */
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Send the rltThirdParty: Invoke.
+ *
+ * \note For PRI_SWITCH_DMS100 only.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param c1 Q.931 call leg 1
+ * \param c2 Q.931 call leg 2
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rlt_initiate_transfer(struct pri *ctrl, q931_call *c1, q931_call *c2)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+	q931_call *apdubearer;
+	q931_call *callwithid;
 
 	if (c2->transferable) {
 		apdubearer = c1;
@@ -2089,172 +708,214 @@ int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 	} else if (c1->transferable) {
 		apdubearer = c2;
 		callwithid = c1;
-	} else
+	} else {
 		return -1;
+	}
 
-	buffer[i++] = (Q932_PROTOCOL_ROSE);
-	buffer[i++] = (0x80 | RLT_SERVICE_ID); /* Service Identifier octet */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID is set to the operation ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_3rd_pty);
-
-	/* Operation Tag */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_3rd_pty);
-
-	/* Additional RLT invoke info - Octet 12 */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	ASN1_ADD_WORDCOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, callwithid->rlt_call_id & 0xFFFFFF); /* Length is 3 octets */
-	/* Reason for redirect - unused, set to 129 */
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(apdubearer, Q931_FACILITY, buffer, i, NULL, NULL))
+	end =
+		enc_dms100_rlt_initiate_transfer(ctrl, buffer, buffer + sizeof(buffer),
+		callwithid);
+	if (!end) {
 		return -1;
+	}
+
+	if (pri_call_apdu_queue(apdubearer, Q931_FACILITY, buffer, end - buffer, NULL, NULL)) {
+		return -1;
+	}
 
 	if (q931_facility(apdubearer->pri, apdubearer)) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", apdubearer->cr);
+		pri_message(ctrl, "Could not schedule facility message for call %d\n",
+			apdubearer->cr);
 		return -1;
 	}
 	return 0;
 }
 
-static int add_dms100_transfer_ability_apdu(struct pri *pri, q931_call *c)
+/*!
+ * \internal
+ * \brief Encode the rltOperationInd invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_dms100_rlt_transfer_ability(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end)
 {
-	int i = 0;
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_DMS100_RLT_OperationInd;
+	msg.invoke_id = ROSE_DMS100_RLT_OPERATION_IND;
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Send the rltOperationInd: Invoke.
+ *
+ * \note For PRI_SWITCH_DMS100 only.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int add_dms100_transfer_ability_apdu(struct pri *ctrl, q931_call *call)
+{
 	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	const unsigned char rlt_op_ind = RLT_OPERATION_IND;
-	int compsp = 0;
+	unsigned char *end;
 
-	buffer[i++] = (Q932_PROTOCOL_ROSE);  /* Note to self: DON'T set the EXT bit */
-	buffer[i++] = (0x80 | RLT_SERVICE_ID); /* Service Identifier octet */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID is set to the operation ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_op_ind);
-	
-	/* Operation Tag - basically the same as the invoke ID tag */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, rlt_op_ind);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(c, Q931_SETUP, buffer, i, NULL, NULL))
+	end = enc_dms100_rlt_transfer_ability(ctrl, buffer, buffer + sizeof(buffer));
+	if (!end) {
 		return -1;
-	else
+	}
+
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Encode the NI2 InformationFollowing invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_ni2_information_following(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end)
+{
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
+
+	memset(&header, 0, sizeof(header));
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_NI2_InformationFollowing;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.ni2.InformationFollowing.value = 0;
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CallingName invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode name.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
+{
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
+
+	memset(&header, 0, sizeof(header));
+	if (ctrl->switchtype == PRI_SWITCH_QSIG) {
+		header.nfe_present = 1;
+		header.nfe.source_entity = 0;	/* endPINX */
+		header.nfe.destination_entity = 0;	/* endPINX */
+	}
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_CallingName;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.CallingName.name.presentation = 1;	/* presentation_allowed */
+	msg.args.qsig.CallingName.name.char_set = 1;	/* iso8859-1 */
+	/* Truncate the callername if necessary. */
+	libpri_copy_string((char *) msg.args.qsig.CallingName.name.data, call->callername,
+		sizeof(msg.args.qsig.CallingName.name.data));
+	msg.args.qsig.CallingName.name.length =
+		strlen((char *) msg.args.qsig.CallingName.name.data);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Send callername information.
+ *
+ * \note For PRI_SWITCH_NI2 and PRI_SWITCH_QSIG.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode name.
+ * \param cpe TRUE if we are the CPE side.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int add_callername_facility_ies(struct pri *ctrl, q931_call *call, int cpe)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+	int mymessage;
+
+	if (!call->callername[0]) {
 		return 0;
-}
-
-/* Sending callername information functions */
-static int add_callername_facility_ies(struct pri *pri, q931_call *c, int cpe)
-{
-	int res = 0;
-	int i = 0;
-	unsigned char buffer[256];
-	unsigned char namelen = 0;
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	int mymessage = 0;
-	static unsigned char op_tag[] = { 
-		0x2a, /* informationFollowing 42 */
-		0x86,
-		0x48,
-		0xce,
-		0x15,
-		0x00,
-		0x04
-	};
-		
-	if (!strlen(c->callername)) {
-		return -1;
 	}
 
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
-
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-	}
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* Invoke ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* Operation Tag */
-	res = asn1_string_encode(ASN1_OBJECTIDENTIFIER, &buffer[i], sizeof(buffer)-i, sizeof(op_tag), op_tag, sizeof(op_tag));
-	if (res < 0)
-		return -1;
-	i += res;
-
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (!cpe) {
-		if (pri_call_apdu_queue(c, Q931_SETUP, buffer, i, NULL, NULL))
+	if (ctrl->switchtype == PRI_SWITCH_NI2 && !cpe) {
+		end = enc_ni2_information_following(ctrl, buffer, buffer + sizeof(buffer));
+		if (!end) {
 			return -1;
+		}
+
+		if (pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL, NULL)) {
+			return -1;
+		}
+
+		/*
+		 * We can reuse the buffer since the queue function doesn't
+		 * need it.
+		 */
 	}
 
-
-	/* Now the APDU that contains the information that needs sent.
-	 * We can reuse the buffer since the queue function doesn't
-	 * need it. */
-
-	i = 0;
-	namelen = strlen(c->callername);
-	if (namelen > 50) {
-		namelen = 50; /* truncate the name */
-	}
-
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
-
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-	}
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* Operation ID: Calling name */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, SS_CNID_CALLINGNAME);
-
-	res = asn1_string_encode((ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), &buffer[i], sizeof(buffer)-i,  50, c->callername, namelen);
-	if (res < 0)
+	end = enc_qsig_calling_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
 		return -1;
-	i += res;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
+	}
 
-	if (cpe) 
+	if (cpe) {
 		mymessage = Q931_SETUP;
-	else
+	} else {
 		mymessage = Q931_FACILITY;
+	}
 
-	if (pri_call_apdu_queue(c, mymessage, buffer, i, NULL, NULL))
-		return -1;
-	
-	return 0;
+	return pri_call_apdu_queue(call, mymessage, buffer, end - buffer, NULL, NULL);
 }
 /* End Callername */
 
@@ -2264,104 +925,198 @@ static void mwi_activate_encode_cb(void *data)
 	return;
 }
 
-int mwi_message_send(struct pri* pri, q931_call *call, struct pri_sr *req, int activate)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG MWIActivate invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param req Served user setup request information.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_mwi_activate_message(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, struct pri_sr *req)
 {
-	int i = 0;
-	unsigned char buffer[255] = "";
-	int destlen = strlen(req->called);
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	int res;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	if (destlen <= 0) {
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_MWIActivate;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	msg.args.qsig.MWIActivate.served_user_number.plan = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.MWIActivate.served_user_number.str,
+		req->called, sizeof(msg.args.qsig.MWIActivate.served_user_number.str));
+	msg.args.qsig.MWIActivate.served_user_number.length = strlen((char *)
+		msg.args.qsig.MWIActivate.served_user_number.str);
+
+	msg.args.qsig.MWIActivate.basic_service = 1;	/* speech */
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the Q.SIG MWIDeactivate invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param req Served user setup request information.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_mwi_deactivate_message(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, struct pri_sr *req)
+{
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
+
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_MWIDeactivate;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	msg.args.qsig.MWIDeactivate.served_user_number.plan = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.MWIDeactivate.served_user_number.str,
+		req->called, sizeof(msg.args.qsig.MWIDeactivate.served_user_number.str));
+	msg.args.qsig.MWIDeactivate.served_user_number.length = strlen((char *)
+		msg.args.qsig.MWIDeactivate.served_user_number.str);
+
+	msg.args.qsig.MWIDeactivate.basic_service = 1;	/* speech */
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Encode and queue the Q.SIG MWIActivate/MWIDeactivate invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg to queue message.
+ * \param req Served user setup request information.
+ * \param activate Nonzero to do the activate message.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int mwi_message_send(struct pri *ctrl, q931_call *call, struct pri_sr *req, int activate)
+{
+	unsigned char buffer[255];
+	unsigned char *end;
+
+	if (!req->called[0]) {
 		return -1;
-	} else if (destlen > 20)
-		destlen = 20;  /* Destination number cannot be greater then 20 digits */
+	}
 
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, (activate) ? SS_MWI_ACTIVATE : SS_MWI_DEACTIVATE);
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* PartyNumber */
-	res = asn1_string_encode((ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), &buffer[i], sizeof(buffer)-i, destlen, req->called, destlen);
-	
-	if (res < 0)
+	if (activate) {
+		end = enc_qsig_mwi_activate_message(ctrl, buffer, buffer + sizeof(buffer), req);
+	} else {
+		end =
+			enc_qsig_mwi_deactivate_message(ctrl, buffer, buffer + sizeof(buffer), req);
+	}
+	if (!end) {
 		return -1;
-	i += res;
+	}
 
-	/* Enumeration: basicService */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1 /* contents: Voice */);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	return pri_call_apdu_queue(call, Q931_SETUP, buffer, i, mwi_activate_encode_cb, NULL);
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer,
+		mwi_activate_encode_cb, NULL);
 }
 /* End MWI */
 
 /* EECT functions */
-int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
+/*!
+ * \internal
+ * \brief Encode the NI2 InitiateTransfer invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode transfer information.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_ni2_initiate_transfer(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
 {
-	int i = 0;
-	int res = 0;
-	unsigned char buffer[255] = "";
-	short call_reference = c2->cr ^ 0x8000;  /* Let's do the trickery to make sure the flag is correct */
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	static unsigned char op_tag[] = {
-		0x2A,
-		0x86,
-		0x48,
-		0xCE,
-		0x15,
-		0x00,
-		0x08,
-	};
+	struct rose_msg_invoke msg;
 
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_ROSE);
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
 
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_NI2_InitiateTransfer;
+	msg.invoke_id = get_invokeid(ctrl);
+	/* Let's do the trickery to make sure the flag is correct */
+	msg.args.ni2.InitiateTransfer.call_reference = call->cr ^ 0x8000;
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
+	return pos;
+}
 
-	res = asn1_string_encode(ASN1_OBJECTIDENTIFIER, &buffer[i], sizeof(buffer)-i, sizeof(op_tag), op_tag, sizeof(op_tag));
-	if (res < 0)
+/*!
+ * \brief Start a 2BCT
+ *
+ * \note Called for PRI_SWITCH_NI2, PRI_SWITCH_LUCENT5E, and PRI_SWITCH_ATT4ESS
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param c1 Q.931 call leg 1
+ * \param c2 Q.931 call leg 2
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int eect_initiate_transfer(struct pri *ctrl, q931_call *c1, q931_call *c2)
+{
+	unsigned char buffer[255];
+	unsigned char *end;
+
+	end = enc_ni2_initiate_transfer(ctrl, buffer, buffer + sizeof(buffer), c2);
+	if (!end) {
 		return -1;
-	i += res;
+	}
 
-	ASN1_ADD_SIMPLE(comp, (ASN1_SEQUENCE | ASN1_CONSTRUCTOR), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_WORDCOMP(comp, ASN1_INTEGER, buffer, i, call_reference);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	res = pri_call_apdu_queue(c1, Q931_FACILITY, buffer, i, NULL, NULL);
-	if (res) {
-		pri_message(pri, "Could not queue APDU in facility message\n");
+	if (pri_call_apdu_queue(c1, Q931_FACILITY, buffer, end - buffer, NULL, NULL)) {
+		pri_message(ctrl, "Could not queue APDU in facility message\n");
 		return -1;
 	}
 
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
 
-	res = q931_facility(c1->pri, c1);
-	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", c1->cr);
+	if (q931_facility(c1->pri, c1)) {
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", c1->cr);
 		return -1;
 	}
 
@@ -2370,190 +1125,144 @@ int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
 /* End EECT */
 
 /* QSIG CF CallRerouting */
-int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const char* original, const char* reason)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CallRerouting invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param calling Calling number.
+ * \param dest Destination number.
+ * \param original Original called number.
+ * \param reason Rerouting reason: cfu, cfb, cfnr
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_call_rerouting(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const char *calling, const char *dest, const char *original,
+	const char *reason)
 {
-/*CallRerouting ::= OPERATION
-    -- Sent from the Served User PINX to the Rerouting PINX
-    ARGUMENT SEQUENCE
-    { reroutingReason DiversionReason,
-    originalReroutingReason [0] IMPLICIT DiversionReason OPTIONAL,
-    calledAddress Address,
-    diversionCounter INTEGER (1..15),
-    pSS1InfoElement PSS1InformationElement,
-    -- The basic call information elements Bearer capability, High layer compatibility, Low
-    -- layer compatibity, Progress indicator and Party category can be embedded in the
-    -- pSS1InfoElement in accordance with 6.5.3.1.5
-    lastReroutingNr [1] PresentedNumberUnscreened,
-    subscriptionOption [2] IMPLICIT SubscriptionOption,
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-    callingPartySubaddress [3] PartySubaddress OPTIONAL,
-
-    callingNumber [4] PresentedNumberScreened,
-
-    callingName [5] Name OPTIONAL,
-    originalCalledNr [6] PresentedNumberUnscreened OPTIONAL,
-    redirectingName [7] Name OPTIONAL,
-    originalCalledName [8] Name OPTIONAL,
-    extension CHOICE {
-      [9] IMPLICIT Extension ,
-      [10] IMPLICIT SEQUENCE OF Extension } OPTIONAL }
-*/
-
-	int i = 0, j;
-	int res = 0;
-	unsigned char buffer[255] = "";
-	int len = 253;
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	static unsigned char op_tag[] = {
-		0x13,
+	static const unsigned char q931ie[] = {
+		0x04,	/* Bearer Capability IE */
+		0x03,	/* len */
+		0x80,	/* ETSI Standard, Speech */
+		0x90,	/* circuit mode, 64kbit/s */
+		0xa3,	/* level1 protocol, a-law */
+		0x95,	/* locking shift to codeset 5 (national use) */
+		0x32,	/* Unknown ie */
+		0x01,	/* Unknown ie len */
+		0x81,	/* Unknown ie body */
 	};
 
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	/* Interpretation component */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 2);    /* reject - to get feedback from QSIG switch */
-
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	res = asn1_string_encode(ASN1_INTEGER, &buffer[i], sizeof(buffer)-i, sizeof(op_tag), op_tag, sizeof(op_tag));
-	if (res < 0)
-		return -1;
-	i += res;
-
-	/* call rerouting argument */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* reroutingReason DiversionReason */
-
-	if (reason) {
-		if (!strcasecmp(reason, "cfu"))
-			ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1); /* cfu */
-		else if (!strcasecmp(reason, "cfb"))
-			 ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 2); /* cfb */
-		else if (!strcasecmp(reason, "cfnr"))
-			ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 3); /* cfnr */
-	} else {
-		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0); /* unknown */
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 2;	/* rejectAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_CallRerouting;
+	msg.invoke_id = get_invokeid(ctrl);
 
-	/* calledAddress Address */
-	/* explicit sequence tag for Address */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* implicit choice public party number tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* type of public party number = unknown */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);
-	/* NumberDigits of public party number */
-	j = asn1_string_encode(ASN1_NUMERICSTRING, &buffer[i], len - i, 20, (char*)dest, strlen(dest));
-	if (j < 0)
-		return -1;
+	/* The rerouting_reason defaults to unknown */
+	if (reason) {
+		if (!strcasecmp(reason, "cfu")) {
+			msg.args.qsig.CallRerouting.rerouting_reason = 1;	/* cfu */
+		} else if (!strcasecmp(reason, "cfb")) {
+			msg.args.qsig.CallRerouting.rerouting_reason = 2;	/* cfb */
+		} else if (!strcasecmp(reason, "cfnr")) {
+			msg.args.qsig.CallRerouting.rerouting_reason = 3;	/* cfnr */
+		}
+	}
 
-	i += j;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
+	/* calledAddress */
+	msg.args.qsig.CallRerouting.called.number.plan = 1;	/* public */
+	msg.args.qsig.CallRerouting.called.number.ton = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.CallRerouting.called.number.str, dest,
+		sizeof(msg.args.qsig.CallRerouting.called.number.str));
+	msg.args.qsig.CallRerouting.called.number.length = strlen((char *)
+		msg.args.qsig.CallRerouting.called.number.str);
 
-	/* diversionCounter INTEGER (1..15) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, 1);
+	msg.args.qsig.CallRerouting.diversion_counter = 1;
 
 	/* pSS1InfoElement */
-	ASN1_ADD_SIMPLE(comp, (ASN1_APPLICATION | ASN1_TAG_0 ), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	buffer[i++] = (0x04);	/* Bearer Capability IE */
-	buffer[i++] = (0x03);	/* len */
-	buffer[i++] = (0x80);	/* ETSI Standard, Speech */
-	buffer[i++] = (0x90);	/* circuit mode, 64kbit/s */
-	buffer[i++] = (0xa3);	/* level1 protocol, a-law */
-	buffer[i++] = (0x95);	/* locking shift to codeset 5 (national use) */
-	buffer[i++] = (0x32);	/* Unknown ie */
-	buffer[i++] = (0x01);	/* Unknown ie len */
-	buffer[i++] = (0x81);	/* Unknown ie body */
-	ASN1_FIXUP(compstk, compsp, buffer, i);
+	msg.args.qsig.CallRerouting.q931ie.length = sizeof(q931ie);
+	memcpy(msg.args.qsig.CallRerouting.q931ie_contents, q931ie, sizeof(q931ie));
 
-	/* lastReroutingNr [1]*/
-	/* implicit optional lastReroutingNr tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
+	/* lastReroutingNr */
+	msg.args.qsig.CallRerouting.last_rerouting.presentation = 0;	/* presentationAllowedNumber */
+	msg.args.qsig.CallRerouting.last_rerouting.number.plan = 1;	/* public */
+	msg.args.qsig.CallRerouting.last_rerouting.number.ton = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.CallRerouting.last_rerouting.number.str,
+		original, sizeof(msg.args.qsig.CallRerouting.last_rerouting.number.str));
+	msg.args.qsig.CallRerouting.last_rerouting.number.length = strlen((char *)
+		msg.args.qsig.CallRerouting.last_rerouting.number.str);
 
-	/* implicit choice presented number unscreened tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
+	msg.args.qsig.CallRerouting.subscription_option = 0;	/* noNotification */
 
-	/* implicit choice public party number  tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* type of public party number = unknown */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);
-	j = asn1_string_encode(ASN1_NUMERICSTRING, &buffer[i], len - i, 20, original?(char*)original:c->callednum, original?strlen(original):strlen(c->callednum));
-	if (j < 0)
+	/* callingNumber */
+	msg.args.qsig.CallRerouting.calling.presentation = 0;	/* presentationAllowedNumber */
+	msg.args.qsig.CallRerouting.calling.screened.number.plan = 1;	/* public */
+	msg.args.qsig.CallRerouting.calling.screened.number.ton = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.CallRerouting.calling.screened.number.str,
+		calling, sizeof(msg.args.qsig.CallRerouting.calling.screened.number.str));
+	msg.args.qsig.CallRerouting.calling.screened.number.length = strlen((char *)
+		msg.args.qsig.CallRerouting.calling.screened.number.str);
+	msg.args.qsig.CallRerouting.calling.screened.screening_indicator = 3;	/* networkProvided */
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Send the Q.SIG CallRerouting invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode name.
+ * \param dest Destination number.
+ * \param original Original called number.
+ * \param reason Rerouting reason: cfu, cfb, cfnr
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int qsig_cf_callrerouting(struct pri *ctrl, q931_call *call, const char *dest,
+	const char *original, const char *reason)
+{
+	unsigned char buffer[255];
+	unsigned char *end;
+	int res;
+
+	end =
+		enc_qsig_call_rerouting(ctrl, buffer, buffer + sizeof(buffer), call->callernum,
+		dest, original ? original : call->callednum, reason);
+	if (!end) {
 		return -1;
+	}
 
-	i += j;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	/* subscriptionOption [2]*/
-	/* implicit optional lastReroutingNr tag */
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	 /* noNotification */
-
-	/* callingNumber [4]*/
-	/* implicit optional callingNumber tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_4), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* implicit choice presented number screened tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* implicit choice presentationAllowedAddress tag */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* type of public party number = subscriber number */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 4);
-	j = asn1_string_encode(ASN1_NUMERICSTRING, &buffer[i], len - i, 20, c->callernum, strlen(c->callernum));
-	if (j < 0)
-		return -1;
-
-	i += j;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	/* Screeening Indicator network provided */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 3);
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	/**/
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	res = pri_call_apdu_queue(c, Q931_FACILITY, buffer, i, NULL, NULL);
+	res = pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL, NULL);
 	if (res) {
-		pri_message(pri, "Could not queue ADPU in facility message\n");
+		pri_message(ctrl, "Could not queue ADPU in facility message\n");
 		return -1;
 	}
 
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
 
-	res = q931_facility(c->pri, c);
+	res = q931_facility(call->pri, call);
 	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", c->cr);
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", call->cr);
 		return -1;
 	}
 
@@ -2561,375 +1270,217 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const
 }
 /* End QSIG CC-CallRerouting */
 
+/*
+ * From Mantis issue 7778 description: (ETS 300 258, ISO 13863)
+ * After both legs of the call are setup and Asterisk has a successful "tromboned" or bridged call ...
+ * Asterisk sees both 'B' channels (from trombone) are on same PRI/technology and initiates "Path Replacement" events
+ * a. Asterisk sends "Transfer Complete" messages to both call legs
+ * b. QSIG Switch sends "PathReplacement" message on one of the legs (random 1-10sec timer expires - 1st leg to send is it!)
+ * c. Asterisk rebroadcasts "PathReplacement" message to other call leg
+ * d. QSIG Switch sends "Disconnect" message on one of the legs (same random timer sequence as above)
+ * e. Asterisk rebroadcasts "Disconnect" message to other call leg
+ * f. QSIG Switch disconnects Asterisk call legs - callers are now within QSIG switch
+ *
+ * Just need to resend the message to the other tromboned leg of the call.
+ */
 static int anfpr_pathreplacement_respond(struct pri *pri, q931_call *call, q931_ie *ie)
 {
 	int res;
-	
+
 	res = pri_call_apdu_queue_cleanup(call->bridged_call);
 	if (res) {
-	        pri_message(pri, "Could not Clear queue ADPU\n");
-	        return -1;
+		pri_message(pri, "Could not Clear queue ADPU\n");
+		return -1;
 	}
-	
+
 	/* Send message */
-	res = pri_call_apdu_queue(call->bridged_call, Q931_FACILITY, ie->data, ie->len, NULL, NULL);
+	res =
+		pri_call_apdu_queue(call->bridged_call, Q931_FACILITY, ie->data, ie->len, NULL,
+		NULL);
 	if (res) {
-	        pri_message(pri, "Could not queue ADPU in facility message\n");
-	        return -1;
+		pri_message(pri, "Could not queue ADPU in facility message\n");
+		return -1;
 	}
-	
+
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
-	
+
 	res = q931_facility(call->bridged_call->pri, call->bridged_call);
 	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", call->bridged_call->cr);
+		pri_message(pri, "Could not schedule facility message for call %d\n",
+			call->bridged_call->cr);
 		return -1;
 	}
 
 	return 0;
 }
+
 /* AFN-PR */
-int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2)
+/*!
+ * \brief Start a Q.SIG path replacement.
+ *
+ * \note Called for PRI_SWITCH_QSIG
+ *
+ * \note Did all the tests to see if we're on the same PRI and
+ * are on a compatible switchtype.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param c1 Q.931 call leg 1
+ * \param c2 Q.931 call leg 2
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int anfpr_initiate_transfer(struct pri *ctrl, q931_call *c1, q931_call *c2)
 {
-	/* Did all the tests to see if we're on the same PRI and
-	 * are on a compatible switchtype */
-	/* TODO */
-	int i = 0;
-	int res = 0;
-	unsigned char buffer[255] = "";
-	unsigned short call_reference = c2->cr;
-	struct rose_component *comp = NULL, *compstk[10];
-	unsigned char buffer2[255] = "";
-	int compsp = 0;
-	static unsigned char op_tag[] = {
-		0x0C,
-	};
-	
-	/* Channel 1 */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	
-	/* Interpretation component */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 2);    /* reject - to get feedback from QSIG switch */
-	
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-	
-	res = asn1_string_encode(ASN1_INTEGER, &buffer[i], sizeof(buffer)-i, sizeof(op_tag), op_tag, sizeof(op_tag));
-	if (res < 0)
-		return -1;
-	i += res;
-	
-	ASN1_ADD_SIMPLE(comp, (ASN1_SEQUENCE | ASN1_CONSTRUCTOR), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	buffer[i++] = (0x0a);/* Enumeration endDesignation */
-	buffer[i++] = (0x01);/* Len */
-	buffer[i++] = (0x00);/* primaryEnd */
-	buffer[i++] = (0x81);/* redirectionNumber = presentationRestricted */
-	buffer[i++] = (0x00);/* Len */
-	buffer[i++] = (0x0a);/* Enumeration callStatus */
-	buffer[i++] = (0x01);/* Len */
-	buffer[i++] = (0x01);/* alerting */
+	unsigned char buffer[255];
+	unsigned char *pos;
+	unsigned char *end;
+	int res;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	/*
-	 * Where does this element come from?  It is not in Q.SIG ECMA-178.
-	 * We send this but we will not accept it.
-	 * This seems to be a cut and paste error from eect_initiate_transfer().
-	 */
-	ASN1_ADD_WORDCOMP(comp, ASN1_INTEGER, buffer, i, call_reference);
+	end = buffer + sizeof(buffer);
 
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	
-	res = pri_call_apdu_queue(c1, Q931_FACILITY, buffer, i, NULL, NULL);
-	if (res) {
-		pri_message(pri, "Could not queue ADPU in facility message\n");
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 2;	/* rejectAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, buffer, end, &header);
+	if (!pos) {
 		return -1;
 	}
-	
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_CallTransferComplete;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.CallTransferComplete.end_designation = 0;	/* primaryEnd */
+	msg.args.qsig.CallTransferComplete.redirection.presentation = 1;	/* presentationRestricted */
+	msg.args.qsig.CallTransferComplete.call_status = 1;	/* alerting */
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+	if (!pos) {
+		return -1;
+	}
+
+	res = pri_call_apdu_queue(c1, Q931_FACILITY, buffer, pos - buffer, NULL, NULL);
+	if (res) {
+		pri_message(ctrl, "Could not queue ADPU in facility message\n");
+		return -1;
+	}
+
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
-	
+
 	res = q931_facility(c1->pri, c1);
 	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", c1->cr);
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", c1->cr);
 		return -1;
 	}
-	
-	/* Channel 2 */
-	i = 0;
-	res = 0;
-	compsp = 0;
-	
-	buffer2[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-	
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer2, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer2, i, 0);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer2, i, 0);
-	ASN1_FIXUP(compstk, compsp, buffer2, i);
-	
-	/* Interpretation component */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer2, i, 2);  /* reject */
-	
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer2, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer2, i, get_invokeid(pri));
-	
-	res = asn1_string_encode(ASN1_INTEGER, &buffer2[i], sizeof(buffer2)-i, sizeof(op_tag), op_tag, sizeof(op_tag));
-	if (res < 0)
+
+	/* Reuse the previous message header */
+	pos = facility_encode_header(ctrl, buffer, end, &header);
+	if (!pos) {
 		return -1;
-	i += res;
-	
-	ASN1_ADD_SIMPLE(comp, (ASN1_SEQUENCE | ASN1_CONSTRUCTOR), buffer2, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	buffer2[i++] = (0x0a);/* Enumeration endDesignation */
-	buffer2[i++] = (0x01);/* Len */
-	buffer2[i++] = (0x01);/* secondaryEnd */
-	buffer2[i++] = (0x81);/* redirectionNumber = presentationRestricted */
-	buffer2[i++] = (0x00);/* Len */
-	buffer2[i++] = (0x0a);/* Enumeration callStatus */
-	buffer2[i++] = (0x01);/* Len */
-	buffer2[i++] = (0x01);/* alerting */
+	}
 
-	/*
-	 * Where does this element come from?  It is not in Q.SIG ECMA-178.
-	 * We send this but we will not accept it.
-	 * This seems to be a cut and paste error from eect_initiate_transfer().
-	 */
-	ASN1_ADD_WORDCOMP(comp, ASN1_INTEGER, buffer2, i, call_reference);
+	/* Update the previous message */
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.CallTransferComplete.end_designation = 1;	/* secondaryEnd */
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+	if (!pos) {
+		return -1;
+	}
 
-	ASN1_FIXUP(compstk, compsp, buffer2, i);
-	ASN1_FIXUP(compstk, compsp, buffer2, i);
-	
-	
-	res = pri_call_apdu_queue(c2, Q931_FACILITY, buffer2, i, NULL, NULL);
+	res = pri_call_apdu_queue(c2, Q931_FACILITY, buffer, pos - buffer, NULL, NULL);
 	if (res) {
-		pri_message(pri, "Could not queue ADPU in facility message\n");
+		pri_message(ctrl, "Could not queue ADPU in facility message\n");
 		return -1;
 	}
-	
+
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
-	
+
 	res = q931_facility(c2->pri, c2);
 	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", c1->cr);
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", c2->cr);
 		return -1;
 	}
-	
+
 	return 0;
 }
 /* End AFN-PR */
 
 /* AOC */
-static int aoc_aoce_charging_request_decode(struct pri *pri, q931_call *call, unsigned char *data, int len) 
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCEChargingUnit invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param chargedunits Number of units charged to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, long chargedunits)
 {
-	int chargingcase = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	int pos1 = 0;
+	struct rose_msg_invoke msg;
 
-	if (pri->debug & PRI_DEBUG_AOC)
-		dump_apdu (pri, data, len);
-
-	do {
-		GET_COMPONENT(comp, pos1, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "!! Invalid AOC Charging Request argument. Expected Enumerated (0x0A) but Received 0x%02X\n");
-		ASN1_GET_INTEGER(comp, chargingcase);				
-		if (chargingcase >= 0 && chargingcase <= 2) {
-			if (pri->debug & PRI_DEBUG_APDU)
-				pri_message(pri, "Channel %d/%d, Call %d  - received AOC charging request - charging case: %i\n", 
-					call->ds1no, call->channelno, call->cr, chargingcase);
-		} else {
-			pri_message(pri, "!! unkown AOC ChargingCase: 0x%02X", chargingcase);
-			chargingcase = -1;
-		}
-		NEXT_COMPONENT(comp, pos1);
-	} while (pos1 < len);
-	if (pos1 < len) {
-		pri_message(pri, "!! Only reached position %i in %i bytes long AOC-E structure:", pos1, len );
-		dump_apdu (pri, data, len);
-		return -1;	/* Aborted before */
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
 	}
-	return 0;
-}
-	
 
-static int aoc_aoce_charging_unit_decode(struct pri *pri, q931_call *call, unsigned char *data, int len) 
-{
-	long chargingunits = 0, chargetype = -1, temp, chargeIdentifier = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp1 = NULL, *comp2 = NULL, *comp3 = NULL;
-	int pos1 = 0, pos2, pos3, sublen2, sublen3;
-	struct addressingdataelements_presentednumberunscreened chargednr;
-
-	if (pri->debug & PRI_DEBUG_AOC)
-		dump_apdu (pri, data, len);
-
-	do {
-		GET_COMPONENT(comp1, pos1, vdata, len);	/* AOCEChargingUnitInfo */
-		CHECK_COMPONENT(comp1, ASN1_SEQUENCE, "!! Invalid AOC-E Charging Unit argument. Expected Sequence (0x30) but Received 0x%02X\n");
-		SUB_COMPONENT(comp1, pos1);
-		GET_COMPONENT(comp1, pos1, vdata, len);
-		switch (comp1->type) {
-			case (ASN1_SEQUENCE | ASN1_CONSTRUCTOR):	/* specificChargingUnits */
-				sublen2 = comp1->len; 
-				pos2 = pos1;
-				comp2 = comp1;
-				SUB_COMPONENT(comp2, pos2);
-				do {
-					GET_COMPONENT(comp2, pos2, vdata, len);
-					switch (comp2->type) {
-						case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):	/* RecordedUnitsList (0xA1) */
-							SUB_COMPONENT(comp2, pos2);
-							GET_COMPONENT(comp2, pos2, vdata, len);
-							CHECK_COMPONENT(comp2, ASN1_SEQUENCE, "!! Invalid AOC-E Charging Unit argument. Expected Sequence (0x30) but received 0x02%X\n");	/* RecordedUnits */
-							sublen3 = pos2 + comp2->len;
-							pos3 = pos2;
-							comp3 = comp2;
-							SUB_COMPONENT(comp3, pos3);
-							do {
-								GET_COMPONENT(comp3, pos3, vdata, len);
-								switch (comp3->type) {
-									case ASN1_INTEGER:	/* numberOfUnits */
-										ASN1_GET_INTEGER(comp3, temp);
-										chargingunits += temp;
-									case ASN1_NULL:		/* notAvailable */
-										break;
-									default:
-										pri_message(pri, "!! Don't know how to handle 0x%02X in AOC-E RecordedUnits\n", comp3->type);
-								}
-								NEXT_COMPONENT(comp3, pos3);
-							} while (pos3 < sublen3);
-							if (pri->debug & PRI_DEBUG_AOC)
-								pri_message(pri, "Channel %d/%d, Call %d - received AOC-E charging: %i unit%s\n", 
-									call->ds1no, call->channelno, call->cr, chargingunits, (chargingunits == 1) ? "" : "s");
-							break;
-						case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_2):	/* AOCEBillingID (0xA2) */
-							SUB_COMPONENT(comp2, pos2);
-							GET_COMPONENT(comp2, pos2, vdata, len);
-							ASN1_GET_INTEGER(comp2, chargetype);
-							pri_message(pri, "!! not handled: Channel %d/%d, Call %d - received AOC-E billing ID: %i\n", 
-								call->ds1no, call->channelno, call->cr, chargetype);
-							break;
-						default:
-							pri_message(pri, "!! Don't know how to handle 0x%02X in AOC-E RecordedUnitsList\n", comp2->type);
-					}
-					NEXT_COMPONENT(comp2, pos2);
-				} while (pos2 < sublen2);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1): /* freeOfCharge (0x81) */
-				if (pri->debug & PRI_DEBUG_AOC)
-					pri_message(pri, "Channel %d/%d, Call %d - received AOC-E free of charge\n", call->ds1no, call->channelno, call->cr);
-				chargingunits = 0;
-				break;
-			default:
-				pri_message(pri, "!! Invalid AOC-E specificChargingUnits. Expected Sequence (0x30) or Object Identifier (0x81/0x01) but received 0x%02X\n", comp1->type);
-		}
-		NEXT_COMPONENT(comp1, pos1);
-		GET_COMPONENT(comp1, pos1, vdata, len); /* get optional chargingAssociation. will 'break' when reached end of structure */
-		switch (comp1->type) {
-			/* TODO: charged number is untested - please report! */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0): /* chargedNumber (0xA0) */
-				if(rose_presented_number_unscreened_decode(pri, comp1->data, comp1->len, &chargednr) != 0)
-					return -1;
-				pri_message(pri, "!! not handled: Received ChargedNr '%s' \n", chargednr.partyaddress);
-				pri_message(pri, "  ton = %d, pres = %d, npi = %d\n", chargednr.ton, chargednr.pres, chargednr.npi);
-				break;
-			case ASN1_INTEGER:
-				ASN1_GET_INTEGER(comp1, chargeIdentifier);
-				break;
-			default:
-				pri_message(pri, "!! Invalid AOC-E chargingAssociation. Expected Object Identifier (0xA0) or Integer (0x02) but received 0x%02X\n", comp1->type);
-		}
-		NEXT_COMPONENT(comp1, pos1);
-	} while (pos1 < len);
-
-	if (pos1 < len) {
-		pri_message(pri, "!! Only reached position %i in %i bytes long AOC-E structure:", pos1, len );
-		dump_apdu (pri, data, len);
-		return -1;	/* oops - aborted before */
-	}
-	call->aoc_units = chargingunits;
-	
-	return 0;
-}
-
-static int aoc_aoce_charging_unit_encode(struct pri *pri, q931_call *c, long chargedunits)
-{
-	/* sample data: [ 91 a1 12 02 02 3a 78 02 01 24 30 09 30 07 a1 05 30 03 02 01 01 ] */
-	int i = 0, res = 0, compsp = 0;
-	unsigned char buffer[255] = "";
-	struct rose_component *comp = NULL, *compstk[10];
-
-	/* ROSE protocol (0x91)*/
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_ROSE);
-
-	/* ROSE Component (0xA1,len)*/
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp); 
-
-	/* ROSE invokeId component (0x02,len,id)*/
-	ASN1_ADD_WORDCOMP(comp, INVOKE_IDENTIFIER, buffer, i, ++pri->last_invoke);
-
-	/* ROSE operationId component (0x02,0x01,0x24)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, ROSE_AOC_AOCE_CHARGING_UNIT);
-
-	/* AOCEChargingUnitInfo (0x30,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	if (chargedunits > 0) {
-		/* SpecificChargingUnits (0x30,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* RecordedUnitsList (0xA1,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-		
-		/* RecordedUnits (0x30,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-		
-		/* NumberOfUnits (0x02,len,charge) */
-		ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, chargedunits);
-
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCEChargingUnit;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.etsi.AOCEChargingUnit.type = 1;	/* charging_unit */
+	if (chargedunits <= 0) {
+		msg.args.etsi.AOCEChargingUnit.charging_unit.free_of_charge = 1;
 	} else {
-		/* freeOfCharge (0x81,0) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1), buffer, i);
+		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.num_records = 1;
+		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[0].
+			number_of_units = chargedunits;
 	}
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i); 
-	
-	if (pri->debug & PRI_DEBUG_AOC)
-		dump_apdu (pri, buffer, i);
-		
-	/* code below is untested */
-	res = pri_call_apdu_queue(c, Q931_FACILITY, buffer, i, NULL, NULL);
-	if (res) {
-		pri_message(pri, "Could not queue APDU in facility message\n");
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Send the ETSI AOCEChargingUnit invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param chargedunits Number of units charged to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_aoce_charging_unit_encode(struct pri *ctrl, q931_call *call,
+	long chargedunits)
+{
+	unsigned char buffer[255];
+	unsigned char *end;
+
+	/* sample data: [ 91 a1 12 02 02 3a 78 02 01 24 30 09 30 07 a1 05 30 03 02 01 01 ] */
+
+	end =
+		enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), chargedunits);
+	if (!end) {
 		return -1;
 	}
 
 	/* Remember that if we queue a facility IE for a facility message we
 	 * have to explicitly send the facility message ourselves */
-	res = q931_facility(c->pri, c);
-	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n", c->cr);
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", call->cr);
 		return -1;
 	}
 
@@ -2939,1031 +1490,314 @@ static int aoc_aoce_charging_unit_encode(struct pri *pri, q931_call *c, long cha
 
 /* ===== Call Transfer Supplementary Service (ECMA-178) ===== */
 
-static int rose_call_transfer_complete_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CallTransferComplete invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode call transfer.
+ * \param call_status TRUE if call is alerting.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_call_transfer_complete(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call, int call_status)
 {
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int size = 0;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	struct addressingdataelements_presentednumberscreened redirection_number;
-	struct nameelements_name redirectionname = { "", CHARACTER_SET_UNKNOWN, 0 };
-	char basiccallinfoelements[257] = "";
-	int call_status = 0;	/* answered(0) */
-	int end_designation;
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid callTransferComplete argument. (Not a sequence)\n");
-		return -1;
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     CT-Complete: len=%d\n", len);
-
-	/* CTCompleteArg SEQUENCE */
-	do {
-		/* endDesignation EndDesignation */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_ENUMERATED, "Invalid endDesignation type 0x%X of ROSE callTransferComplete component received\n");
-		ASN1_GET_INTEGER(comp, end_designation);
-		NEXT_COMPONENT(comp, i);
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     CT-Complete: Received endDesignation=%s(%d)\n", enddesignation_to_str(end_designation), end_designation);
-
-		/* redirectionNumber PresentedNumberScreened */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_presented_number_screened_decode(pri, (u_int8_t *)comp, comp->len + 2, &redirection_number);
-		if (size < 0)
-			return -1;
-		comp->len = size;
-		NEXT_COMPONENT(comp, i);
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     CT-Complete: Received redirectionNumber=%s\n", redirection_number.partyaddress);
-
-		/* Type SEQUENCE specifies an ordered list of component types.           *
-		 * We decode all components but for simplicity we don't check the order. */
-		while (i < len) {
-			GET_COMPONENT(comp, i, vdata, len);
-
-			switch(comp->type) {
- 			case (ASN1_APPLICATION):
-				/* basicCallInfoElements PSS1InformationElement OPTIONAL */
-				size = asn1_name_decode((u_int8_t *)comp, comp->len + 2, basiccallinfoelements, sizeof(basiccallinfoelements));
-				if (size < 0)
-					return -1;
-				i += size;
-				if (pri->debug & PRI_DEBUG_APDU) {
-					int j;
-					pri_message(pri, "     CT-Complete: Received basicCallInfoElements\n");
-					pri_message(pri, "                  ");
-					for (j = 0; basiccallinfoelements[j] != '\0'; j++)
-						pri_message(pri, "%02x ", (u_int8_t)basiccallinfoelements[j]);
-					pri_message(pri, "\n");
-				}
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):                      /* [0] namePresentationAllowedSimple */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):   /* [1] namePresentationAllowedExtended */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):                      /* [2] namePresentationRestrictedSimple */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):   /* [3] namePresentationRestrictedExtended */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_4):                      /* [4] nameNotAvailable */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_7):                      /* [7] namePresentationRestrictedNull */
-				/* redirectionName Name OPTIONAL */
-				size = rose_name_decode(pri, (u_int8_t *)comp, comp->len + 2, &redirectionname);
-				if (size < 0)
-					return -1;
-				i += size;
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     CT-Complete: Received RedirectionName '%s', namepres %s(%d), characterset %s(%d)\n",
-						    redirectionname.name, namepres_to_str(redirectionname.namepres), redirectionname.namepres,
-						    characterset_to_str(redirectionname.characterset), redirectionname.characterset);
-				break;
-			case (ASN1_ENUMERATED):
-				/* callStatus CallStatus DEFAULT answered */
-				ASN1_GET_INTEGER(comp, call_status);
-				NEXT_COMPONENT(comp,i);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     CT-Complete: Received callStatus=%s(%d)\n", callstatus_to_str(call_status), call_status);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_9):	/* [9] IMPLICIT Extension */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_10):	/* [10] IMPLICIT SEQUENCE OF Extension */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "!!     CT-Complete: Ignoring CallTransferComplete component 0x%X\n", comp->type);
-				NEXT_COMPONENT(comp, i);
-				break;
-			default:
-				pri_message(pri, "!!     CT-Complete: Invalid CallTransferComplete component received 0x%X\n", comp->type);
-				return -1;
-			}
-		}
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     CT-Complete: callStatus=%s(%d)\n", callstatus_to_str(call_status), call_status);
-
-		call->ctcompleteflag = 1;
-		if ((redirection_number.pres & PRES_RESTRICTION) == PRES_ALLOWED) {
-			libpri_copy_string(call->ctcompletenum, redirection_number.partyaddress, sizeof(call->ctcompletenum));
-		} else {
-			call->ctcompletenum[0] = '\0';
-		}
-		call->ctcompletepres = redirection_number.pres;
-		call->ctcompleteplan = ((redirection_number.ton & 0x07) << 4) | (redirection_number.npi & 0x0f);
-		call->ctcompletecallstatus = call_status;
-
-		if (redirectionname.namepres != 0) {
-			libpri_copy_string(call->ctcompletename, redirectionname.name, sizeof(call->ctcompletename));
-		} else {
-			call->ctcompletename[0] = '\0';
-		}
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_call_transfer_complete_encode(struct pri *pri, q931_call *call, int call_status)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
-	unsigned char buffer[256];
-	int size;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode CallTransferComplete\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
-	}
-
-	/* Network Protocol Profile */
-	/*  - not included - */
-
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
-
-	/* Service APDU(s): */
-
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x0c)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, ROSE_CALL_TRANSFER_COMPLETE);
-
-
-	/* CTCompleteArg */
-
-	/* constructor component  (0x30,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-
-	/* endDesignation  (0x0a,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);		/* primaryEnd(0) */
-
-
-	/* redirectionNumber PresentedNumberScreened */
-
-	/* tag component presentationAllowedAddress  (0xa0,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* presentationAllowedAddress, implicit NumberScreened */
-	size = rose_number_screened_encode(pri, &buffer[i], 1, typeofnumber_from_q931(pri, (call->connectedplan & 0x70) >> 4), call->connectedpres & 0x03, call->connectednum);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	/* basicCallInfoElements */
-	/*  - not included -  */
-
-#if 0
-	/* basicCallInfoElements  (0x40,0x00) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_APPLICATION| ASN1_TAG_0), buffer, i);
-#endif
-
-	/* redirectionName */
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_CallTransferComplete;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.CallTransferComplete.end_designation = 0;	/* primaryEnd */
+	msg.args.qsig.CallTransferComplete.redirection.presentation = 0;	/* presentationAllowedNumber */
+	msg.args.qsig.CallTransferComplete.redirection.screened.screening_indicator =
+		call->connectedpres & 0x03;
+	msg.args.qsig.CallTransferComplete.redirection.screened.number.plan =
+		numbering_plan_from_q931(ctrl, call->connectedplan);
+	msg.args.qsig.CallTransferComplete.redirection.screened.number.ton =
+		typeofnumber_from_q931(ctrl, call->connectedplan);
+	libpri_copy_string((char *)
+		msg.args.qsig.CallTransferComplete.redirection.screened.number.str,
+		call->connectednum,
+		sizeof(msg.args.qsig.CallTransferComplete.redirection.screened.number.str));
+	msg.args.qsig.CallTransferComplete.redirection.screened.number.length =
+		strlen((char *)
+		msg.args.qsig.CallTransferComplete.redirection.screened.number.str);
 	if (call->connectedname[0]) {
-		/* tag component namePresentationAllowedSimple  (0x80,len) */
-		ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* namePresentationAllowedSimple, implicid NameData */
-		size = rose_namedata_encode(pri, &buffer[i], 1, call->connectedname);
-		if (size < 0)
-			return -1;
-		i += size;
-
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+		msg.args.qsig.CallTransferComplete.redirection_name.presentation = 1;	/* presentation_allowed */
+		msg.args.qsig.CallTransferComplete.redirection_name.char_set = 1;	/* iso8859-1 */
+		libpri_copy_string((char *)
+			msg.args.qsig.CallTransferComplete.redirection_name.data,
+			call->connectedname,
+			sizeof(msg.args.qsig.CallTransferComplete.redirection_name.data));
+		msg.args.qsig.CallTransferComplete.redirection_name.length =
+			strlen((char *) msg.args.qsig.CallTransferComplete.redirection_name.data);
 	}
-
 	if (call_status) {
-		/* callStatus  (0x0a,0x01,0x01) */
-		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 1);		/* alerting(1) */
-	} else {
-		/* callStatus */
-		/*  - not included, default: answered(0) -  */
-#if 0
-		/* callStatus  (0x0a,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, ASN1_ENUMERATED, buffer, i, 0);		/* answered(0) */
-#endif
+		msg.args.qsig.CallTransferComplete.call_status = 1;	/* alerting */
 	}
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pos;
 }
 
-static int rose_call_transfer_active_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode and queue the Q.SIG CallTransferComplete invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode call transfer.
+ * \param call_status TRUE if call is alerting.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_call_transfer_complete_encode(struct pri *ctrl, q931_call *call,
+	int call_status)
 {
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int size = 0;
+	unsigned char buffer[256];
+	unsigned char *end;
 
-	struct addressingdataelements_presentedaddressscreened connectedaddress;
-	struct nameelements_name connectedname = { "", CHARACTER_SET_UNKNOWN, 0 };
-	char basiccallinfoelements[257] = "";
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid callTransferActive argument. (Not a sequence)\n");
+	end =
+		enc_qsig_call_transfer_complete(ctrl, buffer, buffer + sizeof(buffer), call,
+		call_status);
+	if (!end) {
 		return -1;
 	}
 
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     CT-Active: len=%d\n", len);
-
-	/* CTActiveArg SEQUENCE */
-	do {
-		/* connectedAddress PresentedAddressScreened */
-		GET_COMPONENT(comp, i, vdata, len);
-		size = rose_presented_address_screened_decode(pri, (u_int8_t *)comp, comp->len + 2, &connectedaddress);
-		if (size < 0)
-			return -1;
-		comp->len = size;
-		NEXT_COMPONENT(comp, i);
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "     CT-Active: Received connectedAddress=%s\n", connectedaddress.partyaddress);
-		}
-
-		/* Type SEQUENCE specifies an ordered list of component types.           *
-		 * We decode all components but for simplicity we don't check the order. */
-		while (i < len) {
-			GET_COMPONENT(comp, i, vdata, len);
-
-			switch(comp->type) {
- 			case (ASN1_APPLICATION):
-				/* basiccallinfoelements PSS1InformationElement OPTIONAL */
-				size = asn1_name_decode((u_int8_t *)comp, comp->len + 2, basiccallinfoelements, sizeof(basiccallinfoelements));
-				if (size < 0)
-					return -1;
-				i += size;
-				if (pri->debug & PRI_DEBUG_APDU) {
-					int j;
-					pri_message(pri, "     CT-Active: Received basicCallInfoElements\n");
-					pri_message(pri, "                ");
-					for (j = 0; basiccallinfoelements[j] != '\0'; j++)
-						pri_message(pri, "%02x ", (u_int8_t)basiccallinfoelements[j]);
-					pri_message(pri, "\n");
-				}
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):                      /* [0] namePresentationAllowedSimple */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1):   /* [1] namePresentationAllowedExtended */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2):                      /* [2] namePresentationRestrictedSimple */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_3):   /* [3] namePresentationRestrictedExtended */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_4):                      /* [4] nameNotAvailable */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_7):                      /* [7] namePresentationRestrictedNull */
-				/* connectedName Name OPTIONAL */
-				size = rose_name_decode(pri, (u_int8_t *)comp, comp->len + 2, &connectedname);
-				if (size < 0)
-					return -1;
-				i += size;
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     CT-Active: Received ConnectedName '%s', namepres %s(%d), characterset %s(%d)\n",
-						    connectedname.name, namepres_to_str(connectedname.namepres), connectedname.namepres,
-						    characterset_to_str(connectedname.characterset), connectedname.characterset);
-				break;
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_9):   /* [9] IMPLICIT Extension */
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_10):  /* [10] IMPLICIT SEQUENCE OF Extension */
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "!!     CT-Active: Ignoring CallTransferActive component 0x%X\n", comp->type);
-				NEXT_COMPONENT(comp, i);
-				break;
- 			default:
- 				pri_message(pri, "!!     CT-Active: Invalid CallTransferActive component received 0x%X\n", comp->type);
- 				return -1;
- 			}
-		}
-
-		call->ctactiveflag = 1;
-		if ((connectedaddress.pres & PRES_RESTRICTION) == PRES_ALLOWED) {
-			libpri_copy_string(call->ctactivenum, connectedaddress.partyaddress, sizeof(call->ctactivenum));
-		} else {
-			call->ctactivenum[0] = '\0';
-		}
-		call->ctactivepres = connectedaddress.pres;
-		call->ctactiveplan = ((connectedaddress.ton & 0x07) << 4) | (connectedaddress.npi & 0x0f);
-
-		if (connectedname.namepres != 0) {
-			libpri_copy_string(call->ctactivename, connectedname.name, sizeof(call->ctactivename));
-		} else {
-			call->ctactivename[0] = '\0';
-		}
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
+	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL, NULL);
 }
-
-#if 0
-static int rose_call_transfer_update_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-	int res = 0;
-
-	struct addressingdataelements_presentednumberscreened redirection_number;
-	redirection_number.partyaddress[0] = 0;
-	char redirection_name[51] = "";
-	call->callername[0] = 0;
-	call->callernum[0] = 0;
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid callTransferUpdate argument. (Not a sequence)\n");
-		return -1;
-	}
-
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4;   /* For the 2 extra characters at the end
-		               and two characters of header */
-	} else
-		len -= 2;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     CT-Update: len=%d\n", len);
-
-	do {
-		/* Redirection Number */
-		GET_COMPONENT(comp, i, vdata, len);
-		res = rose_presented_number_screened_decode(pri, (u_int8_t *)comp, comp->len + 2, &redirection_number);
-		if (res < 0)
-			return -1;
-		comp->len = res;
-		if (res > 2) {
-			if (pri->debug & PRI_DEBUG_APDU)
-				pri_message(pri, "     CT-Update: Received redirectionNumber=%s\n", redirection_number.partyaddress);
-			strncpy(call->callernum, redirection_number.partyaddress, 20);
-			call->callernum[20] = 0;
-		}
-		NEXT_COMPONENT(comp, i);
-
-		/* Redirection Name */
-		GET_COMPONENT(comp, i, vdata, len);
-		res = asn1_name_decode((u_int8_t *)comp, comp->len + 2, redirection_name, sizeof(redirection_name));
-		if (res < 0)
-			return -1;
-		memcpy(call->callername, comp->data, comp->len);
-		call->callername[comp->len] = 0;
-		ASN1_FIXUP_LEN(comp, res);
-		comp->len = res;
-		NEXT_COMPONENT(comp, i);
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "     CT-Update: Received redirectionName '%s'\n", redirection_name);
-
-
-#if 0 /* This one is optional. How do we check if it is there? */
-		/* Basic Call Info Elements */
-		GET_COMPONENT(comp, i, vdata, len);
-		NEXT_COMPONENT(comp, i);
-#endif
-
-
-		/* Argument Extension */
-#if 0 /* Not supported */
-		GET_COMPONENT(comp, i, vdata, len);
-		switch (comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_9):   /* [9] IMPLICIT Extension */
-				res = rose_extension_decode(pri, call, comp->data, comp->len, &redirection_number);
-				if (res < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, res);
-				comp->len = res;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_10):    /* [10] IMPLICIT SEQUENCE OF Extension */
-				res = rose_sequence_of_extension_decode(pri, call, comp->data, comp->len, &redirection_number);
-				if (res < 0)
-					return -1;
-				ASN1_FIXUP_LEN(comp, res);
-				comp->len = res;
-
-			default:
-				pri_message(pri, "     CT-Update: !! Unknown argumentExtension received 0x%X\n", comp->type);
-				return -1;
-		}
-#else
-		GET_COMPONENT(comp, i, vdata, len);
-		ASN1_FIXUP_LEN(comp, res);
-		NEXT_COMPONENT(comp, i);
-#endif
-
-		if(i < len)
-			pri_message(pri, "     CT-Update: !! not all information is handled !! i=%d / len=%d\n", i, len);
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-#endif
 
 /* ===== End Call Transfer Supplementary Service (ECMA-178) ===== */
 
-
-
-static int rose_calling_name_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CalledName invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode name.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_called_name(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
 {
-	struct nameelements_name callingname;
-	int res;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Handle callingName\n");
-
-	res = rose_name_decode(pri, (u_int8_t *)sequence, sequence->len + 2, &callingname);
-	if (res < 0)
-		return -1;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     Received CallingName '%s', namepres: %s(%d), characterset %s(%d)\n",
-		            callingname.name, namepres_to_str(callingname.namepres), callingname.namepres,
-		            characterset_to_str(callingname.characterset), callingname.characterset);
-
-	if (callingname.namepres >= 0) {
-		libpri_copy_string(call->callername, callingname.name, sizeof(call->callername));
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
-	return 0;
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_CalledName;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.CalledName.name.presentation = 1;	/* presentation_allowed */
+	msg.args.qsig.CalledName.name.char_set = 1;	/* iso8859-1 */
+	libpri_copy_string((char *)
+		msg.args.qsig.CalledName.name.data, call->connectedname,
+		sizeof(msg.args.qsig.CalledName.name.data));
+	msg.args.qsig.CalledName.name.length =
+		strlen((char *) msg.args.qsig.CalledName.name.data);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
 }
 
-static int rose_called_name_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode and queue the Q.SIG CalledName invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode name.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rose_called_name_encode(struct pri *ctrl, q931_call *call, int messagetype)
 {
-	struct nameelements_name calledname;
-	int res;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Handle calledName\n");
-
-	res = rose_name_decode(pri, (u_int8_t *)sequence, sequence->len + 2, &calledname);
-	if (res < 0)
-		return -1;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     Received CalledName '%s', namepres %s(%d), characterset %s(%d)\n",
-		            calledname.name, namepres_to_str(calledname.namepres), calledname.namepres,
-		            characterset_to_str(calledname.characterset), calledname.characterset);
-
-	if (calledname.namepres != 0) {
-		libpri_copy_string(call->calledname, calledname.name, sizeof(call->calledname));
-	} else {
-		call->calledname[0] = '\0';
-	}
-
-	return 0;
-}
-
-int rose_called_name_encode(struct pri *pri, q931_call *call, int messagetype)
-{
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
 	unsigned char buffer[256];
-	int size;
+	unsigned char *end;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode calledName\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+	end = enc_qsig_called_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
+		return -1;
 	}
 
-	/* Network Protocol Profile */
-	/*  - not included - */
-
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
-
-	/* Service APDU(s): */
-
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x02)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, SS_CNOP_CALLEDNAME);
-
-	/* tag component namePresentationAllowedSimple  (0x80,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* namePresentationAllowedSimple, implicid NameData */
-	size = rose_namedata_encode(pri, &buffer[i], 1, call->connectedname);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(call, messagetype, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer, NULL, NULL);
 }
 
-static int rose_connected_name_decode(struct pri *pri, q931_call *call, struct rose_component *sequence, int len)
+/*!
+ * \internal
+ * \brief Encode the Q.SIG ConnectedName invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode name.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_connected_name(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
 {
-	struct nameelements_name connectedname;
-	int res;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Handle connectedName\n");
-
-	res = rose_name_decode(pri, (u_int8_t *)sequence, sequence->len + 2, &connectedname);
-	if (res < 0)
-		return -1;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     Received ConnectedName '%s', namepres %s(%d), characterset %s(%d)\n",
-		            connectedname.name, namepres_to_str(connectedname.namepres), connectedname.namepres,
-		            characterset_to_str(connectedname.characterset), connectedname.characterset);
-
-	if (connectedname.namepres != 0) {
-		libpri_copy_string(call->connectedname, connectedname.name, sizeof(call->connectedname));
-	} else {
-		call->connectedname[0] = '\0';
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
 	}
 
-	return 0;
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_QSIG_ConnectedName;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.qsig.ConnectedName.name.presentation = 1;	/* presentation_allowed */
+	msg.args.qsig.ConnectedName.name.char_set = 1;	/* iso8859-1 */
+	libpri_copy_string((char *)
+		msg.args.qsig.ConnectedName.name.data, call->connectedname,
+		sizeof(msg.args.qsig.ConnectedName.name.data));
+	msg.args.qsig.ConnectedName.name.length =
+		strlen((char *) msg.args.qsig.ConnectedName.name.data);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
 }
 
-int rose_connected_name_encode(struct pri *pri, q931_call *call, int messagetype)
+/*!
+ * \internal
+ * \brief Encode and queue the Q.SIG ConnectedName invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode name.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rose_connected_name_encode(struct pri *ctrl, q931_call *call, int messagetype)
 {
-	int i = 0, compsp = 0;
-	struct rose_component *comp, *compstk[10];
 	unsigned char buffer[256];
-	int size;
+	unsigned char *end;
 
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "    Encode connectedName\n");
-
-	/* Protocol Profile = 0x1f (Networking Extensions)  (0x9f) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Network Facility Extension */
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
-		/* tag component NetworkFacilityExtension (0xaa, len ) */
-		ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i);
-		ASN1_PUSH(compstk, compsp, comp);
-
-		/* sourceEntity  (0x80,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* endPINX(0) */
-
-		/* destinationEntity  (0x82,0x01,0x00) */
-		ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* endPINX(0) */
-		ASN1_FIXUP(compstk, compsp, buffer, i);
+	end = enc_qsig_connected_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	if (!end) {
+		return -1;
 	}
 
-	/* Network Protocol Profile */
-	/*  - not included - */
-
-	/* Interpretation APDU  (0x8b,0x01,0x00) */
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);	/* discardAnyUnrecognisedInvokePdu(0) */
-
-	/* Service APDU(s): */
-
-	/* ROSE InvokePDU  (0xa1,len) */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* ROSE InvokeID  (0x02,0x01,invokeid) */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));
-
-	/* ROSE operationId  (0x02,0x01,0x02)*/
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, SS_CNOP_CONNECTEDNAME);
-
-	/* tag component namePresentationAllowedSimple  (0x80,len) */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* namePresentationAllowedSimple, implicid NameData */
-	size = rose_namedata_encode(pri, &buffer[i], 1, call->connectedname);
-	if (size < 0)
-		return -1;
-	i += size;
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(call, messagetype, buffer, i, NULL, NULL))
-		return -1;
-
-	return 0;
+	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer, NULL, NULL);
 }
 
 /* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-/* operationId e.g. QSIG_CCBSRINGOUT, QSIG_CC_CANCEL */
-int add_qsigCcInv_facility_ie (struct pri *pri, q931_call *c, int messagetype)
+
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CCExtension invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param operation Call-Completion operation to generate.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_CCExtension_invoke(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, enum rose_operation operation)
 {
-	int i = 0;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
+
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = operation;
+	msg.invoke_id = get_invokeid(ctrl);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Encode and queue CcRingout or CcCancel.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode message.
+ * \param messagetype Q.931 message type the facility will go out on.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int add_qsigCcInv_facility_ie(struct pri *ctrl, q931_call *call, int messagetype)
+{
 	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	u_int8_t operationId = c->ccoperation;
+	unsigned char *end;
+	enum rose_operation operation;
 
-	/* 1 Byte 	   0x80 | 0x1F = 9F	 Protocol Profile */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
-
-	/* Interpretation component */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i); /* 2. Byte NEtwork Facility Extension 0xAA = ASN1_CONTEXT_SPECIFIC(0x80) | (ASN1_CONSTRUCTOR 0x20)  0x0A (Tag laut Standard) */
-	ASN1_PUSH(compstk, compsp, comp);
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* (0x80, 0x01(len), 0x00) endPTNX */
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* (0x82, 0x01(len), 0x00) endPTNX */
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);   /* 0x8B, 0x01(len), 0x00 discard */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);			 /* 0xA1, 0xXX (len of Invoke Sequenz) invoke APDU */
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));   /* 0x02 0x01 0xXX */
-
-	/* Operation ID: QSIG_CCBSRINGOUT, QSIG_CC_CANCEL */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, operationId); /* 0x02 0x01 0x1f/0x1c */
-
-	/* CcExtension */
-	ASN1_ADD_SIMPLE(comp, ASN1_NULL, buffer, i); /* 0x05 0x00 */
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(c, messagetype, buffer, i, NULL, NULL))
+	switch (call->ccoperation) {
+	case PRI_CC_RINGOUT:
+		operation = ROSE_QSIG_CcRingout;
+		break;
+	case PRI_CC_CANCEL:
+		operation = ROSE_QSIG_CcCancel;
+		break;
+	default:
 		return -1;
-	
-	return 0;
-}
-
-static int rose_cc_ringout_inv_decode(struct pri *pri, struct qsig_cc_extension *cc_extension, struct rose_component *choice, int len) {
-	int i = 0;
-	cc_extension->cc_extension_tag = 0;
-
-	do {
-		switch(choice->type) {
-		case (ASN1_NULL):   /* none NULL */
-			cc_extension->cc_extension_tag = ASN1_NULL;
-			return 0;
-
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /* single [14] IMPLICIT Extension */
-			cc_extension->cc_extension_tag = ASN1_TAG_14;
-			return 0;
-
-
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /* multiple [15] IMPLICIT SEQUENCE OF Extension */
-			cc_extension->cc_extension_tag = ASN1_TAG_15;
-			return 0;
-
-		default:
-			if (choice->type == 0 && choice->len == 0) {
-				return 0;
-			}
-			pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", choice->type);
-			return -1;
-		}
-
-		if (i < len)
-			pri_message(pri, "     ss-cc-extension: !! not all information is handled !! i=%d / len=%d\n", i, len);
-
-		return 0;
 	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_cc_optional_arg_decode(struct pri *pri, q931_call *call, struct qsig_cc_optional_arg *cc_optional_arg , struct rose_component *choice, int len) {
-	int i = 0;
-	int res = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = choice->data;
-	struct addressingdataelements_presentednumberunscreened numberA;
-	struct addressingdataelements_presentednumberunscreened numberB;
-
-	cc_optional_arg->cc_extension.cc_extension_tag = 0;
-	cc_optional_arg->number_A[0] = '\0';
-	cc_optional_arg->number_B[0] = '\0';
-
-	do {
-		switch(choice->type) {
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_0):   /* fullArg [0] IMPLICIT SEQUENCE */
-			if (pri->debug & PRI_DEBUG_APDU)
-				pri_message(pri, "     ss-cc-optional-Arg: len=%d\n", len);
-
-			numberA.partyaddress[0] = '\0';
-
-			/* numberA */
-			GET_COMPONENT(comp, i, vdata, len);
-			res += rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, &numberA);
-			if (res < 0)
-				return -1;
-			comp->len = res;
-			if (res > 2) {
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     ss-cc-optional-Arg: Received numberA=%s\n", numberA.partyaddress);
-				strncpy(cc_optional_arg->number_A, numberA.partyaddress, 20);
-				cc_optional_arg->number_A[20] = '\0';
-			}
-			NEXT_COMPONENT(comp, i);
-
-			numberB.partyaddress[0] = '\0';
-
-			/* numberB */
-			GET_COMPONENT(comp, i, vdata, len);
-			res = rose_party_number_decode(pri, (u_int8_t *)comp, comp->len + 2, &numberB);
-			if (res < 0)
-				return -1;
-			comp->len = res;
-			if (res > 2) {
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     ss-cc-optional-Arg: Received numberB=%s\n", numberB.partyaddress);
-				strncpy(cc_optional_arg->number_B, numberB.partyaddress, 20);
-				cc_optional_arg->number_B[20] = '\0';
-			}
-			NEXT_COMPONENT(comp, i);
-
-			/* service */ /* PSS1InformationElement */
-			GET_COMPONENT(comp, i, vdata, len);
-			NEXT_COMPONENT(comp, i);
-
-			/* optional */
-			for (; i < len; NEXT_COMPONENT(comp, i)) {
-				GET_COMPONENT(comp, i, vdata, len);
-				switch(comp->type) {
-				case (ASN1_NULL):   /*  */
-					cc_optional_arg->cc_extension.cc_extension_tag = ASN1_NULL;
-					NEXT_COMPONENT(comp, i);
-					break;
-				case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /*  */
-					NEXT_COMPONENT(comp, i);
-					break;
-				case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /*  */
-					NEXT_COMPONENT(comp, i);
-					break;
-				default:
-					if (comp->type == 0 && comp->len == 0) {
-						return 0;
-						break; /* Found termination characters */
-					}
-					pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", comp->type);
-					return -1;
-				}
-			}
-
-			if (i < len)
-				pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
-
-			return 0;
-
-		/* extArg CcExtension */
-		case (ASN1_NULL):   /* none NULL */
-			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_NULL;
-			return 0;
-
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):   /* single [14] IMPLICIT Extension */
-			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_TAG_14;
-			return 0;
-
-
-		case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):   /* multiple [15] IMPLICIT SEQUENCE OF Extension */
-			cc_optional_arg->cc_extension.cc_extension_tag = ASN1_TAG_15;
-			return 0;
-
-		default:
-			if (choice->type == 0 && choice->len == 0) {
-				return 0;
-			}
-			pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", choice->type);
-			return -1;
-		}
-
-		if (i < len)
-			pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
-
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_cc_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
-{
-	int i = 0;
-	struct rose_component *comp = NULL;
-	unsigned char *vdata = sequence->data;
-
-	cc_request_res->no_path_reservation           = 0;  /* Default FALSE */
-	cc_request_res->retain_service                = 0;  /* Default FALSE */
-	cc_request_res->cc_extension.cc_extension_tag = 0;
-
-	/* Data checks */
-	if (sequence->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-		pri_message(pri, "Invalid cc request result argument. (Not a sequence)\n");
+	end = enc_qsig_CCExtension_invoke(ctrl, buffer, buffer + sizeof(buffer), operation);
+	if (!end) {
 		return -1;
 	}
 
-	if (sequence->len == ASN1_LEN_INDEF) {
-		len -= 4; /* For the 2 extra characters at the end
-					   * and two characters of header */
-	} else
-		len -= 2;
-
-	if (pri->debug & PRI_DEBUG_APDU)
-		pri_message(pri, "     CC-request-Return-Result: len=%d\n", len);
-
-	do {
-		/* defaults and optional */
-		for (; i < len; NEXT_COMPONENT(comp, i)) {
-			GET_COMPONENT(comp, i, vdata, len);
-			switch(comp->type) {
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0):
-				/* no-path-reservation */
-				ASN1_GET_INTEGER(comp, cc_request_res->no_path_reservation);
-				NEXT_COMPONENT(comp, i);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     cc request result: Received noPathReservation=%d\n", cc_request_res->no_path_reservation);
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_1):
-				/* retain_service */
-				ASN1_GET_INTEGER(comp, cc_request_res->retain_service);
-				NEXT_COMPONENT(comp, i);
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "     cc request result: Received retainService=%d\n", cc_request_res->retain_service);
-				break;
-
-			case (ASN1_NULL):   /*  */
-				cc_request_res->cc_extension.cc_extension_tag = ASN1_NULL;
-				NEXT_COMPONENT(comp, i);
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_14):
-				cc_request_res->cc_extension.cc_extension_tag = ASN1_TAG_14;
-				NEXT_COMPONENT(comp, i);
-				break;
-
-			case (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_15):
-				cc_request_res->cc_extension.cc_extension_tag = ASN1_TAG_15;
-				NEXT_COMPONENT(comp, i);
-				break;
-
-			default:
-				if (comp->type == 0 && comp->len == 0) {
-					break; /* Found termination characters */
-				}
-				pri_message(pri, "!! Invalid ss-cc-optional-Arg component received 0x%X\n", comp->type);
-				return -1;
-			}
-		}
-
-		if (i < len)
-			pri_message(pri, "     ss-cc-optional-Arg: !! not all information is handled !! i=%d / len=%d\n", i, len);
-		return 0;
-	}
-	while (0);
-
-	return -1;
-}
-
-static int rose_ccbs_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
-{
-	return rose_cc_request_result_decode(pri, cc_request_res , sequence, len);
-}
-
-static int rose_ccnr_request_result_decode(struct pri *pri, struct qsig_cc_request_res *cc_request_res , struct rose_component *sequence, int len)
-{
-	return rose_cc_request_result_decode(pri, cc_request_res , sequence, len);
+	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer, NULL, NULL);
 }
 /* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-
-
-int rose_reject_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
-{
-	int i = 0;
-	int problemtag = -1;
-	int problem = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	char *problemtagstr, *problemstr;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		GET_COMPONENT(comp, i, vdata, len);
-		problemtag = comp->type;
-		problem = comp->data[0];
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (problemtag) {
-			case 0x80:
-				problemtagstr = "General problem";
-				break;
-			case 0x81:
-				problemtagstr = "Invoke problem";
-				break;
-			case 0x82:
-				problemtagstr = "Return result problem";
-				break;
-			case 0x83:
-				problemtagstr = "Return error problem";
-				break;
-			default:
-				problemtagstr = "Unknown";
-			}
-
-			switch (problem) {
-			case 0x00:
-				problemstr = "Unrecognized component";
-				break;
-			case 0x01:
-				problemstr = "Mistyped component";
-				break;
-			case 0x02:
-				problemstr = "Badly structured component";
-				break;
-			default:
-				problemstr = "Unknown";
-			}
-
-			pri_error(pri, "ROSE REJECT:\n");
-			pri_error(pri, "\tINVOKE ID: 0x%X\n", invokeidvalue);
-			pri_error(pri, "\tPROBLEM TYPE: %s (0x%x)\n", problemtagstr, problemtag);
-			pri_error(pri, "\tPROBLEM: %s (0x%x)\n", problemstr, problem);
-
-			return 0;
-		} else {
-			pri_message(pri, "Unable to handle reject on switchtype %d!\n", pri->switchtype);
-			return -1;
-		}
-
-	} while(0);
-	
-	return -1;
-}
-
 
 static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
 {
 	if (sub->counter_subcmd < MAX_SUBCOMMANDS) {
 		int count = sub->counter_subcmd;
+
 		sub->counter_subcmd++;
 		return &sub->subcmd[count];
 	}
@@ -3971,584 +1805,21 @@ static struct subcommand *get_ptr_subcommand(struct subcommands *sub)
 	return NULL;
 }
 
-
-int rose_return_error_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
-{
-	int i = 0;
-	int errorvalue = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	char *invokeidstr, *errorstr;
-	struct subcommand *c_subcmd;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if second component in return error is 0x%x\n");
-		ASN1_GET_INTEGER(comp, errorvalue);
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (invokeidvalue) {
-			case RLT_OPERATION_IND:
-				invokeidstr = "RLT_OPERATION_IND";
-				break;
-			case RLT_THIRD_PARTY:
-				invokeidstr = "RLT_THIRD_PARTY";
-				break;
-			default:
-				invokeidstr = "Unknown";
-			}
-
-			switch (errorvalue) {
-			case 0x10:
-				errorstr = "RLT Bridge Fail";
-				break;
-			case 0x11:
-				errorstr = "RLT Call ID Not Found";
-				break;
-			case 0x12:
-				errorstr = "RLT Not Allowed";
-				break;
-			case 0x13:
-				errorstr = "RLT Switch Equip Congs";
-				break;
-			default:
-				errorstr = "Unknown";
-			}
-
-			pri_error(pri, "ROSE RETURN ERROR:\n");
-			pri_error(pri, "\tOPERATION: %s\n", invokeidstr);
-			pri_error(pri, "\tERROR: %s\n", errorstr);
-
-			return 0;
-		} else if (pri->switchtype == PRI_SWITCH_QSIG) {
-			switch (errorvalue) {
-			case 1008:
-				errorstr = "Unspecified";
-				break;
-			case 1012:
-				errorstr = "Remote user busy again";
-				break;
-			case 1013:
-				errorstr = "Failure to match";
-				break;
-			default:
-				errorstr = "Unknown";
-			}
-
-			c_subcmd = get_ptr_subcommand(&call->subcmds);
-			if (!c_subcmd) {
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE RETURN ERROR %i - more than %d facilities !\n", errorvalue, MAX_SUBCOMMANDS);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			}
-
-			if (pri->debug & PRI_DEBUG_APDU)
-			{
-				pri_message(pri, "ROSE RETURN RESULT %i:   %s\n", errorvalue, errorstr);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-			}
-			c_subcmd->cmd = CMD_CC_ERROR;
-			c_subcmd->cc_error.error_value = errorvalue;
-			return 0;
-		} else {
-			pri_message(pri, "Unable to handle return error on switchtype %d!\n", pri->switchtype);
-		}
-
-	} while(0);
-	
-	return -1;
-}
-
-int rose_return_result_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
-{
-	int i = 0;
-	int operationidvalue = -1;
-	int invokeidvalue = -1;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL;
-	int res;
-	struct subcommand *c_subcmd;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-		ASN1_GET_INTEGER(comp, invokeidvalue);
-		NEXT_COMPONENT(comp, i);
-
-		if (pri->switchtype == PRI_SWITCH_DMS100) {
-			switch (invokeidvalue) {
-			case RLT_THIRD_PARTY:
-				if (pri->debug & PRI_DEBUG_APDU) pri_message(pri, "Successfully completed RLT transfer!\n");
-				return 0;
-			case RLT_OPERATION_IND:
-				if (pri->debug & PRI_DEBUG_APDU) pri_message(pri, "Received RLT_OPERATION_IND\n");
-				/* Have to take out the rlt_call_id */
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_SEQUENCE, "Protocol error detected in parsing RLT_OPERATION_IND return result!\n");
-
-				/* Traverse the contents of this sequence */
-				/* First is the Operation Value */
-				SUB_COMPONENT(comp, i);
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_INTEGER, "RLT_OPERATION_IND should be of type ASN1_INTEGER!\n");
-				ASN1_GET_INTEGER(comp, operationidvalue);
-
-				if (operationidvalue != RLT_OPERATION_IND) {
-					pri_message(pri, "Invalid Operation ID value (0x%x) in return result!\n", operationidvalue);
-					return -1;
-				}
-
-				/*  Next is the Call ID */
-				NEXT_COMPONENT(comp, i);
-				GET_COMPONENT(comp, i, vdata, len);
-				CHECK_COMPONENT(comp, ASN1_TAG_0, "Error check failed on Call ID!\n");
-				ASN1_GET_INTEGER(comp, call->rlt_call_id);
-				/* We have enough data to transfer the call */
-				call->transferable = 1;
-
-				return 0;
-				
-			default:
-				pri_message(pri, "Could not parse invoke of type 0x%x!\n", invokeidvalue);
-				return -1;
-			}
-		} else if (pri->switchtype == PRI_SWITCH_QSIG) {
-			int operation_tag;
-
-			/* sequence is optional */
-			if (i >= len) 
-				return 0;
-
-			/* Data checks, sequence is optional */
-			GET_COMPONENT(comp, i, vdata, len);
-			if (comp->type != (ASN1_CONSTRUCTOR | ASN1_SEQUENCE)) { /* Constructed Sequence */
-				pri_message(pri, "No arguments on cc-return result\n");
-				return 0;
-			}
-
-			if (comp->len == ASN1_LEN_INDEF) {
-				len -= 2; /* For the 2 extra characters at the end*/
-			}
-
-			/* Traverse the contents of this sequence */
-			SUB_COMPONENT(comp, i);
-
-			/* Operation Tag */
-			GET_COMPONENT(comp, i, vdata, len);
-			CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if second ROSE component is of type 0x%x\n");
-			ASN1_GET_INTEGER(comp, operation_tag);
-			NEXT_COMPONENT(comp, i);
-
-			/* No argument - return with error */
-			if (i >= len) 
-				return -1;
-
-			/* Arguement Tag */
-			GET_COMPONENT(comp, i, vdata, len);
-			if (!comp->type)
-				return -1;
-
-			if (pri->debug & PRI_DEBUG_APDU)
-				pri_message(pri, "  [ Handling operation %d ]\n", operation_tag);
-			switch (operation_tag) {
-			case QSIG_CF_CALLREROUTING:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "Successfully completed QSIG CF callRerouting!\n");
-				return 0;
-
-			case QSIG_CC_CCBSREQUEST:
-				c_subcmd = get_ptr_subcommand(&call->subcmds);
-				if (!c_subcmd) {
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "ROSE %i:  return_result CcCcbsRequest - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-					return -1;
-				}
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcCcbsRequest\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				c_subcmd->cmd = CMD_CC_CCBSREQUEST_RR;
-				res = rose_ccbs_request_result_decode(pri, &c_subcmd->cc_ccbs_rr.cc_request_res, comp, len-i);
-				return res;
-
-			case QSIG_CC_CCNRREQUEST:
-				c_subcmd = get_ptr_subcommand(&call->subcmds);
-				if (!c_subcmd) {
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "ROSE %i:  return_result CcCcnrRequest - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-					return -1;
-				}
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcCcnrRequest\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				c_subcmd->cmd = CMD_CC_CCNRREQUEST_RR;
-				res = rose_ccnr_request_result_decode(pri, &c_subcmd->cc_ccnr_rr.cc_request_res, comp, len-i);
-				return res;
-
-			default:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "!! Unable to handle ROSE operation %d", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			}
-		} else {
-			pri_message(pri, "Unable to handle return result on switchtype %d!\n", pri->switchtype);
-			return -1;
-		}
-
-	} while(0);
-	
-	return -1;
-}
-
-int rose_invoke_decode(struct pri *pri, q931_call *call, q931_ie *ie, unsigned char *data, int len)
-{
-	int i = 0;
-	int res = 0;
-	int operation_tag;
-	unsigned char *vdata = data;
-	struct rose_component *comp = NULL, *invokeid = NULL, *operationid = NULL;
-	struct subcommand *c_subcmd;
-	
-	do {
-		/* Invoke ID stuff */
-		GET_COMPONENT(comp, i, vdata, len);
-#if 0
-		CHECK_COMPONENT(comp, INVOKE_IDENTIFIER, "Don't know what to do if first ROSE component is of type 0x%x\n");
-#endif
-		invokeid = comp;
-		NEXT_COMPONENT(comp, i);
-
-		/* Operation Tag */
-		GET_COMPONENT(comp, i, vdata, len);
-#if 0
-		CHECK_COMPONENT(comp, ASN1_INTEGER, "Don't know what to do if second ROSE component is of type 0x%x\n");
-#endif
-		operationid = comp;
-		ASN1_GET_INTEGER(comp, operation_tag);
-		NEXT_COMPONENT(comp, i);
-
-		/* No argument - return with error */
-		if (i >= len) 
-			return -1;
-
-		/* Arguement Tag */
-		GET_COMPONENT(comp, i, vdata, len);
-		if (!comp->type)
-			return -1;
-
-		if (pri->debug & PRI_DEBUG_APDU)
-			pri_message(pri, "  [ Handling operation %d ]\n", operation_tag);
-
-		if (pri->switchtype == PRI_SWITCH_QSIG) {
-
-			switch (operation_tag) {
-			case SS_CNID_CALLINGNAME:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i:   Handle CallingName\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_calling_name_decode(pri, call, comp, len-i);
-			case SS_CNOP_CALLEDNAME:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i:   Handle CalledName\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_called_name_decode(pri, call, comp, len-i);
-			case SS_CNOP_CONNECTEDNAME:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i:   Handle ConnectedName\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_connected_name_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_IDENTIFY:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferIdentify - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_ABANDON:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferAbandon - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_INITIATE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferInitiate - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_SETUP:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferSetup - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_ACTIVE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   Handle CallTransferActive\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return rose_call_transfer_active_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_COMPLETE:
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CallTransferComplete\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_call_transfer_complete_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_UPDATE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferUpdate - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_SUBADDRESS_TRANSFER:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   SubaddressTransfer - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_DIVERTING_LEG_INFORMATION1:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "  Handle DivertingLegInformation1\n");
-				return rose_diverting_leg_information1_decode(pri, call, comp, len-i);
-			case ROSE_DIVERTING_LEG_INFORMATION2:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "  Handle DivertingLegInformation2\n");
-				return rose_diverting_leg_information2_decode(pri, call, comp, len-i);
-			case ROSE_DIVERTING_LEG_INFORMATION3:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "  Handle DivertingLegInformation3\n");
-				return rose_diverting_leg_information3_decode(pri, call, comp, len-i);
-			case SS_ANFPR_PATHREPLACEMENT:
-				/* Clear Queue */
-				res = pri_call_apdu_queue_cleanup(call->bridged_call);
-				if (res) {
-					pri_message(pri, "Could not Clear queue ADPU\n");
-					return -1;
-				}
-				anfpr_pathreplacement_respond(pri, call, ie);
-				break;
-			case QSIG_CC_CCBSREQUEST:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:  invoke CcbsRequest - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case QSIG_CC_CCNRREQUEST:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:  invoke CcnrRequest - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case QSIG_CC_CANCEL:
-				c_subcmd = get_ptr_subcommand(&call->subcmds);
-				if (!c_subcmd) {
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "ROSE %i:  invoke CcCancel - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-					return -1;
-				}
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcCancel\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				c_subcmd->cmd = CMD_CC_CANCEL_INV;
-				res = rose_cc_optional_arg_decode(pri, call, &c_subcmd->cc_cancel_inv.cc_optional_arg, comp, len-i);
-				return res;
-			case QSIG_CC_EXECPOSIBLE:
-				c_subcmd = get_ptr_subcommand(&call->subcmds);
-				if (!c_subcmd) {
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "ROSE %i:  invoke CcExecposible - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-					return -1;
-				}
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcExecposible\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				c_subcmd->cmd = CMD_CC_EXECPOSIBLE_INV;
-				res = rose_cc_optional_arg_decode(pri, call, &c_subcmd->cc_execposible_inv.cc_optional_arg, comp, len-i);
-				return res;
-			case QSIG_CC_PATHRESERVE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:  invoke CcPathreserve - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case QSIG_CC_RINGOUT:
-				c_subcmd = get_ptr_subcommand(&call->subcmds);
-				if (!c_subcmd) {
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "ROSE %i:  invoke CcRingout - more than %d facilities !\n", operation_tag, MAX_SUBCOMMANDS);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-					return -1;
-				}
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcRingout\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				c_subcmd->cmd = CMD_CC_RINGOUT_INV;
-				res = rose_cc_ringout_inv_decode(pri, &c_subcmd->cc_ringout_inv.cc_extension, comp, len-i);
-				return res;
-			case QSIG_CC_SUSPEND:
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CcSuspend\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return 0;
-			case QSIG_CC_RESUME:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:  invoke CcResume - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			default:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "!! Unable to handle ROSE operation %d", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			}
-		} else { /* pri->switchtype == PRI_SWITCH_QSIG */
-
-			switch (operation_tag) {
-			case SS_CNID_CALLINGNAME:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i:   Handle CallingName\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_calling_name_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_IDENTIFY:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferIdentify - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_ABANDON:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferAbandon - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_INITIATE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferInitiate - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_SETUP:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferSetup - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_CALL_TRANSFER_ACTIVE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   Handle CallTransferActive\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return rose_call_transfer_active_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_COMPLETE:
-				if (pri->debug & PRI_DEBUG_APDU)
-				{
-					pri_message(pri, "ROSE %i:   Handle CallTransferComplete\n", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return rose_call_transfer_complete_decode(pri, call, comp, len-i);
-			case ROSE_CALL_TRANSFER_UPDATE:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   CallTransferUpdate - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_SUBADDRESS_TRANSFER:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "ROSE %i:   SubaddressTransfer - not handled!\n", operation_tag);
-				dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				return -1;
-			case ROSE_DIVERTING_LEG_INFORMATION2:
-				if (pri->debug & PRI_DEBUG_APDU)
-					pri_message(pri, "  Handle DivertingLegInformation2\n");
-				return rose_diverting_leg_information2_decode(pri, call, comp, len-i);
-			case ROSE_AOC_NO_CHARGING_INFO_AVAILABLE:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC No Charging Info Available - not handled!", operation_tag);
-					dump_apdu (pri, comp->data, comp->len);
-				}
-				return -1;
-			case ROSE_AOC_CHARGING_REQUEST:
-				return aoc_aoce_charging_request_decode(pri, call, (u_int8_t *)comp, comp->len + 2);
-			case ROSE_AOC_AOCS_CURRENCY:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC-S Currency - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case ROSE_AOC_AOCS_SPECIAL_ARR:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC-S Special Array - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case ROSE_AOC_AOCD_CURRENCY:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC-D Currency - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case ROSE_AOC_AOCD_CHARGING_UNIT:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC-D Charging Unit - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case ROSE_AOC_AOCE_CURRENCY:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC-E Currency - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case ROSE_AOC_AOCE_CHARGING_UNIT:
-				return aoc_aoce_charging_unit_decode(pri, call, (u_int8_t *)comp, comp->len + 2);
-				if (0) { /* the following function is currently not used - just to make the compiler happy */
-					aoc_aoce_charging_unit_encode(pri, call, call->aoc_units); /* use this function to forward the aoc-e on a bridged channel */
-					return 0;
-				}
-			case ROSE_AOC_IDENTIFICATION_OF_CHARGE:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "ROSE %i: AOC Identification Of Charge - not handled!", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			case SS_ANFPR_PATHREPLACEMENT:
-				/* Clear Queue */
-				res = pri_call_apdu_queue_cleanup(call->bridged_call);
-				if (res) {
-					pri_message(pri, "Could not Clear queue ADPU\n");
-					return -1;
-				}
-				anfpr_pathreplacement_respond(pri, call, ie);
-				break;
-			default:
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "!! Unable to handle ROSE operation %d", operation_tag);
-					dump_apdu (pri, (u_int8_t *)comp, comp->len + 2);
-				}
-				return -1;
-			}
-		}
-	} while(0);
-	
-	return -1;
-}
-
-int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data)
+/*!
+ * \brief Put the APDU on the call queue.
+ *
+ * \param call Call to enqueue message.
+ * \param messagetype Q.931 message type.
+ * \param apdu Facility ie contents buffer.
+ * \param apdu_len Length of the contents buffer.
+ * \param function Callback function for when response is received. (Not implemented)
+ * \param data Parameter to callback function.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len,
+	void (*function)(void *data), void *data)
 {
 	struct apdu_event *cur = NULL;
 	struct apdu_event *new_event = NULL;
@@ -4566,7 +1837,7 @@ int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_l
 	new_event->data = data;
 	memcpy(new_event->apdu, apdu, apdu_len);
 	new_event->apdu_len = apdu_len;
-	
+
 	if (call->apdus) {
 		cur = call->apdus;
 		while (cur->next) {
@@ -4598,112 +1869,130 @@ int pri_call_apdu_queue_cleanup(q931_call *call)
 }
 
 /* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-/* operationId e.g. QSIG_CC_CCBS_REQUEST and QSIG_CC_CCNR_REQUEST */
-static int add_qsigCcRequestArg_facility_ie (struct pri *pri, q931_call *c)
+
+/*!
+ * \internal
+ * \brief Encode the Q.SIG CCRequestArg invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode request.
+ * \param cc_request Call-Completion request operation to generate.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_qsig_CCRequestArg(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call, enum rose_operation cc_request)
 {
-	int size = 0;
-	int i = 0;
+	struct fac_extension_header header;
+	struct rose_msg_invoke msg;
+
+	static const unsigned char q931ie[] = {
+		0x04,	/* Bearer Capability IE */
+		0x03,	/* len */
+		0x80,	/* ETSI Standard, Speech */
+		0x90,	/* circuit mode, 64kbit/s */
+		0xa3,	/* level 1 protocol, a-law */
+	};
+
+	memset(&header, 0, sizeof(header));
+	header.nfe_present = 1;
+	header.nfe.source_entity = 0;	/* endPINX */
+	header.nfe.destination_entity = 0;	/* endPINX */
+	header.interpretation_present = 1;
+	header.interpretation = 2;	/* rejectAnyUnrecognisedInvokePdu */
+	pos = facility_encode_header(ctrl, pos, end, &header);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = cc_request;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	msg.args.qsig.CcbsRequest.number_a.presentation = 0;	/* presentationAllowedNumber */
+	msg.args.qsig.CcbsRequest.number_a.number.plan = 1;	/* public */
+	msg.args.qsig.CcbsRequest.number_a.number.ton = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.CcbsRequest.number_a.number.str,
+		call->callernum, sizeof(msg.args.qsig.CcbsRequest.number_a.number.str));
+	msg.args.qsig.CcbsRequest.number_a.number.length = strlen((char *)
+		msg.args.qsig.CcbsRequest.number_a.number.str);
+
+	msg.args.qsig.CcbsRequest.number_b.plan = 1;	/* public */
+	msg.args.qsig.CcbsRequest.number_b.ton = 0;	/* unknown */
+	libpri_copy_string((char *) msg.args.qsig.CcbsRequest.number_b.str, call->callednum,
+		sizeof(msg.args.qsig.CcbsRequest.number_b.str));
+	msg.args.qsig.CcbsRequest.number_b.length = strlen((char *)
+		msg.args.qsig.CcbsRequest.number_b.str);
+
+	msg.args.qsig.CcbsRequest.q931ie.length = sizeof(q931ie);
+	memcpy(msg.args.qsig.CcbsRequest.q931ie_contents, q931ie, sizeof(q931ie));
+
+	msg.args.qsig.CcbsRequest.can_retain_service = 0;	/* FALSE */
+	msg.args.qsig.CcbsRequest.retain_sig_connection_present = 1;
+	msg.args.qsig.CcbsRequest.retain_sig_connection = 1;	/* TRUE */
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Encode and queue CcbsRequest or CcnrRequest.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int add_qsigCcRequestArg_facility_ie(struct pri *ctrl, q931_call *call)
+{
 	unsigned char buffer[256];
-	struct rose_component *comp = NULL, *compstk[10];
-	int compsp = 0;
-	u_int8_t operationId = c->ccoperation;
-	char *numberA = c->callernum;
-	char *numberB = c->callednum;
- 
-	/* 1 Byte 	   0x80 | 0x1F = 9F	 Protocol Profile (0x93 wäre altes QSIG oder DDS1) */
-	buffer[i++] = (ASN1_CONTEXT_SPECIFIC | Q932_PROTOCOL_EXTENSIONS);
+	unsigned char *end;
+	enum rose_operation operation;
 
-	/* Interpretation component */
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_NFE, buffer, i); /* 2. Byte NEtwork Facility Extension 0xAA = ASN1_CONTEXT_SPECIFIC(0x80) | (ASN1_CONSTRUCTOR 0x20)  0x0A (Tag laut Standard) */
-	ASN1_PUSH(compstk, compsp, comp);
-
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_0), buffer, i, 0);	/* (0x80, 0x01(len), 0x00) endPTNX */
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_2), buffer, i, 0);	/* (0x82, 0x01(len), 0x00) endPTNX */
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-#if 0
-	ASN1_ADD_BYTECOMP(comp, COMP_TYPE_INTERPRETATION, buffer, i, 0);   /* 0x8B, 0x01(len), 0x00 discard */
-#endif
-	ASN1_ADD_SIMPLE(comp, COMP_TYPE_INVOKE, buffer, i);			 /* 0xA1, 0xXX (len of Invoke Sequenz) invoke APDU */
-	ASN1_PUSH(compstk, compsp, comp);
-
-	/* Invoke ID */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, get_invokeid(pri));   /* InvokeID 0x02 0x01 0xXX */
-
-	/*CcbsRequest ::= 40 or CcnrRequest ::= 27 */
-	/* Operation ID: CCBS/CCNR */
-	ASN1_ADD_BYTECOMP(comp, ASN1_INTEGER, buffer, i, operationId); /* 0x02 0x01 0x28/0x1b */
-
-	/* ccbs/ccnr request argument */
-	/* PresentedNumberUnscreened */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONSTRUCTOR | ASN1_SEQUENCE), buffer, i); /*0x30 0xXX (len)*/
-	ASN1_PUSH(compstk, compsp, comp);
-	/* (0xA0, 0x01(len)) presentationAlloweAddress  [0] PartyNumber */
-	/* (0xA1, 0xXX (len) publicPartyNumber [1] IMPLICIT PublicPartyNumber */
-	/* (0x0A, 0x01, 0x00 ) type of public party number = subscriber number */
-	/* (0x12, 0xXX (len), 0xXX .. 0xXX) numeric string */
-	size = rose_presented_number_unscreened_encode(pri, &buffer[i], PRES_ALLOWED, Q932_TON_UNKNOWN, numberA);
-	if (size < 0)
+	switch (call->ccoperation) {
+	case PRI_CC_CCBSREQUEST:
+		operation = ROSE_QSIG_CcbsRequest;
+		break;
+	case PRI_CC_CCNRREQUEST:
+		operation = ROSE_QSIG_CcnrRequest;
+		break;
+	default:
 		return -1;
-	i += size;
-
-	/* (0xA1, 0xXX (len) [1] IMPLICIT PublicPartyNumber */
-	ASN1_ADD_SIMPLE(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_CONSTRUCTOR | ASN1_TAG_1), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	/* (0x0A, 0x01, 0x00 ) type of public party number = subscriber number */
-	/* (0x12, 0xXX (len), 0xXX .. 0xXX) numeric string */
-	size = rose_public_party_number_encode(pri, comp->data, 1, Q932_TON_UNKNOWN, numberB);
-	if (size < 0)
+	}
+	end = enc_qsig_CCRequestArg(ctrl, buffer, buffer + sizeof(buffer), call, operation);
+	if (!end) {
 		return -1;
-	i += size;
-	ASN1_FIXUP(compstk, compsp, buffer, i);
+	}
 
-	/* (0x40, 0xXX (len), 0xXX .. 0xXX) pSS1InfoElement */
-	ASN1_ADD_SIMPLE(comp, (ASN1_APPLICATION | ASN1_TAG_0 ), buffer, i);
-	ASN1_PUSH(compstk, compsp, comp);
-	buffer[i++] = (0x04);	/*  add Bearer Capability IE */
-	buffer[i++] = (0x03);	/* len*/
-	buffer[i++] = (0x80);	/* ETSI Standard, Speech */
-	buffer[i++] = (0x90);	/* circuit mode, 64kbit/s */
-	buffer[i++] = (0xa3);	/* level1 protocol, a-law */
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-#if 0
-	/* can-retain-service [12] IMPLICIT BOOLEAN DEFAULT FALSE,*/
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_12), buffer, i, 0);   /* 0x1C, 0x01(len), 0x00 false */
-#endif
-	/* retain-sig-connection [13] IMPLICIT BOOLEAN OPTIONAL, --TRUE: sign. connection to be retained */	 
-	ASN1_ADD_BYTECOMP(comp, (ASN1_CONTEXT_SPECIFIC | ASN1_TAG_13), buffer, i, 1);   /* 0x1D, 0x01(len), 0x01 true */
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	ASN1_FIXUP(compstk, compsp, buffer, i);
-
-	if (pri_call_apdu_queue(c, Q931_SETUP, buffer, i, NULL, NULL))
-		return -1;
-	
-	return 0;
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL, NULL);
 }
 /* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
 
+/*! \note Only called when sending the SETUP message. */
 int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 {
 	if (!pri->sendfacility)
 		return 0;
 
-	if (pri->switchtype == PRI_SWITCH_QSIG) { /* For Q.SIG it does network and cpe operations */
+	if (pri->switchtype == PRI_SWITCH_QSIG) {
+		/* For Q.SIG it does network and cpe operations */
 		if (call->redirectingnum[0])
 			rose_diverting_leg_information2_encode(pri, call);
 		add_callername_facility_ies(pri, call, 1);
 		if (call->ccoperation) {
-			switch(call->ccoperation) {
+			switch (call->ccoperation) {
 			case 0:
 				break;
-			case QSIG_CC_CCBSREQUEST:
-			case QSIG_CC_CCNRREQUEST:
+			case PRI_CC_CCBSREQUEST:
+			case PRI_CC_CCNRREQUEST:
 				add_qsigCcRequestArg_facility_ie(pri, call);
 				break;
-			case QSIG_CC_RINGOUT:
+			case PRI_CC_RINGOUT:
 				add_qsigCcInv_facility_ie(pri, call, Q931_SETUP);
 				break;
 			default:
@@ -4716,20 +2005,20 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 #if 0
 	if (pri->localtype == PRI_NETWORK) {
 		switch (pri->switchtype) {
-			case PRI_SWITCH_NI2:
-				add_callername_facility_ies(pri, call, 0);
-				break;
-			default:
-				break;
+		case PRI_SWITCH_NI2:
+			add_callername_facility_ies(pri, call, 0);
+			break;
+		default:
+			break;
 		}
 		return 0;
 	} else if (pri->localtype == PRI_CPE) {
 		switch (pri->switchtype) {
-			case PRI_SWITCH_NI2:
-				add_callername_facility_ies(pri, call, 1);
-				break;
-			default:
-				break;
+		case PRI_SWITCH_NI2:
+			add_callername_facility_ies(pri, call, 1);
+			break;
+		default:
+			break;
 		}
 		return 0;
 	}
@@ -4749,9 +2038,8 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 
 int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call)
 {
-	rose_diverting_leg_information1_encode(pri, call);
-
-	if (q931_facility(pri, call)) {
+	if (rose_diverting_leg_information1_encode(pri, call)
+		|| q931_facility(pri, call)) {
 		pri_message(pri, "Could not schedule facility message for divertingLegInfo1\n");
 		return -1;
 	}
@@ -4759,14 +2047,724 @@ int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call)
 	return 0;
 }
 
-int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call, int call_status)
+int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call,
+	int call_status)
 {
-	rose_call_transfer_complete_encode(pri, call, call_status);
-
-	if (q931_facility(pri, call)) {
-		pri_message(pri, "Could not schedule facility message for callTransferComplete\n");
+	if (rose_call_transfer_complete_encode(pri, call, call_status)
+		|| q931_facility(pri, call)) {
+		pri_message(pri,
+			"Could not schedule facility message for callTransferComplete\n");
 		return -1;
 	}
 
 	return 0;
+}
+
+/*!
+ * \brief Handle the ROSE reject message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which the message came.
+ * \param ie Raw ie contents.
+ * \param header Decoded facility header before ROSE.
+ * \param reject Decoded ROSE reject message contents.
+ *
+ * \return Nothing
+ */
+void rose_handle_reject(struct pri *ctrl, q931_call *call, q931_ie *ie,
+	const struct fac_extension_header *header, const struct rose_msg_reject *reject)
+{
+	pri_error(ctrl, "ROSE REJECT:\n");
+	if (reject->invoke_id_present) {
+		pri_error(ctrl, "\tINVOKE ID: %d\n", reject->invoke_id);
+	}
+	pri_error(ctrl, "\tPROBLEM: %s\n", rose_reject2str(reject->code));
+}
+
+/*!
+ * \brief Handle the ROSE error message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which the message came.
+ * \param ie Raw ie contents.
+ * \param header Decoded facility header before ROSE.
+ * \param error Decoded ROSE error message contents.
+ *
+ * \return Nothing
+ */
+void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
+	const struct fac_extension_header *header, const struct rose_msg_error *error)
+{
+	const char *dms100_operation;
+	struct subcommand *c_subcmd;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_ERROR;
+		c_subcmd->cc_error.error_value = CCERROR_UNSPECIFIED;
+		break;
+	default:
+		break;
+	}
+
+	pri_error(ctrl, "ROSE RETURN ERROR:\n");
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_DMS100:
+		switch (error->invoke_id) {
+		case ROSE_DMS100_RLT_OPERATION_IND:
+			dms100_operation = "RLT_OPERATION_IND";
+			break;
+		case ROSE_DMS100_RLT_THIRD_PARTY:
+			dms100_operation = "RLT_THIRD_PARTY";
+			break;
+		default:
+			dms100_operation = NULL;
+			break;
+		}
+		if (dms100_operation) {
+			pri_error(ctrl, "\tOPERATION: %s\n", dms100_operation);
+			break;
+		}
+		/* fall through */
+	default:
+		pri_error(ctrl, "\tINVOKE ID: %d\n", error->invoke_id);
+		break;
+	}
+	pri_error(ctrl, "\tERROR: %s\n", rose_error2str(error->code));
+}
+
+/*!
+ * \brief Handle the ROSE result message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which the message came.
+ * \param ie Raw ie contents.
+ * \param header Decoded facility header before ROSE.
+ * \param result Decoded ROSE result message contents.
+ *
+ * \return Nothing
+ */
+void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
+	const struct fac_extension_header *header, const struct rose_msg_result *result)
+{
+	struct subcommand *c_subcmd;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_DMS100:
+		switch (result->invoke_id) {
+		case ROSE_DMS100_RLT_OPERATION_IND:
+			if (result->operation != ROSE_DMS100_RLT_OperationInd) {
+				pri_message(ctrl, "Invalid Operation value in return result! %s\n",
+					rose_operation2str(result->operation));
+				break;
+			}
+
+			/* We have enough data to transfer the call */
+			call->rlt_call_id = result->args.dms100.RLT_OperationInd.call_id;
+			call->transferable = 1;
+			break;
+		case ROSE_DMS100_RLT_THIRD_PARTY:
+			if (ctrl->debug & PRI_DEBUG_APDU) {
+				pri_message(ctrl, "Successfully completed RLT transfer!\n");
+			}
+			break;
+		default:
+			pri_message(ctrl, "Could not parse invoke of type %d!\n", result->invoke_id);
+			break;
+		}
+		return;
+	default:
+		break;
+	}
+
+	switch (result->operation) {
+#if 0	/* Not handled yet */
+	case ROSE_None:
+		/*
+		 * This is simply a positive ACK to the invoke request.
+		 * The invoke ID must be used to distinguish between outstanding
+		 * invoke requests.
+		 */
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_ActivationDiversion:
+		break;
+	case ROSE_ETSI_DeactivationDiversion:
+		break;
+	case ROSE_ETSI_InterrogationDiversion:
+		break;
+	case ROSE_ETSI_CallDeflection:
+		break;
+	case ROSE_ETSI_CallRerouting:
+		break;
+	case ROSE_ETSI_InterrogateServedUserNumbers:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_ChargingRequest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_EctExecute:
+		break;
+	case ROSE_ETSI_ExplicitEctExecute:
+		break;
+	case ROSE_ETSI_EctLinkIdRequest:
+		break;
+	case ROSE_ETSI_EctLoopTest:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CallTransferIdentify:
+		break;
+	case ROSE_QSIG_CallTransferInitiate:
+		break;
+	case ROSE_QSIG_CallTransferSetup:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_ActivateDiversionQ:
+		break;
+	case ROSE_QSIG_DeactivateDiversionQ:
+		break;
+	case ROSE_QSIG_InterrogateDiversionQ:
+		break;
+	case ROSE_QSIG_CheckRestriction:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_CallRerouting:
+		if (ctrl->debug & PRI_DEBUG_APDU) {
+			pri_message(ctrl, "Successfully completed QSIG CF callRerouting!\n");
+		}
+		break;
+	case ROSE_QSIG_CcbsRequest:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_CCBSREQUEST_RR;
+		c_subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation =
+			result->args.qsig.CcbsRequest.no_path_reservation;
+		c_subcmd->cc_ccbs_rr.cc_request_res.retain_service =
+			result->args.qsig.CcbsRequest.retain_service;
+		c_subcmd->cc_ccbs_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
+		break;
+	case ROSE_QSIG_CcnrRequest:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_CCNRREQUEST_RR;
+		c_subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation =
+			result->args.qsig.CcnrRequest.no_path_reservation;
+		c_subcmd->cc_ccnr_rr.cc_request_res.retain_service =
+			result->args.qsig.CcnrRequest.retain_service;
+		c_subcmd->cc_ccnr_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CcPathReserve:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_MWIActivate:
+		break;
+	case ROSE_QSIG_MWIDeactivate:
+		break;
+	case ROSE_QSIG_MWIInterrogate:
+		break;
+#endif	/* Not handled yet */
+	default:
+		if (ctrl->debug & PRI_DEBUG_APDU) {
+			pri_message(ctrl, "!! ROSE result operation not handled! %s\n",
+				rose_operation2str(result->operation));
+		}
+		break;
+	}
+}
+
+/*!
+ * \brief Handle the ROSE invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which the message came.
+ * \param ie Raw ie contents.
+ * \param header Decoded facility header before ROSE.
+ * \param invoke Decoded ROSE invoke message contents.
+ *
+ * \return Nothing
+ */
+void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
+	const struct fac_extension_header *header, const struct rose_msg_invoke *invoke)
+{
+	struct subcommand *c_subcmd;
+
+	switch (invoke->operation) {
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_ActivationDiversion:
+		break;
+	case ROSE_ETSI_DeactivationDiversion:
+		break;
+	case ROSE_ETSI_ActivationStatusNotificationDiv:
+		break;
+	case ROSE_ETSI_DeactivationStatusNotificationDiv:
+		break;
+	case ROSE_ETSI_InterrogationDiversion:
+		break;
+	case ROSE_ETSI_DiversionInformation:
+		break;
+	case ROSE_ETSI_CallDeflection:
+		break;
+	case ROSE_ETSI_CallRerouting:
+		break;
+	case ROSE_ETSI_InterrogateServedUserNumbers:
+		break;
+	case ROSE_ETSI_DivertingLegInformation1:
+		break;
+	case ROSE_ETSI_DivertingLegInformation2:
+		break;
+	case ROSE_ETSI_DivertingLegInformation3:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_ETSI_ChargingRequest:
+		/* Ignore messsage */
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_AOCSCurrency:
+		break;
+	case ROSE_ETSI_AOCSSpecialArr:
+		break;
+	case ROSE_ETSI_AOCDCurrency:
+		break;
+	case ROSE_ETSI_AOCDChargingUnit:
+		break;
+	case ROSE_ETSI_AOCECurrency:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_ETSI_AOCEChargingUnit:
+		call->aoc_units = 0;
+		if (invoke->args.etsi.AOCEChargingUnit.type == 1
+			&& !invoke->args.etsi.AOCEChargingUnit.charging_unit.free_of_charge) {
+			unsigned index;
+
+			for (index =
+				invoke->args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.
+				num_records; index--;) {
+				if (!invoke->args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.
+					list[index].not_available) {
+					call->aoc_units +=
+						invoke->args.etsi.AOCEChargingUnit.charging_unit.specific.
+						recorded.list[index].number_of_units;
+				}
+			}
+		}
+		/* the following function is currently not used - just to make the compiler happy */
+		if (0) {
+			/* use this function to forward the aoc-e on a bridged channel */
+			aoc_aoce_charging_unit_encode(ctrl, call, call->aoc_units);
+		}
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_ITU_IdentificationOfCharge:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_ETSI_EctExecute:
+		break;
+	case ROSE_ETSI_ExplicitEctExecute:
+		break;
+	case ROSE_ETSI_RequestSubaddress:
+		break;
+	case ROSE_ETSI_SubaddressTransfer:
+		break;
+	case ROSE_ETSI_EctLinkIdRequest:
+		break;
+	case ROSE_ETSI_EctInform:
+		break;
+	case ROSE_ETSI_EctLoopTest:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_CallingName:
+		if (invoke->args.qsig.CallingName.name.presentation == 1) {
+			libpri_copy_string(call->callername,
+				(char *) invoke->args.qsig.CallingName.name.data,
+				sizeof(call->callername));
+		} else {
+			call->callername[0] = '\0';
+		}
+		break;
+	case ROSE_QSIG_CalledName:
+		if (invoke->args.qsig.CalledName.name.presentation == 1) {
+			libpri_copy_string(call->calledname,
+				(char *) invoke->args.qsig.CalledName.name.data,
+				sizeof(call->calledname));
+		} else {
+			call->calledname[0] = '\0';
+		}
+		break;
+	case ROSE_QSIG_ConnectedName:
+		if (invoke->args.qsig.ConnectedName.name.presentation == 1) {
+			libpri_copy_string(call->connectedname,
+				(char *) invoke->args.qsig.ConnectedName.name.data,
+				sizeof(call->connectedname));
+		} else {
+			call->connectedname[0] = '\0';
+		}
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_BusyName:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CallTransferIdentify:
+		break;
+	case ROSE_QSIG_CallTransferAbandon:
+		break;
+	case ROSE_QSIG_CallTransferInitiate:
+		break;
+	case ROSE_QSIG_CallTransferSetup:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_CallTransferActive:
+		call->ctactiveflag = 1;
+		call->ctactivenum[0] = '\0';
+		call->ctactiveplan = 0;
+		call->ctactivepres =
+			presentation_for_q931(ctrl,
+				invoke->args.qsig.CallTransferActive.connected.presentation);
+		switch (invoke->args.qsig.CallTransferActive.connected.presentation) {
+		case 0:	/* presentationAllowedAddress */
+			libpri_copy_string(call->ctactivenum, (char *)
+				invoke->args.qsig.CallTransferActive.connected.screened.number.str,
+				sizeof(call->ctactivenum));
+			/* fall through */
+		case 3:	/* presentationRestrictedAddress */
+			call->ctactivepres |=
+				invoke->args.qsig.CallTransferActive.connected.screened.
+				screening_indicator;
+			call->ctactiveplan =
+				numbering_plan_for_q931(ctrl,
+					invoke->args.qsig.CallTransferActive.connected.screened.number.plan)
+				| typeofnumber_for_q931(ctrl,
+					invoke->args.qsig.CallTransferActive.connected.screened.number.ton);
+			break;
+		default:
+			break;
+		}
+		call->ctactivename[0] = '\0';
+		if (invoke->args.qsig.CallTransferActive.connected_name_present) {
+			switch (invoke->args.qsig.CallTransferActive.connected_name.presentation) {
+			case 1:	/* presentation_allowed */
+				libpri_copy_string(call->ctactivename,
+					(char *) invoke->args.qsig.CallTransferActive.connected_name.data,
+					sizeof(call->ctactivename));
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+	case ROSE_QSIG_CallTransferComplete:
+		call->ctcompleteflag = 1;
+		call->ctcompletenum[0] = '\0';
+		call->ctcompleteplan = 0;
+		call->ctcompletepres =
+			presentation_for_q931(ctrl,
+				invoke->args.qsig.CallTransferComplete.redirection.presentation);
+		switch (invoke->args.qsig.CallTransferComplete.redirection.presentation) {
+		case 0:	/* presentationAllowedNumber */
+			libpri_copy_string(call->ctcompletenum, (char *)
+				invoke->args.qsig.CallTransferComplete.redirection.screened.number.str,
+				sizeof(call->ctcompletenum));
+			/* fall through */
+		case 3:	/* presentationRestrictedNumber */
+			call->ctcompletepres |=
+				invoke->args.qsig.CallTransferComplete.redirection.screened.
+				screening_indicator;
+			call->ctcompleteplan =
+				numbering_plan_for_q931(ctrl,
+					invoke->args.qsig.CallTransferComplete.redirection.screened.number.
+					plan)
+				| typeofnumber_for_q931(ctrl,
+					invoke->args.qsig.CallTransferComplete.redirection.screened.number.
+					ton);
+			break;
+		default:
+			break;
+		}
+		call->ctcompletecallstatus = invoke->args.qsig.CallTransferComplete.call_status;
+		call->ctcompletename[0] = '\0';
+		if (invoke->args.qsig.CallTransferComplete.redirection_name_present) {
+			switch (invoke->args.qsig.CallTransferComplete.redirection_name.presentation) {
+			case 1:	/* presentation_allowed */
+				libpri_copy_string(call->ctcompletename,
+					(char *) invoke->args.qsig.CallTransferComplete.redirection_name.
+					data, sizeof(call->ctcompletename));
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+#if 0	/* This was incomplete */
+	case ROSE_QSIG_CallTransferUpdate:
+		switch (invoke->args.qsig.CallTransferUpdate.redirection.presentation) {
+		case 0:	/* presentationAllowedNumber */
+		case 3:	/* presentationRestrictedNumber */
+			libpri_copy_string(call->callernum, (char *)
+				invoke->args.qsig.CallTransferUpdate.redirection.screened.number.str,
+				sizeof(call->callernum));
+			break;
+		default:
+			call->callernum[0] = '\0';
+			break;
+		}
+		call->callername[0] = '\0';
+		if (invoke->args.qsig.CallTransferUpdate.redirection_name_present) {
+			switch (invoke->args.qsig.CallTransferUpdate.redirection_name.presentation) {
+			case 1:	/* presentation_allowed */
+			case 2:	/* presentation_restricted */
+				libpri_copy_string(call->callername,
+					(char *) invoke->args.qsig.CallTransferUpdate.redirection_name.data,
+					sizeof(call->callername));
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+#endif	/* This was incomplete */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_SubaddressTransfer:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_PathReplacement:
+		anfpr_pathreplacement_respond(ctrl, call, ie);
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_ActivateDiversionQ:
+		break;
+	case ROSE_QSIG_DeactivateDiversionQ:
+		break;
+	case ROSE_QSIG_InterrogateDiversionQ:
+		break;
+	case ROSE_QSIG_CheckRestriction:
+		break;
+	case ROSE_QSIG_CallRerouting:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_DivertingLegInformation1:
+		call->divleginfo1activeflag = 1;
+		if (invoke->args.qsig.DivertingLegInformation1.subscription_option ==
+			QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR) {
+			call->divertedtopres = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
+			libpri_copy_string(call->divertedtonum,
+				(char *) invoke->args.qsig.DivertingLegInformation1.nominated_number.str,
+				sizeof(call->divertedtonum));
+		} else {
+			call->divertedtopres = PRES_PROHIB_USER_NUMBER_NOT_SCREENED;
+			call->divertedtonum[0] = '\0';
+		}
+		call->divertedtoplan =
+			numbering_plan_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation1.nominated_number.plan)
+			| typeofnumber_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation1.nominated_number.ton);
+		call->divertedtoreason = redirectingreason_for_q931(ctrl,
+			invoke->args.qsig.DivertingLegInformation1.diversion_reason);
+		++call->divertedtocount;
+		break;
+	case ROSE_QSIG_DivertingLegInformation2:
+		call->redirectingcount =
+			invoke->args.qsig.DivertingLegInformation2.diversion_counter;
+		call->origredirectingreason = QSIG_DIVERT_REASON_UNKNOWN;
+		if (invoke->args.qsig.DivertingLegInformation2.original_diversion_reason_present) {
+			call->origredirectingreason = redirectingreason_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation2.original_diversion_reason);
+		}
+		call->redirectingreason = redirectingreason_for_q931(ctrl,
+			invoke->args.qsig.DivertingLegInformation2.diversion_reason);
+		call->redirectingpres = PRES_UNAVAILABLE;
+		call->redirectingnum[0] = '\0';
+		call->redirectingplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
+		if (invoke->args.qsig.DivertingLegInformation2.diverting_present) {
+			call->redirectingpres =
+				presentation_for_q931(ctrl,
+					invoke->args.qsig.DivertingLegInformation2.diverting.presentation);
+			switch (invoke->args.qsig.DivertingLegInformation2.diverting.presentation) {
+			case 0:	/* presentationAllowedNumber */
+			case 3:	/* presentationRestrictedNumber */
+				libpri_copy_string(call->redirectingnum, (char *)
+					invoke->args.qsig.DivertingLegInformation2.diverting.number.str,
+					sizeof(call->redirectingnum));
+				call->redirectingplan =
+					numbering_plan_for_q931(ctrl,
+						invoke->args.qsig.DivertingLegInformation2.diverting.number.plan)
+					| typeofnumber_for_q931(ctrl,
+						invoke->args.qsig.DivertingLegInformation2.diverting.number.ton);
+				break;
+			default:
+				break;
+			}
+		}
+		if (invoke->args.qsig.DivertingLegInformation2.original_called_present) {
+			call->origcalledpres =
+				presentation_for_q931(ctrl,
+					invoke->args.qsig.DivertingLegInformation2.original_called.
+					presentation);
+			switch (invoke->args.qsig.DivertingLegInformation2.original_called.
+				presentation) {
+			case 0:	/* presentationAllowedNumber */
+			case 3:	/* presentationRestrictedNumber */
+				libpri_copy_string(call->origcallednum, (char *)
+					invoke->args.qsig.DivertingLegInformation2.original_called.number.
+					str, sizeof(call->origcallednum));
+				call->origcalledplan =
+					numbering_plan_for_q931(ctrl,
+						invoke->args.qsig.DivertingLegInformation2.original_called.
+						number.plan)
+					| typeofnumber_for_q931(ctrl,
+						invoke->args.qsig.DivertingLegInformation2.original_called.
+						number.ton);
+				break;
+			default:
+				call->origcallednum[0] = '\0';
+				call->origcalledplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
+				break;
+			}
+		}
+		call->redirectingname[0] = '\0';
+		if (invoke->args.qsig.DivertingLegInformation2.redirecting_name_present) {
+			switch (invoke->args.qsig.DivertingLegInformation2.redirecting_name.
+				presentation) {
+			case 1:	/* presentation_allowed */
+				libpri_copy_string(call->redirectingname, (char *)
+					invoke->args.qsig.DivertingLegInformation2.redirecting_name.data,
+					sizeof(call->redirectingname));
+				break;
+			default:
+				break;
+			}
+		}
+		call->origcalledname[0] = '\0';
+		if (invoke->args.qsig.DivertingLegInformation2.original_called_name_present) {
+			switch (invoke->args.qsig.DivertingLegInformation2.original_called_name.
+				presentation) {
+			case 1:	/* presentation_allowed */
+				libpri_copy_string(call->origcalledname, (char *)
+					invoke->args.qsig.DivertingLegInformation2.original_called_name.data,
+					sizeof(call->origcalledname));
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+	case ROSE_QSIG_DivertingLegInformation3:
+		call->divleginfo3activeflag = 1;
+		call->divertedtoname[0] = '\0';
+		if (invoke->args.qsig.DivertingLegInformation3.redirection_name_present
+			&& invoke->args.qsig.DivertingLegInformation3.
+			presentation_allowed_indicator) {
+			switch (invoke->args.qsig.DivertingLegInformation3.redirection_name.
+				presentation) {
+			case 1:	/* presentation_allowed */
+				libpri_copy_string(call->divertedtoname, (char *)
+					invoke->args.qsig.DivertingLegInformation3.redirection_name.data,
+					sizeof(call->divertedtoname));
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CfnrDivertedLegFailed:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CcbsRequest:
+		break;
+	case ROSE_QSIG_CcnrRequest:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_CcCancel:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_CANCEL_INV;
+		c_subcmd->cc_cancel_inv.cc_optional_arg.number_A[0] = '\0';
+		c_subcmd->cc_cancel_inv.cc_optional_arg.number_B[0] = '\0';
+		c_subcmd->cc_cancel_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
+		if (invoke->args.qsig.CcCancel.full_arg_present) {
+			libpri_copy_string(c_subcmd->cc_cancel_inv.cc_optional_arg.number_A,
+				(char *) invoke->args.qsig.CcCancel.number_a.str,
+				sizeof(c_subcmd->cc_cancel_inv.cc_optional_arg.number_A));
+			libpri_copy_string(c_subcmd->cc_cancel_inv.cc_optional_arg.number_B,
+				(char *) invoke->args.qsig.CcCancel.number_b.str,
+				sizeof(c_subcmd->cc_cancel_inv.cc_optional_arg.number_B));
+		}
+		break;
+	case ROSE_QSIG_CcExecPossible:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_EXECPOSIBLE_INV;
+		c_subcmd->cc_execposible_inv.cc_optional_arg.number_A[0] = '\0';
+		c_subcmd->cc_execposible_inv.cc_optional_arg.number_B[0] = '\0';
+		c_subcmd->cc_execposible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
+		if (invoke->args.qsig.CcExecPossible.full_arg_present) {
+			libpri_copy_string(c_subcmd->cc_execposible_inv.cc_optional_arg.number_A,
+				(char *) invoke->args.qsig.CcExecPossible.number_a.str,
+				sizeof(c_subcmd->cc_execposible_inv.cc_optional_arg.number_A));
+			libpri_copy_string(c_subcmd->cc_execposible_inv.cc_optional_arg.number_B,
+				(char *) invoke->args.qsig.CcExecPossible.number_b.str,
+				sizeof(c_subcmd->cc_execposible_inv.cc_optional_arg.number_B));
+		}
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CcPathReserve:
+		break;
+#endif	/* Not handled yet */
+	case ROSE_QSIG_CcRingout:
+		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		if (!c_subcmd) {
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		c_subcmd->cmd = CMD_CC_RINGOUT_INV;
+		c_subcmd->cc_ringout_inv.cc_extension.cc_extension_tag = 0;
+		break;
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_CcSuspend:
+		break;
+	case ROSE_QSIG_CcResume:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_MWIActivate:
+		break;
+	case ROSE_QSIG_MWIDeactivate:
+		break;
+	case ROSE_QSIG_MWIInterrogate:
+		break;
+#endif	/* Not handled yet */
+	default:
+		if (ctrl->debug & PRI_DEBUG_APDU) {
+			pri_message(ctrl, "!! ROSE invoke operation not handled! %s\n",
+				rose_operation2str(invoke->operation));
+		}
+		break;
+	}
 }
