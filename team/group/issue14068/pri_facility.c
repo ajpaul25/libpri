@@ -1998,6 +1998,12 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
+	case ROSE_QSIG_ChargeRequest:
+		break;
+	case ROSE_QSIG_AocComplete:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
 	case ROSE_QSIG_CallTransferIdentify:
 		break;
 	case ROSE_QSIG_CallTransferInitiate:
@@ -2165,6 +2171,22 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_BusyName:
+		break;
+#endif	/* Not handled yet */
+#if 0	/* Not handled yet */
+	case ROSE_QSIG_ChargeRequest:
+		break;
+	case ROSE_QSIG_GetFinalCharge:
+		break;
+	case ROSE_QSIG_AocFinal:
+		break;
+	case ROSE_QSIG_AocInterim:
+		break;
+	case ROSE_QSIG_AocRate:
+		break;
+	case ROSE_QSIG_AocComplete:
+		break;
+	case ROSE_QSIG_AocDivChargeReq:
 		break;
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
