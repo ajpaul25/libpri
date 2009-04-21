@@ -1389,6 +1389,7 @@ static FUNC_SEND(transmit_facility)
 		return 0;
 
 	if (pri->debug & PRI_DEBUG_APDU) {
+		pri_message(pri, "Adding facility ie contents to send message:\n");
 		facility_decode_dump(pri, tmp->apdu, tmp->apdu_len);
 	}
 
