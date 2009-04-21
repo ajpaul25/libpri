@@ -101,8 +101,6 @@ int pri_call_apdu_queue_cleanup(q931_call *call);
 /* Adds the "standard" APDUs to a call */
 int pri_call_add_standard_apdus(struct pri *pri, q931_call *call);
 
-int add_qsigCcInv_facility_ie (struct pri *pri, q931_call *c, int messagetype);
-
 void asn1_dump(struct pri *ctrl, const unsigned char *start_asn1, const unsigned char *end);
 
 /* Forward declare some ROSE structures for the following prototypes */
