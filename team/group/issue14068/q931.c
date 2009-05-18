@@ -3374,7 +3374,6 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 static void clr_subcommands(struct pri_subcommands *sub)
 {
 	sub->counter_subcmd = 0;
-	sub->size_subcmd = sizeof(struct pri_subcommand);
 }
 
 static struct pri_subcommand *get_ptr_subcommand(struct pri_subcommands *sub)
@@ -3917,6 +3916,8 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 	case Q931_FACILITY:
 		{
 			int haveevent = 0;
+			struct pri_subcommand *subcmd;
+
 			clr_subcommands(&pri->ev.facility.subcmds);
 
 			if (c->newcall) {
@@ -3928,12 +3929,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				if (c->ctcompletecallstatus == 0) {
 					/* answered(0) */
-					struct pri_subcommand *subcmd;
-
 					pri_message(pri, "Got CT-Complete, callStatus = answered(0)\n");
-					pri->ev.e = PRI_EVENT_FACILITY;
-					pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-					pri->ev.facility.call = c;
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
@@ -3950,12 +3946,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 					}
 				} else if (c->ctcompletecallstatus == 1) {
 					/* alerting(1) */
-					struct pri_subcommand *subcmd;
-
 					pri_message(pri, "Got CT-Complete, callStatus = alerting(1)\n");
-					pri->ev.e = PRI_EVENT_FACILITY;
-					pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-					pri->ev.facility.call = c;
 
 					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 					if (subcmd) {
@@ -3979,14 +3970,9 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 					pri_message(pri, "illegal value for callStatus=%d\n", c->ctcompletecallstatus);
 				}
 			} else if (c->ctactiveflag) {
-				struct pri_subcommand *subcmd;
-
 				c->ctactiveflag = 0;
 
 				pri_message(pri, "Got CT-Active\n");
-				pri->ev.e = PRI_EVENT_FACILITY;
-				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-				pri->ev.facility.call = c;
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
@@ -4001,16 +3987,10 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 					haveevent = 1;
 					pri_message(pri, "CT-Active, sending facility PRI_SUBCMD_CONNECTED_LINE (%s/%s)\n", cmdcl->party.id.name, cmdcl->party.id.number);
 				}
-			}
-			else if (c->divleginfo1activeflag) {
-				struct pri_subcommand *subcmd;
-
+			} else if (c->divleginfo1activeflag) {
 				c->divleginfo1activeflag = 0;
 
 				pri_message(pri, "Got DivertingLegInformation1\n");
-				pri->ev.e = PRI_EVENT_FACILITY;
-				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-				pri->ev.facility.call = c;
 
 				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
 				if (subcmd) {
@@ -4032,8 +4012,20 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 				}
 			}
 
-			if (haveevent)
+			if (haveevent) {
+				pri->ev.e = PRI_EVENT_FACILITY;
+				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
+				pri->ev.facility.cref = c->cr;
+				pri->ev.facility.call = c;
+
+				/* Need to do this for backward compatibility with struct pri_event_facname */
+				libpri_copy_string(pri->ev.facility.callingname, c->callername, sizeof(pri->ev.facility.callingname));
+				libpri_copy_string(pri->ev.facility.callingnum, c->callernum, sizeof(pri->ev.facility.callingnum));
+				pri->ev.facility.callingpres = c->callerpres;
+				pri->ev.facility.callingplan = c->callerplan;
+
 				return Q931_RES_HAVEEVENT;
+			}
 		}
 		break;
 	case Q931_PROGRESS:

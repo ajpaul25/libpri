@@ -80,7 +80,8 @@
 #define PRI_EVENT_ANSWER		 8	/* Call has been answered (CONNECT) */
 #define PRI_EVENT_HANGUP_ACK	 9	/* Call hangup has been acknowledged */
 #define PRI_EVENT_RESTART_ACK	10	/* Restart complete on a given channel (RESTART_ACKNOWLEDGE) */
-#define PRI_EVENT_FACNAME		11	/* Caller*ID Name received on Facility */
+#define PRI_EVENT_FACNAME		11	/* Caller*ID Name received on Facility (DEPRECATED) */
+#define PRI_EVENT_FACILITY		11	/* Facility received (FACILITY) */
 #define PRI_EVENT_INFO_RECEIVED 12	/* Additional info (digits) received (INFORMATION) */
 #define PRI_EVENT_PROCEEDING	13	/* When we get CALL_PROCEEDING */
 #define PRI_EVENT_SETUP_ACK		14	/* When we get SETUP_ACKNOWLEDGE */
@@ -90,7 +91,6 @@
 #define PRI_EVENT_KEYPAD_DIGIT	18	/* When we receive during ACTIVE state (INFORMATION) */
 #define PRI_EVENT_SERVICE       19	/* SERVICE maintenance message */
 #define PRI_EVENT_SERVICE_ACK   20	/* SERVICE maintenance acknowledgement message */
-#define PRI_EVENT_FACILITY		21	/* Facility received (FACILITY) */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -415,6 +415,8 @@ struct pri_subcommand {
 	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
 	union {
+		/*! Reserve room for possible expansion to maintain ABI compatibility. */
+		char reserve_space[2048];
 		struct pri_subcmd_connected_line connected_line;
 		struct pri_subcmd_redirecting redirecting;
 	};
@@ -425,11 +427,6 @@ struct pri_subcommand {
 
 struct pri_subcommands {
 	int counter_subcmd;
-	/*!
-	 * \note This is set to sizeof(struct pri_subcommand) to
-	 * maintain ABI compatibility if more subcommand events are addd.
-	 */
-	unsigned size_subcmd;
 	struct pri_subcommand subcmd[PRI_MAX_SUBCOMMANDS];
 };
 
@@ -461,6 +458,7 @@ typedef struct pri_event_ringing {
 	char callednum[256];
 	int calledpres;
 	int calledplan;
+	struct pri_subcommands subcmds;
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -476,8 +474,10 @@ typedef struct pri_event_answer {
 	int connectedpres;
 	int connectedplan;
 	int source;
+	struct pri_subcommands subcmds;
 } pri_event_answer;
 
+/*! Deprecated replaced by struct pri_event_facility. */
 typedef struct pri_event_facname {
 	int e;
 	char callingname[256];
@@ -491,9 +491,13 @@ typedef struct pri_event_facname {
 
 struct pri_event_facility {
 	int e;
+	char callingname[256];		/*!< Deprecated, preserved for struct pri_event_facname compatibility */
+	char callingnum[256];		/*!< Deprecated, preserved for struct pri_event_facname compatibility */
 	int channel;
 	int cref;
 	q931_call *call;
+	int callingpres;			/*!< Presentation of Calling CallerID (Deprecated, preserved for struct pri_event_facname compatibility) */
+	int callingplan;			/*!< Dialing plan of Calling entity (Deprecated, preserved for struct pri_event_facname compatibility) */
 	struct pri_subcommands subcmds;
 };
 
@@ -531,6 +535,7 @@ typedef struct pri_event_ring {
 	int origredirectingreason;
 	int redirectingpres;
 	int redirectingcount;
+	struct pri_subcommands subcmds;
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -541,6 +546,7 @@ typedef struct pri_event_hangup {
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
+	struct pri_subcommands subcmds;
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -557,12 +563,14 @@ typedef struct pri_event_proceeding {
 	int progressmask;
 	int cause;
 	q931_call *call;
+	struct pri_subcommands subcmds;
 } pri_event_proceeding;
  
 typedef struct pri_event_setup_ack {
 	int e;
 	int channel;
 	q931_call *call;
+	struct pri_subcommands subcmds;
 } pri_event_setup_ack;
 
 typedef struct pri_event_notify {
@@ -576,6 +584,7 @@ typedef struct pri_event_keypad_digit {
 	int channel;
 	q931_call *call;
 	char digits[64];
+	struct pri_subcommands subcmds;
 } pri_event_keypad_digit;
 
 typedef struct pri_event_service {
@@ -595,7 +604,7 @@ typedef union {
 	pri_event_generic gen;		/* Generic view */
 	pri_event_restart restart;	/* Restart view */
 	pri_event_error	  err;		/* Error view */
-	pri_event_facname facname;	/* Caller*ID Name on Facility */
+	pri_event_facname facname;	/* Caller*ID Name on Facility (Deprecated, use pri_event.facility) */
 	pri_event_ring	  ring;		/* Ring */
 	pri_event_hangup  hangup;	/* Hang up */
 	pri_event_ringing ringing;	/* Ringing */
