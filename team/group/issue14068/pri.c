@@ -355,8 +355,6 @@ char *pri_event2str(int id)
 		return "Hangup ACK";
 	case PRI_EVENT_RESTART_ACK:
 		return "Restart ACK";
-	case PRI_EVENT_FACNAME:
-		return "FacName";
 	case PRI_EVENT_FACILITY:
 		return "Facility";
 	case PRI_EVENT_INFO_RECEIVED:
