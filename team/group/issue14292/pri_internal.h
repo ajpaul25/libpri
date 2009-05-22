@@ -38,6 +38,7 @@
 #define DBGHEAD __FILE__ ":%d %s: "
 #define DBGINFO __LINE__,__PRETTY_FUNCTION__
 
+/* BUGBUG Eliminate the need for the DIVERTEDSTATE_xxx defines below */
 /* divertedstate */
 #define DIVERTEDSTATE_NONE				0
 #define DIVERTEDSTATE_DIVERTED			1
@@ -182,8 +183,100 @@ struct apdu_event {
 	struct apdu_event *next;	/* Linked list pointer */
 };
 
-/* q931_call datastructure */
+enum Q931_PARTY_DATA_STATUS {
+	/*! Data is not initialized or available. */
+	Q931_PARTY_DATA_STATUS_INVALID,
+	/*! Data is valid, available, and has been handled. */
+	Q931_PARTY_DATA_STATUS_VALID,
+	/*! Data is valid and available but has changed. */
+	Q931_PARTY_DATA_STATUS_CHANGED,
+};
 
+/*! \brief Maximum name length plus null terminator (From ECMA-164) */
+#define PRI_MAX_NAME_LEN		(50 + 1)
+
+/*! \brief Q.SIG name information. */
+struct q931_party_name {
+	enum Q931_PARTY_DATA_STATUS status;
+	/*!
+	 * \brief Q.931 presentation-indicator encoded field 
+	 * \note Must tollerate the Q.931 screening-indicator field values being present. 
+	 */
+	unsigned char presentation;
+	/*!
+	 * \brief Character set the name is using.
+	 * \details
+	 * unknown(0),
+	 * iso8859-1(1),
+	 * enum-value-withdrawn-by-ITU-T(2)
+	 * iso8859-2(3),
+	 * iso8859-3(4),
+	 * iso8859-4(5),
+	 * iso8859-5(6),
+	 * iso8859-7(7),
+	 * iso10646-BmpString(8),
+	 * iso10646-utf-8String(9)
+	 */
+	unsigned char char_set;
+	/*! \brief Name data with terminator. */
+	char str[PRI_MAX_NAME_LEN];
+};
+
+/*! \brief Maximum phone number (address) length plus null terminator */
+#define PRI_MAX_NUMBER_LEN		(31 + 1)
+
+struct q931_party_number {
+	enum Q931_PARTY_DATA_STATUS status;
+	/*!
+	 * \brief Q.931 presentation-indicator and screening-indicator encoded fields
+	 */
+	unsigned char presentation;
+	/*! \brief Q.931 Type-Of-Number and numbering-plan encoded fields */
+	unsigned char plan;
+	/*! \brief Number data with terminator. */
+	char str[PRI_MAX_NUMBER_LEN];
+};
+
+/*! \brief Information needed to identify an endpoint in a call. */
+struct q931_party_id {
+	struct q931_party_name name;
+	struct q931_party_number number;
+};
+
+enum Q931_REDIRECTING_STATE {
+	/*!
+	 * \details
+	 * CDO-Idle/CDF-Inv-Idle
+	 */
+	Q931_REDIRECTING_STATE_IDLE,
+	/*!
+	 * \details
+	 * CDF-Inv-Wait - A DivLeg2 has been received and
+	 * we are waiting for valid presentation restriction information to send.
+	 */
+	Q931_REDIRECTING_STATE_PENDING_TX_DIV_LEG_3,
+	/*!
+	 * \details
+	 * CDO-Divert - A DivLeg1 has been received and
+	 * we are waiting for the presentation restriction information to come in.
+	 */
+	Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3,
+};
+
+/*! \brief Redirecting information struct */
+struct q931_party_redirecting {
+	/*! \brief Who is redirecting the call (Sent to the party the call is redirected toward) */
+	struct q931_party_id from;
+	/*! \brief Call is redirecting to a new party (Sent to the caller) */
+	struct q931_party_id to;
+	enum Q931_REDIRECTING_STATE state;
+	/*! \brief Number of times the call was redirected */
+	unsigned char count;
+	/*! \brief Redirection reasons */
+	unsigned char reason;
+};
+
+/* q931_call datastructure */
 struct q931_call {
 	struct pri *pri;	/* PRI */
 	int cr;				/* Call Reference */
@@ -215,8 +308,7 @@ struct q931_call {
 	int userl2;
 	int userl3;
 	int rateadaption;
-	
-	int sentchannel;
+
 	int justsignalling;		/* for a signalling-only connection */
 	int nochannelsignalling;
 
@@ -234,13 +326,6 @@ struct q931_call {
 	int peercallstate;		/* Call state of peer as reported */
 	int ourcallstate;		/* Our call state */
 	int sugcallstate;		/* Status call state */
-	
-	int callerplan;
-	int callerplanani;
-	int callerpres;			/* Caller presentation */
-	char callerani[256];	/* Caller */
-	char callernum[256];
-	char callername[256];
 
 	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
 	int ccrequestresult;
@@ -251,73 +336,64 @@ struct q931_call {
 	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
 
 	int ani2;               /* ANI II */
-	
-	int calledplan;
+
+/* BUGBUG need to check usage of elements in caller_id */
+	struct q931_party_id caller_id;
+
+/* BUGBUG need to check usage of elements in called_name */
+	struct q931_party_name called_name;
+
+	/*! \note called_number.presentation is not used */
+/* BUGBUG need to check usage of elements in called_number */
+/* BUGBUG Overlap dialing cannot wipe the called_number.str.  It needs to append and also put the digits in the keypad_digits. */
+	struct q931_party_number called_number;
 	int nonisdn;
-	char calledname[256];
-	char callednum[256];	/* Called Number */
 	int complete;			/* no more digits coming */
 	int newcall;			/* if the received message has a new call reference value */
 
 	int retranstimer;		/* Timer for retransmitting DISC */
 	int t308_timedout;		/* Whether t308 timed out once */
 
-	int redirectingplan;
-	int redirectingpres;
-	int redirectingreason;	      
-	int redirectingcount;
-	char redirectingnum[256];	/* Number of redirecting party */
-	char redirectingname[256];	/* Name of redirecting party */
+/* BUGBUG need to check usage of elements in redirecting */
+/* BUGBUG need to check usage of elements in redirecting.from */
+/* BUGBUG need to check usage of elements in redirecting.to */
+	struct q931_party_redirecting redirecting;
 
 	/* Filled in cases of multiple diversions */
-	int origcalledplan;
-	int origcalledpres;
 	int origredirectingreason;	/* Original reason for redirect (in cases of multiple redirects) */
-	char origcalledname[256];	/* Original name of person being called */
-	char origcallednum[256];	/* Orignal number of person being called */
+	/*! Originally called party */
+/* BUGBUG need to check usage of elements in orig_called */
+	struct q931_party_id orig_called;
 
-	int connectedplan;
-	int connectedpres;
-	char connectednum[256];
-	char connectedname[256];
+/* BUGBUG need to check usage of elements in connected_line */
+	struct q931_party_id connected_line;
+/* BUGBUG need to check usage of elements in ct_complete */
+	struct q931_party_id ct_complete;
+/* BUGBUG need to check usage of elements in ct_active */
+	struct q931_party_id ct_active;
 
 	/* divertingLegInformation1 */
 	int divleginfo1activeflag;
-	int divertedtoplan;
-	int divertedtopres;
-	int divertedtoreason;
-	char divertedtonum[256];
-	int divertedtocount;
 
 	/* divertingLegInformation3 */
 	int divleginfo3activeflag;
-	char divertedtoname[256];
-	int divertedstate;
 
 	/* callTransferComplete */
 	int ctcompleteflag;
-	int ctcompletepres;
-	int ctcompleteplan;
-	char ctcompletenum[256];
-	char ctcompletename[256];
 	int ctcompletecallstatus;
 
 	/* callTransferActive */
 	int ctactiveflag;
-	int ctactivepres;
-	int ctactiveplan;
-	char ctactivenum[256];
-	char ctactivename[256];
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];
-	char callingsubaddr[256];	/* Calling parties sub address */
+	char callingsubaddr[256];	/* Calling party subaddress */
 	
 	long aoc_units;				/* Advice of Charge Units */
 
 	struct apdu_event *apdus;	/* APDU queue for call */
 
-	int transferable;
+	int transferable;			/* RLT call is transferable */
 	unsigned int rlt_call_id;	/* RLT call id */
 
 	/* Bridged call info */
@@ -343,5 +419,11 @@ void libpri_copy_string(char *dst, const char *src, size_t size);
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
 
 void __pri_free_tei(struct pri *p);
+
+void q931_party_name_init(struct q931_party_name *name);
+void q931_party_number_init(struct q931_party_number *number);
+void q931_party_id_init(struct q931_party_id *id);
+void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
+int q931_party_id_presentation(const struct q931_party_id *id);
 
 #endif
