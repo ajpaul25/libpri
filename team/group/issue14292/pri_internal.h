@@ -333,9 +333,13 @@ struct q931_call {
 	/* QSIG cc infos (receive) */
 	struct pri_subcommands subcmds;
 
-	char keypad_digits[64];		/* Buffer for digits that come in KEYPAD_FACILITY */
-
 	int ani2;               /* ANI II */
+
+	/*! Buffer for digits that come in KEYPAD_FACILITY */
+	char keypad_digits[32 + 1];
+
+	/*! Current dialed digits to be sent or just received. */
+	char overlap_digits[PRI_MAX_NUMBER_LEN];
 
 /* BUGBUG need to check usage of elements in caller_id */
 	struct q931_party_id caller_id;
@@ -343,9 +347,12 @@ struct q931_call {
 /* BUGBUG need to check usage of elements in called_name */
 	struct q931_party_name called_name;
 
-	/*! \note called_number.presentation is not used */
-/* BUGBUG need to check usage of elements in called_number */
-/* BUGBUG Overlap dialing cannot wipe the called_number.str.  It needs to append and also put the digits in the keypad_digits. */
+	/*!
+	 * \brief Called party number.
+	 * \note The called_number.str is the accumulated overlap dial digits
+	 * and enbloc digits.
+	 * \note The called_number.presentation value is not used.
+	 */
 	struct q931_party_number called_number;
 	int nonisdn;
 	int complete;			/* no more digits coming */
