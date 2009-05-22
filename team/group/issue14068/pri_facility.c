@@ -392,6 +392,82 @@ static int presentation_for_q931(struct pri *ctrl, int presentation)
 	return value;
 }
 
+/*!
+ * \internal
+ * \brief Convert the Q.931 number presentation field to Q.SIG name presentation.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param presentation Q.931 presentation/screening octet.
+ * \param name_present Non-zero if the name is available.
+ *
+ * \return Name presentation enumeration value.
+ */
+static int qsig_name_presentation_from_q931(struct pri *ctrl, int presentation, int name_present)
+{
+	int value;
+
+	switch (presentation & PRI_PRES_RESTRICTION) {
+	case PRI_PRES_ALLOWED:
+		if (name_present) {
+			value = 1;	/* presentation_allowed */
+		} else {
+			value = 4;	/* name_not_available */
+		}
+		break;
+	default:
+		pri_message(ctrl, "!! Unsupported Q.931 number presentation value (%d)\n",
+			presentation);
+		/* fall through */
+	case PRI_PRES_RESTRICTED:
+		if (name_present) {
+			value = 2;	/* presentation_restricted */
+		} else {
+			value = 3;	/* presentation_restricted_null */
+		}
+		break;
+	case PRI_PRES_UNAVAILABLE:
+		value = 4;	/* name_not_available */
+		break;
+	}
+
+	return value;
+}
+
+/*!
+ * \internal
+ * \brief Convert the Q.SIG name presentation to Q.931 presentation field value.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param presentation Q.SIG name presentation value.
+ *
+ * \return Q.931 presentation field value.
+ */
+static int qsig_name_presentation_for_q931(struct pri *ctrl, int presentation)
+{
+	int value;
+
+	switch (presentation) {
+	case 1:	/* presentation_allowed */
+		value = PRI_PRES_ALLOWED;
+		break;
+	default:
+		pri_message(ctrl,
+			"!! Unsupported Q.SIG name presentation to Q.931 value (%d)\n",
+			presentation);
+		/* fall through */
+	case 2:	/* presentation_restricted */
+	case 3:	/* presentation_restricted_null */
+		value = PRI_PRES_RESTRICTED;
+		break;
+	case 0:	/* optional_name_not_present */
+	case 4:	/* name_not_available */
+		value = PRI_PRES_UNAVAILABLE;
+		break;
+	}
+
+	return value;
+}
+
 static int presentation_to_subscription(struct pri *pri, int presentation)
 {
 	/* derive subscription value from presentation value */
@@ -443,18 +519,22 @@ static unsigned char *enc_qsig_diverting_leg_information1(struct pri *ctrl,
 	msg.operation = ROSE_QSIG_DivertingLegInformation1;
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.args.qsig.DivertingLegInformation1.diversion_reason =
-		redirectingreason_from_q931(ctrl, call->divertedtoreason);
+		redirectingreason_from_q931(ctrl, call->redirecting.reason);
+
+	/* nominatedNr is the redirecting.to.number */
 	msg.args.qsig.DivertingLegInformation1.subscription_option =
-		presentation_to_subscription(ctrl, call->divertedtopres);
+		presentation_to_subscription(ctrl, call->redirecting.to.number.presentation);
 	msg.args.qsig.DivertingLegInformation1.nominated_number.plan =
-		numbering_plan_from_q931(ctrl, call->divertedtoplan);
+		numbering_plan_from_q931(ctrl, call->redirecting.to.number.plan);
 	msg.args.qsig.DivertingLegInformation1.nominated_number.ton =
-		typeofnumber_from_q931(ctrl, call->divertedtoplan);
+		typeofnumber_from_q931(ctrl, call->redirecting.to.number.plan);
 	libpri_copy_string((char *)
-		msg.args.qsig.DivertingLegInformation1.nominated_number.str, call->divertedtonum,
+		msg.args.qsig.DivertingLegInformation1.nominated_number.str,
+		call->redirecting.to.number.str,
 		sizeof(msg.args.qsig.DivertingLegInformation1.nominated_number.str));
 	msg.args.qsig.DivertingLegInformation1.nominated_number.length =
 		strlen((char *) msg.args.qsig.DivertingLegInformation1.nominated_number.str);
+
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
@@ -521,31 +601,37 @@ static unsigned char *enc_qsig_diverting_leg_information2(struct pri *ctrl,
 	msg.args.qsig.DivertingLegInformation2.diversion_counter = 1;
 
 	msg.args.qsig.DivertingLegInformation2.diversion_reason =
-		redirectingreason_from_q931(ctrl, call->redirectingreason);
+		redirectingreason_from_q931(ctrl, call->redirecting.reason);
 
-	/* divertingNr */
+	/* divertingNr is the redirecting.from.number */
 	msg.args.qsig.DivertingLegInformation2.diverting_present = 1;
 	msg.args.qsig.DivertingLegInformation2.diverting.presentation =
-		presentation_from_q931(ctrl, call->redirectingpres, call->redirectingnum[0]);
+		presentation_from_q931(ctrl, call->redirecting.from.number.presentation,
+			call->redirecting.from.number.str[0]);
 	msg.args.qsig.DivertingLegInformation2.diverting.number.plan =
-		numbering_plan_from_q931(ctrl, call->redirectingplan);
+		numbering_plan_from_q931(ctrl, call->redirecting.from.number.plan);
 	msg.args.qsig.DivertingLegInformation2.diverting.number.ton =
-		typeofnumber_from_q931(ctrl, call->redirectingplan);
+		typeofnumber_from_q931(ctrl, call->redirecting.from.number.plan);
 	libpri_copy_string((char *)
 		msg.args.qsig.DivertingLegInformation2.diverting.number.str,
-		call->redirectingnum,
+		call->redirecting.from.number.str,
 		sizeof(msg.args.qsig.DivertingLegInformation2.diverting.number.str));
 	msg.args.qsig.DivertingLegInformation2.diverting.number.length =
 		strlen((char *) msg.args.qsig.DivertingLegInformation2.diverting.number.str);
 
-	/* redirectingName */
-	if (call->redirectingname[0]) {
+	/* redirectingName is the redirecting.from.name */
+	if (call->redirecting.from.name.status != Q931_PARTY_DATA_STATUS_INVALID) {
+		call->redirecting.from.name.status = Q931_PARTY_DATA_STATUS_VALID;
 		msg.args.qsig.DivertingLegInformation2.redirecting_name_present = 1;
-		msg.args.qsig.DivertingLegInformation2.redirecting_name.presentation = 1;	/* presentation_allowed */
-		msg.args.qsig.DivertingLegInformation2.redirecting_name.char_set = 1;	/* iso8859-1 */
+		msg.args.qsig.DivertingLegInformation2.redirecting_name.presentation =
+			qsig_name_presentation_from_q931(ctrl,
+				call->redirecting.from.name.presentation,
+				call->redirecting.from.name.str[0]);
+		msg.args.qsig.DivertingLegInformation2.redirecting_name.char_set =
+			call->redirecting.from.name.char_set;
 		libpri_copy_string((char *)
 			msg.args.qsig.DivertingLegInformation2.redirecting_name.data,
-			call->redirectingname,
+			call->redirecting.from.name.str,
 			sizeof(msg.args.qsig.DivertingLegInformation2.redirecting_name.data));
 		msg.args.qsig.DivertingLegInformation2.redirecting_name.length = strlen((char *)
 			msg.args.qsig.DivertingLegInformation2.redirecting_name.data);
@@ -613,17 +699,23 @@ static unsigned char *enc_qsig_diverting_leg_information3(struct pri *ctrl,
 	msg.operation = ROSE_QSIG_DivertingLegInformation3;
 	msg.invoke_id = get_invokeid(ctrl);
 
-	/* 'connectedpres' also indicates if name presentation is allowed */
-	if ((call->divertedtopres & PRI_PRES_RESTRICTION) == PRI_PRES_ALLOWED) {
+	/* redirecting.to.number.presentation also indicates if name presentation is allowed */
+	if ((call->redirecting.to.number.presentation & PRI_PRES_RESTRICTION) == PRI_PRES_ALLOWED) {
 		msg.args.qsig.DivertingLegInformation3.presentation_allowed_indicator = 1;	/* TRUE */
 
-		if (call->divertedtoname[0]) {
+		/* redirectionName is the redirecting.to.name */
+		if (call->redirecting.to.name.status != Q931_PARTY_DATA_STATUS_INVALID) {
+			call->redirecting.to.name.status = Q931_PARTY_DATA_STATUS_VALID;
 			msg.args.qsig.DivertingLegInformation3.redirection_name_present = 1;
-			msg.args.qsig.DivertingLegInformation3.redirection_name.presentation = 1;	/* presentation_allowed */
-			msg.args.qsig.DivertingLegInformation3.redirection_name.char_set = 1;	/* iso8859-1 */
+			msg.args.qsig.DivertingLegInformation3.redirection_name.presentation =
+				qsig_name_presentation_from_q931(ctrl,
+					call->redirecting.to.name.presentation,
+					call->redirecting.to.name.str[0]);
+			msg.args.qsig.DivertingLegInformation3.redirection_name.char_set =
+				call->redirecting.to.name.char_set;
 			libpri_copy_string((char *)
 				msg.args.qsig.DivertingLegInformation3.redirection_name.data,
-				call->divertedtoname,
+				call->redirecting.to.name.str,
 				sizeof(msg.args.qsig.DivertingLegInformation3.redirection_name.data));
 			msg.args.qsig.DivertingLegInformation3.redirection_name.length =
 				strlen((char *)
@@ -853,11 +945,14 @@ static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos
 	memset(&msg, 0, sizeof(msg));
 	msg.operation = ROSE_QSIG_CallingName;
 	msg.invoke_id = get_invokeid(ctrl);
-	msg.args.qsig.CallingName.name.presentation = 1;	/* presentation_allowed */
-	msg.args.qsig.CallingName.name.char_set = 1;	/* iso8859-1 */
-	/* Truncate the callername if necessary. */
-	libpri_copy_string((char *) msg.args.qsig.CallingName.name.data, call->callername,
-		sizeof(msg.args.qsig.CallingName.name.data));
+
+	/* CallingName is the caller_id.name */
+	msg.args.qsig.CallingName.name.presentation = qsig_name_presentation_from_q931(ctrl,
+		call->caller_id.name.presentation, call->caller_id.name.str[0]);
+	msg.args.qsig.CallingName.name.char_set = call->caller_id.name.char_set;
+	/* Truncate the caller_id.name.str if necessary. */
+	libpri_copy_string((char *) msg.args.qsig.CallingName.name.data,
+		call->caller_id.name.str, sizeof(msg.args.qsig.CallingName.name.data));
 	msg.args.qsig.CallingName.name.length =
 		strlen((char *) msg.args.qsig.CallingName.name.data);
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
@@ -867,7 +962,7 @@ static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos
 
 /*!
  * \internal
- * \brief Send callername information.
+ * \brief Send caller name information.
  *
  * \note For PRI_SWITCH_NI2 and PRI_SWITCH_QSIG.
  *
@@ -884,7 +979,7 @@ static int add_callername_facility_ies(struct pri *ctrl, q931_call *call, int cp
 	unsigned char *end;
 	int mymessage;
 
-	if (!call->callername[0]) {
+	if (call->caller_id.name.status == Q931_PARTY_DATA_STATUS_INVALID) {
 		return 0;
 	}
 
@@ -904,6 +999,7 @@ static int add_callername_facility_ies(struct pri *ctrl, q931_call *call, int cp
 		 */
 	}
 
+	call->caller_id.name.status = Q931_PARTY_DATA_STATUS_VALID;
 	end = enc_qsig_calling_name(ctrl, buffer, buffer + sizeof(buffer), call);
 	if (!end) {
 		return -1;
@@ -1185,7 +1281,7 @@ static unsigned char *enc_qsig_call_rerouting(struct pri *ctrl, unsigned char *p
 		}
 	}
 
-	/* calledAddress */
+	/* calledAddress is the passed in dest number */
 	msg.args.qsig.CallRerouting.called.number.plan = 1;	/* public */
 	msg.args.qsig.CallRerouting.called.number.ton = 0;	/* unknown */
 	libpri_copy_string((char *) msg.args.qsig.CallRerouting.called.number.str, dest,
@@ -1199,7 +1295,7 @@ static unsigned char *enc_qsig_call_rerouting(struct pri *ctrl, unsigned char *p
 	msg.args.qsig.CallRerouting.q931ie.length = sizeof(q931ie);
 	memcpy(msg.args.qsig.CallRerouting.q931ie_contents, q931ie, sizeof(q931ie));
 
-	/* lastReroutingNr */
+	/* lastReroutingNr is the passed in original number */
 	msg.args.qsig.CallRerouting.last_rerouting.presentation = 0;	/* presentationAllowedNumber */
 	msg.args.qsig.CallRerouting.last_rerouting.number.plan = 1;	/* public */
 	msg.args.qsig.CallRerouting.last_rerouting.number.ton = 0;	/* unknown */
@@ -1210,7 +1306,7 @@ static unsigned char *enc_qsig_call_rerouting(struct pri *ctrl, unsigned char *p
 
 	msg.args.qsig.CallRerouting.subscription_option = 0;	/* noNotification */
 
-	/* callingNumber */
+	/* callingNumber is the passed in calling number */
 	msg.args.qsig.CallRerouting.calling.presentation = 0;	/* presentationAllowedNumber */
 	msg.args.qsig.CallRerouting.calling.screened.number.plan = 1;	/* public */
 	msg.args.qsig.CallRerouting.calling.screened.number.ton = 0;	/* unknown */
@@ -1245,8 +1341,9 @@ int qsig_cf_callrerouting(struct pri *ctrl, q931_call *call, const char *dest,
 	int res;
 
 	end =
-		enc_qsig_call_rerouting(ctrl, buffer, buffer + sizeof(buffer), call->callernum,
-		dest, original ? original : call->callednum, reason);
+		enc_qsig_call_rerouting(ctrl, buffer, buffer + sizeof(buffer),
+			call->caller_id.number.str, dest, original ? original :
+			call->called_number.str, reason);
 	if (!end) {
 		return -1;
 	}
@@ -1524,30 +1621,42 @@ static unsigned char *enc_qsig_call_transfer_complete(struct pri *ctrl,
 	msg.operation = ROSE_QSIG_CallTransferComplete;
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.args.qsig.CallTransferComplete.end_designation = 0;	/* primaryEnd */
-	msg.args.qsig.CallTransferComplete.redirection.presentation = 0;	/* presentationAllowedNumber */
+
+	/* redirectionNumber is the connected_line.number */
+	msg.args.qsig.CallTransferComplete.redirection.presentation =
+		presentation_from_q931(ctrl, call->connected_line.number.presentation,
+			call->connected_line.number.str[0]);
 	msg.args.qsig.CallTransferComplete.redirection.screened.screening_indicator =
-		call->connectedpres & 0x03;
+		call->connected_line.number.presentation & 0x03;
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.plan =
-		numbering_plan_from_q931(ctrl, call->connectedplan);
+		numbering_plan_from_q931(ctrl, call->connected_line.number.plan);
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.ton =
-		typeofnumber_from_q931(ctrl, call->connectedplan);
+		typeofnumber_from_q931(ctrl, call->connected_line.number.plan);
 	libpri_copy_string((char *)
 		msg.args.qsig.CallTransferComplete.redirection.screened.number.str,
-		call->connectednum,
+		call->connected_line.number.str,
 		sizeof(msg.args.qsig.CallTransferComplete.redirection.screened.number.str));
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.length =
 		strlen((char *)
 		msg.args.qsig.CallTransferComplete.redirection.screened.number.str);
-	if (call->connectedname[0]) {
-		msg.args.qsig.CallTransferComplete.redirection_name.presentation = 1;	/* presentation_allowed */
-		msg.args.qsig.CallTransferComplete.redirection_name.char_set = 1;	/* iso8859-1 */
+
+	/* redirectionName is the connected_line.name */
+	if (call->connected_line.name.status != Q931_PARTY_DATA_STATUS_INVALID) {
+		call->connected_line.name.status = Q931_PARTY_DATA_STATUS_VALID;
+		msg.args.qsig.CallTransferComplete.redirection_name.presentation =
+			qsig_name_presentation_from_q931(ctrl,
+				call->connected_line.name.presentation,
+				call->connected_line.name.str[0]);
+		msg.args.qsig.CallTransferComplete.redirection_name.char_set =
+			call->connected_line.name.char_set;
 		libpri_copy_string((char *)
 			msg.args.qsig.CallTransferComplete.redirection_name.data,
-			call->connectedname,
+			call->connected_line.name.str,
 			sizeof(msg.args.qsig.CallTransferComplete.redirection_name.data));
 		msg.args.qsig.CallTransferComplete.redirection_name.length =
 			strlen((char *) msg.args.qsig.CallTransferComplete.redirection_name.data);
 	}
+
 	if (call_status) {
 		msg.args.qsig.CallTransferComplete.call_status = 1;	/* alerting */
 	}
@@ -1617,13 +1726,17 @@ static unsigned char *enc_qsig_called_name(struct pri *ctrl, unsigned char *pos,
 	memset(&msg, 0, sizeof(msg));
 	msg.operation = ROSE_QSIG_CalledName;
 	msg.invoke_id = get_invokeid(ctrl);
-	msg.args.qsig.CalledName.name.presentation = 1;	/* presentation_allowed */
-	msg.args.qsig.CalledName.name.char_set = 1;	/* iso8859-1 */
+
+	/* CalledName is the connected_line.name */
+	msg.args.qsig.CalledName.name.presentation = qsig_name_presentation_from_q931(ctrl,
+		call->connected_line.name.presentation, call->connected_line.name.str[0]);
+	msg.args.qsig.CalledName.name.char_set = call->connected_line.name.char_set;
 	libpri_copy_string((char *)
-		msg.args.qsig.CalledName.name.data, call->connectedname,
+		msg.args.qsig.CalledName.name.data, call->connected_line.name.str,
 		sizeof(msg.args.qsig.CalledName.name.data));
 	msg.args.qsig.CalledName.name.length =
 		strlen((char *) msg.args.qsig.CalledName.name.data);
+
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
@@ -1684,13 +1797,17 @@ static unsigned char *enc_qsig_connected_name(struct pri *ctrl, unsigned char *p
 	memset(&msg, 0, sizeof(msg));
 	msg.operation = ROSE_QSIG_ConnectedName;
 	msg.invoke_id = get_invokeid(ctrl);
-	msg.args.qsig.ConnectedName.name.presentation = 1;	/* presentation_allowed */
-	msg.args.qsig.ConnectedName.name.char_set = 1;	/* iso8859-1 */
+
+	/* ConnectedName is the connected_line.name */
+	msg.args.qsig.ConnectedName.name.presentation = qsig_name_presentation_from_q931(ctrl,
+		call->connected_line.name.presentation, call->connected_line.name.str[0]);
+	msg.args.qsig.ConnectedName.name.char_set = call->connected_line.name.char_set;
 	libpri_copy_string((char *)
-		msg.args.qsig.ConnectedName.name.data, call->connectedname,
+		msg.args.qsig.ConnectedName.name.data, call->connected_line.name.str,
 		sizeof(msg.args.qsig.ConnectedName.name.data));
 	msg.args.qsig.ConnectedName.name.length =
 		strlen((char *) msg.args.qsig.ConnectedName.name.data);
+
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
@@ -1790,8 +1907,10 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 
 	if (pri->switchtype == PRI_SWITCH_QSIG) {
 		/* For Q.SIG it does network and cpe operations */
-		if (call->redirectingnum[0])
+		if (call->redirecting.from.number.status != Q931_PARTY_DATA_STATUS_INVALID) {
+			call->redirecting.from.number.status = Q931_PARTY_DATA_STATUS_VALID;
 			rose_diverting_leg_information2_encode(pri, call);
+		}
 		add_callername_facility_ies(pri, call, 1);
 		return 0;
 	}
@@ -2143,31 +2262,35 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CallingName:
-		if (invoke->args.qsig.CallingName.name.presentation == 1) {
-			libpri_copy_string(call->callername,
-				(char *) invoke->args.qsig.CallingName.name.data,
-				sizeof(call->callername));
-		} else {
-			call->callername[0] = '\0';
-		}
+		/* CallingName is put in caller_id.name */
+		call->caller_id.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->caller_id.name.presentation = qsig_name_presentation_for_q931(ctrl,
+			invoke->args.qsig.CallingName.name.presentation);
+		call->caller_id.name.char_set = invoke->args.qsig.CallingName.name.char_set;
+		libpri_copy_string(call->caller_id.name.str,
+			(char *) invoke->args.qsig.CallingName.name.data,
+			sizeof(call->caller_id.name.str));
 		break;
 	case ROSE_QSIG_CalledName:
-		if (invoke->args.qsig.CalledName.name.presentation == 1) {
-			libpri_copy_string(call->calledname,
-				(char *) invoke->args.qsig.CalledName.name.data,
-				sizeof(call->calledname));
-		} else {
-			call->calledname[0] = '\0';
-		}
+		/* CalledName is put in called.name */
+		call->called_name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->called_name.presentation = qsig_name_presentation_for_q931(ctrl,
+			invoke->args.qsig.CalledName.name.presentation);
+		call->called_name.char_set = invoke->args.qsig.CalledName.name.char_set;
+		libpri_copy_string(call->called_name.str,
+			(char *) invoke->args.qsig.CalledName.name.data,
+			sizeof(call->called_name.str));
 		break;
 	case ROSE_QSIG_ConnectedName:
-		if (invoke->args.qsig.ConnectedName.name.presentation == 1) {
-			libpri_copy_string(call->connectedname,
-				(char *) invoke->args.qsig.ConnectedName.name.data,
-				sizeof(call->connectedname));
-		} else {
-			call->connectedname[0] = '\0';
-		}
+		/* ConnectedName is put in connected_line.name */
+		call->connected_line.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->connected_line.name.presentation = qsig_name_presentation_for_q931(ctrl,
+			invoke->args.qsig.ConnectedName.name.presentation);
+		call->connected_line.name.char_set =
+			invoke->args.qsig.ConnectedName.name.char_set;
+		libpri_copy_string(call->connected_line.name.str,
+			(char *) invoke->args.qsig.ConnectedName.name.data,
+			sizeof(call->connected_line.name.str));
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_BusyName:
@@ -2201,61 +2324,63 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CallTransferActive:
 		call->ctactiveflag = 1;
-		call->ctactivenum[0] = '\0';
-		call->ctactiveplan = 0;
-		call->ctactivepres =
+
+		/* connectedAddress is put in ct_active.number */
+		call->ct_active.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->ct_active.number.presentation =
 			presentation_for_q931(ctrl,
 				invoke->args.qsig.CallTransferActive.connected.presentation);
 		switch (invoke->args.qsig.CallTransferActive.connected.presentation) {
 		case 0:	/* presentationAllowedAddress */
-			libpri_copy_string(call->ctactivenum, (char *)
-				invoke->args.qsig.CallTransferActive.connected.screened.number.str,
-				sizeof(call->ctactivenum));
-			/* fall through */
 		case 3:	/* presentationRestrictedAddress */
-			call->ctactivepres |=
+			libpri_copy_string(call->ct_active.number.str, (char *)
+				invoke->args.qsig.CallTransferActive.connected.screened.number.str,
+				sizeof(call->ct_active.number.str));
+			call->ct_active.number.presentation |=
 				invoke->args.qsig.CallTransferActive.connected.screened.
 				screening_indicator;
-			call->ctactiveplan =
+			call->ct_active.number.plan =
 				numbering_plan_for_q931(ctrl,
 					invoke->args.qsig.CallTransferActive.connected.screened.number.plan)
 				| typeofnumber_for_q931(ctrl,
 					invoke->args.qsig.CallTransferActive.connected.screened.number.ton);
 			break;
 		default:
+			call->ct_active.number.str[0] = '\0';
+			call->ct_active.number.plan = PRI_UNKNOWN;
 			break;
 		}
-		call->ctactivename[0] = '\0';
+
+		/* connectedName is put in ct_active.name */
+		call->ct_active.name.str[0] = '\0';
 		if (invoke->args.qsig.CallTransferActive.connected_name_present) {
-			switch (invoke->args.qsig.CallTransferActive.connected_name.presentation) {
-			case 1:	/* presentation_allowed */
-				libpri_copy_string(call->ctactivename,
-					(char *) invoke->args.qsig.CallTransferActive.connected_name.data,
-					sizeof(call->ctactivename));
-				break;
-			default:
-				break;
-			}
+			call->ct_active.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->ct_active.name.presentation = qsig_name_presentation_for_q931(ctrl,
+				invoke->args.qsig.CallTransferActive.connected_name.presentation);
+			call->ct_active.name.char_set =
+				invoke->args.qsig.CallTransferActive.connected_name.char_set;
+			libpri_copy_string(call->ct_active.name.str,
+				(char *) invoke->args.qsig.CallTransferActive.connected_name.data,
+				sizeof(call->ct_active.name.str));
 		}
 		break;
 	case ROSE_QSIG_CallTransferComplete:
 		call->ctcompleteflag = 1;
-		call->ctcompletenum[0] = '\0';
-		call->ctcompleteplan = 0;
-		call->ctcompletepres =
+
+		/* redirectionNumber is put in ct_complete.number */
+		call->ct_complete.number.presentation =
 			presentation_for_q931(ctrl,
 				invoke->args.qsig.CallTransferComplete.redirection.presentation);
 		switch (invoke->args.qsig.CallTransferComplete.redirection.presentation) {
 		case 0:	/* presentationAllowedNumber */
-			libpri_copy_string(call->ctcompletenum, (char *)
-				invoke->args.qsig.CallTransferComplete.redirection.screened.number.str,
-				sizeof(call->ctcompletenum));
-			/* fall through */
 		case 3:	/* presentationRestrictedNumber */
-			call->ctcompletepres |=
+			libpri_copy_string(call->ct_complete.number.str, (char *)
+				invoke->args.qsig.CallTransferComplete.redirection.screened.number.str,
+				sizeof(call->ct_complete.number.str));
+			call->ct_complete.number.presentation |=
 				invoke->args.qsig.CallTransferComplete.redirection.screened.
 				screening_indicator;
-			call->ctcompleteplan =
+			call->ct_complete.number.plan =
 				numbering_plan_for_q931(ctrl,
 					invoke->args.qsig.CallTransferComplete.redirection.screened.number.
 					plan)
@@ -2264,20 +2389,24 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 					ton);
 			break;
 		default:
+			call->ct_complete.number.str[0] = '\0';
+			call->ct_complete.number.plan = PRI_UNKNOWN;
 			break;
 		}
+
 		call->ctcompletecallstatus = invoke->args.qsig.CallTransferComplete.call_status;
-		call->ctcompletename[0] = '\0';
+
+		/* redirectionName is put in ct_complete.name */
+		call->ct_complete.name.str[0] = '\0';
 		if (invoke->args.qsig.CallTransferComplete.redirection_name_present) {
-			switch (invoke->args.qsig.CallTransferComplete.redirection_name.presentation) {
-			case 1:	/* presentation_allowed */
-				libpri_copy_string(call->ctcompletename,
-					(char *) invoke->args.qsig.CallTransferComplete.redirection_name.
-					data, sizeof(call->ctcompletename));
-				break;
-			default:
-				break;
-			}
+			call->ct_complete.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->ct_complete.name.presentation = qsig_name_presentation_for_q931(ctrl,
+				invoke->args.qsig.CallTransferComplete.redirection_name.presentation);
+			call->ct_complete.name.char_set =
+				invoke->args.qsig.CallTransferComplete.redirection_name.char_set;
+			libpri_copy_string(call->ct_complete.name.str,
+				(char *) invoke->args.qsig.CallTransferComplete.redirection_name.data,
+				sizeof(call->ct_complete.name.str));
 		}
 		break;
 #if 0	/* This was incomplete */
@@ -2285,22 +2414,22 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		switch (invoke->args.qsig.CallTransferUpdate.redirection.presentation) {
 		case 0:	/* presentationAllowedNumber */
 		case 3:	/* presentationRestrictedNumber */
-			libpri_copy_string(call->callernum, (char *)
+			libpri_copy_string(call->caller_id.number.str, (char *)
 				invoke->args.qsig.CallTransferUpdate.redirection.screened.number.str,
-				sizeof(call->callernum));
+				sizeof(call->caller_id.number.str));
 			break;
 		default:
-			call->callernum[0] = '\0';
+			call->caller_id.number.str[0] = '\0';
 			break;
 		}
-		call->callername[0] = '\0';
+		call->caller_id.name.str[0] = '\0';
 		if (invoke->args.qsig.CallTransferUpdate.redirection_name_present) {
 			switch (invoke->args.qsig.CallTransferUpdate.redirection_name.presentation) {
 			case 1:	/* presentation_allowed */
 			case 2:	/* presentation_restricted */
-				libpri_copy_string(call->callername,
+				libpri_copy_string(call->caller_id.name.str,
 					(char *) invoke->args.qsig.CallTransferUpdate.redirection_name.data,
-					sizeof(call->callername));
+					sizeof(call->caller_id.name.str));
 				break;
 			default:
 				break;
@@ -2329,49 +2458,58 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 #endif	/* Not handled yet */
 	case ROSE_QSIG_DivertingLegInformation1:
 		call->divleginfo1activeflag = 1;
+
+		/* nominatedNr is put in redirecting.to.number */
+		call->redirecting.to.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
 		if (invoke->args.qsig.DivertingLegInformation1.subscription_option ==
 			QSIG_NOTIFICATION_WITH_DIVERTED_TO_NR) {
-			call->divertedtopres = PRES_ALLOWED_USER_NUMBER_NOT_SCREENED;
-			libpri_copy_string(call->divertedtonum,
+			call->redirecting.to.number.presentation =
+				PRI_PRES_ALLOWED | PRI_PRES_USER_NUMBER_UNSCREENED;
+			libpri_copy_string(call->redirecting.to.number.str,
 				(char *) invoke->args.qsig.DivertingLegInformation1.nominated_number.str,
-				sizeof(call->divertedtonum));
+				sizeof(call->redirecting.to.number.str));
 		} else {
-			call->divertedtopres = PRES_PROHIB_USER_NUMBER_NOT_SCREENED;
-			call->divertedtonum[0] = '\0';
+			call->redirecting.to.number.presentation =
+				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
+			call->redirecting.to.number.str[0] = '\0';
 		}
-		call->divertedtoplan =
+		call->redirecting.to.number.plan =
 			numbering_plan_for_q931(ctrl,
 				invoke->args.qsig.DivertingLegInformation1.nominated_number.plan)
 			| typeofnumber_for_q931(ctrl,
 				invoke->args.qsig.DivertingLegInformation1.nominated_number.ton);
-		call->divertedtoreason = redirectingreason_for_q931(ctrl,
+
+		call->redirecting.reason = redirectingreason_for_q931(ctrl,
 			invoke->args.qsig.DivertingLegInformation1.diversion_reason);
-		++call->divertedtocount;
+		++call->redirecting.count;
 		break;
 	case ROSE_QSIG_DivertingLegInformation2:
-		call->redirectingcount =
+		call->redirecting.count =
 			invoke->args.qsig.DivertingLegInformation2.diversion_counter;
 		call->origredirectingreason = QSIG_DIVERT_REASON_UNKNOWN;
 		if (invoke->args.qsig.DivertingLegInformation2.original_diversion_reason_present) {
 			call->origredirectingreason = redirectingreason_for_q931(ctrl,
 				invoke->args.qsig.DivertingLegInformation2.original_diversion_reason);
 		}
-		call->redirectingreason = redirectingreason_for_q931(ctrl,
+		call->redirecting.reason = redirectingreason_for_q931(ctrl,
 			invoke->args.qsig.DivertingLegInformation2.diversion_reason);
-		call->redirectingpres = PRI_PRES_UNAVAILABLE;
-		call->redirectingnum[0] = '\0';
-		call->redirectingplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
+
+		/* divertingNr is put in redirecting.from.number */
+		call->redirecting.from.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->redirecting.from.number.presentation = PRI_PRES_UNAVAILABLE;
+		call->redirecting.from.number.str[0] = '\0';
+		call->redirecting.from.number.plan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
 		if (invoke->args.qsig.DivertingLegInformation2.diverting_present) {
-			call->redirectingpres =
+			call->redirecting.from.number.presentation =
 				presentation_for_q931(ctrl,
 					invoke->args.qsig.DivertingLegInformation2.diverting.presentation);
 			switch (invoke->args.qsig.DivertingLegInformation2.diverting.presentation) {
 			case 0:	/* presentationAllowedNumber */
 			case 3:	/* presentationRestrictedNumber */
-				libpri_copy_string(call->redirectingnum, (char *)
+				libpri_copy_string(call->redirecting.from.number.str, (char *)
 					invoke->args.qsig.DivertingLegInformation2.diverting.number.str,
-					sizeof(call->redirectingnum));
-				call->redirectingplan =
+					sizeof(call->redirecting.from.number.str));
+				call->redirecting.from.number.plan =
 					numbering_plan_for_q931(ctrl,
 						invoke->args.qsig.DivertingLegInformation2.diverting.number.plan)
 					| typeofnumber_for_q931(ctrl,
@@ -2381,8 +2519,11 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 				break;
 			}
 		}
+
+		/* originalCalledNr is put in orig_called.number */
 		if (invoke->args.qsig.DivertingLegInformation2.original_called_present) {
-			call->origcalledpres =
+			call->orig_called.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->orig_called.number.presentation =
 				presentation_for_q931(ctrl,
 					invoke->args.qsig.DivertingLegInformation2.original_called.
 					presentation);
@@ -2390,10 +2531,10 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 				presentation) {
 			case 0:	/* presentationAllowedNumber */
 			case 3:	/* presentationRestrictedNumber */
-				libpri_copy_string(call->origcallednum, (char *)
+				libpri_copy_string(call->orig_called.number.str, (char *)
 					invoke->args.qsig.DivertingLegInformation2.original_called.number.
-					str, sizeof(call->origcallednum));
-				call->origcalledplan =
+					str, sizeof(call->orig_called.number.str));
+				call->orig_called.number.plan =
 					numbering_plan_for_q931(ctrl,
 						invoke->args.qsig.DivertingLegInformation2.original_called.
 						number.plan)
@@ -2402,54 +2543,59 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 						number.ton);
 				break;
 			default:
-				call->origcallednum[0] = '\0';
-				call->origcalledplan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
+				call->orig_called.number.str[0] = '\0';
+				call->orig_called.number.plan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
 				break;
 			}
 		}
-		call->redirectingname[0] = '\0';
+
+		/* redirectingName is put in redirecting.from.name */
+		call->redirecting.from.name.str[0] = '\0';
 		if (invoke->args.qsig.DivertingLegInformation2.redirecting_name_present) {
-			switch (invoke->args.qsig.DivertingLegInformation2.redirecting_name.
-				presentation) {
-			case 1:	/* presentation_allowed */
-				libpri_copy_string(call->redirectingname, (char *)
-					invoke->args.qsig.DivertingLegInformation2.redirecting_name.data,
-					sizeof(call->redirectingname));
-				break;
-			default:
-				break;
-			}
+			call->redirecting.from.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->redirecting.from.name.presentation = qsig_name_presentation_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation2.redirecting_name.presentation);
+			call->redirecting.from.name.char_set =
+				invoke->args.qsig.DivertingLegInformation2.redirecting_name.char_set;
+			libpri_copy_string(call->redirecting.from.name.str,
+				(char *) invoke->args.qsig.DivertingLegInformation2.redirecting_name.data,
+				sizeof(call->redirecting.from.name.str));
 		}
-		call->origcalledname[0] = '\0';
+
+		/* originalCalledName is put in orig_called.name */
+		call->orig_called.name.str[0] = '\0';
 		if (invoke->args.qsig.DivertingLegInformation2.original_called_name_present) {
-			switch (invoke->args.qsig.DivertingLegInformation2.original_called_name.
-				presentation) {
-			case 1:	/* presentation_allowed */
-				libpri_copy_string(call->origcalledname, (char *)
-					invoke->args.qsig.DivertingLegInformation2.original_called_name.data,
-					sizeof(call->origcalledname));
-				break;
-			default:
-				break;
-			}
+			call->orig_called.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->orig_called.name.presentation = qsig_name_presentation_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation2.original_called_name.presentation);
+			call->orig_called.name.char_set =
+				invoke->args.qsig.DivertingLegInformation2.original_called_name.char_set;
+			libpri_copy_string(call->orig_called.name.str,
+				(char *) invoke->args.qsig.DivertingLegInformation2.original_called_name.data,
+				sizeof(call->orig_called.name.str));
 		}
 		break;
 	case ROSE_QSIG_DivertingLegInformation3:
 		call->divleginfo3activeflag = 1;
-		call->divertedtoname[0] = '\0';
+
+		if (!invoke->args.qsig.DivertingLegInformation3.presentation_allowed_indicator) {
+			call->redirecting.to.number.presentation =
+				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
+		}
+
+		/* redirectionName is put in redirecting.to.name */
+		call->redirecting.to.name.str[0] = '\0';
 		if (invoke->args.qsig.DivertingLegInformation3.redirection_name_present
 			&& invoke->args.qsig.DivertingLegInformation3.
-			presentation_allowed_indicator) {
-			switch (invoke->args.qsig.DivertingLegInformation3.redirection_name.
-				presentation) {
-			case 1:	/* presentation_allowed */
-				libpri_copy_string(call->divertedtoname, (char *)
-					invoke->args.qsig.DivertingLegInformation3.redirection_name.data,
-					sizeof(call->divertedtoname));
-				break;
-			default:
-				break;
-			}
+				presentation_allowed_indicator) {
+			call->redirecting.to.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+			call->redirecting.to.name.presentation = qsig_name_presentation_for_q931(ctrl,
+				invoke->args.qsig.DivertingLegInformation3.redirection_name.presentation);
+			call->redirecting.to.name.char_set =
+				invoke->args.qsig.DivertingLegInformation3.redirection_name.char_set;
+			libpri_copy_string(call->redirecting.to.name.str,
+				(char *) invoke->args.qsig.DivertingLegInformation3.redirection_name.data,
+				sizeof(call->redirecting.to.name.str));
 		}
 		break;
 #if 0	/* Not handled yet */

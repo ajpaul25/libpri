@@ -565,10 +565,21 @@ int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party
 	if (!pri || !call)
 		return -1;
 
-	libpri_copy_string(call->connectednum, connected->id.number, sizeof(call->connectednum));
-	libpri_copy_string(call->connectedname, connected->id.name, sizeof(call->connectedname));
-	call->connectedplan = connected->id.number_type;
-	call->connectedpres = connected->id.number_presentation;
+	call->connected_line.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
+	call->connected_line.number.presentation = connected->id.number_presentation;
+	call->connected_line.number.plan = connected->id.number_type;
+	libpri_copy_string(call->connected_line.number.str, connected->id.number,
+		sizeof(call->connected_line.number.str));
+
+	if (connected->id.name[0]) {
+		call->connected_line.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->connected_line.name.presentation = connected->id.number_presentation;
+		call->connected_line.name.char_set = 1;	/* iso8859-1 */
+		libpri_copy_string(call->connected_line.name.str, connected->id.name,
+			sizeof(call->connected_line.name.str));
+	} else {
+		q931_party_name_init(&call->connected_line.name);
+	}
 
 	if (pri->switchtype == PRI_SWITCH_QSIG) {
 		switch (call->ourcallstate) {
@@ -579,51 +590,45 @@ int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party
 		case Q931_CALL_STATE_OVERLAP_RECEIVING:
 		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 			/* queue updates for next ALERTING */
-			if (call->connectedname[0]) {
+			if (call->connected_line.name.str[0]) {
 				/* queue connectedName to be send with next Q931_ALERTING */
 				rose_called_name_encode(pri, call, Q931_ALERTING);
 			}
 
-			if (call->divertedstate != DIVERTEDSTATE_NONE) {
-				libpri_copy_string(call->divertedtonum, connected->id.number, sizeof(call->divertedtonum));
-				libpri_copy_string(call->divertedtoname, connected->id.name, sizeof(call->divertedtoname));
-				call->divertedtoplan = connected->id.number_type;
-				call->divertedtopres = connected->id.number_presentation;
+			if (call->redirecting.state != DIVERTEDSTATE_NONE) {
+				call->redirecting.to = call->connected_line;
 
-				if ((call->divertedstate == DIVERTEDSTATE_DIVERTED) && call->divertedtonum[0]) {
+				if ((call->redirecting.state == DIVERTEDSTATE_DIVERTED) && call->redirecting.to.number.str[0]) {
 					/* immediately send divertingLegInformation1 APDU  */
 					qsig_initiate_diverting_leg_information1(pri, call);
-					call->divertedstate = DIVERTEDSTATE_DIVLEGINFO1SEND;
+					call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO1SEND;
 				}
-				if ((call->divertedstate == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->divertedtoname[0]) {
+				if ((call->redirecting.state == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->redirecting.to.name.str[0]) {
 					/* queue divertingLegInformation3 to be send with next Q931_ALERTING */
 					rose_diverting_leg_information3_encode(pri, call, Q931_ALERTING);
-					call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+					call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO3SEND;
 				}
 			}
 			break;
 		case Q931_CALL_STATE_CALL_RECEIVED:
 			/* queue updates for next CONNECT */
-			if (call->connectedname[0] && ((call->divertedstate == DIVERTEDSTATE_NONE) || (call->divertedstate == DIVERTEDSTATE_DIVLEGINFO3SEND))) {
+			if (call->connected_line.name.str[0] && ((call->redirecting.state == DIVERTEDSTATE_NONE) || (call->redirecting.state == DIVERTEDSTATE_DIVLEGINFO3SEND))) {
 				/* queue connectedName to be send with next Q931_CONNECT */
 				rose_connected_name_encode(pri, call, Q931_CONNECT);
 			}
 
-			if (call->divertedstate != DIVERTEDSTATE_NONE) {
-				libpri_copy_string(call->divertedtonum, connected->id.number, sizeof(call->divertedtonum));
-				libpri_copy_string(call->divertedtoname, connected->id.name, sizeof(call->divertedtoname));
-				call->divertedtoplan = connected->id.number_type;
-				call->divertedtopres = connected->id.number_presentation;
+			if (call->redirecting.state != DIVERTEDSTATE_NONE) {
+				call->redirecting.to = call->connected_line;
 
-				if ((call->divertedstate == DIVERTEDSTATE_DIVERTED) && call->divertedtonum[0]) {
+				if ((call->redirecting.state == DIVERTEDSTATE_DIVERTED) && call->redirecting.to.number.str[0]) {
 					/* queue divertingLegInformation1 to be send with next Q931_FACILITY */
 					rose_diverting_leg_information1_encode(pri, call);
-					call->divertedstate = DIVERTEDSTATE_DIVLEGINFO1SEND;
+					call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO1SEND;
 
-					if (call->divertedtoname[0]) {
+					if (call->redirecting.to.name.str[0]) {
 						/* queue divertingLegInformation3 to be send with next Q931_FACILITY */
 						rose_diverting_leg_information3_encode(pri, call, Q931_FACILITY);
-						call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+						call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO3SEND;
 					}
 
 					/* immediately send Q931_FACILITY */
@@ -631,10 +636,10 @@ int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party
 						pri_message(pri, "Could not schedule facility message for divertingLegInfo1+3\n");
 					}
 				}
-				if ((call->divertedstate == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->divertedtoname[0]) {
+				if ((call->redirecting.state == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->redirecting.to.name.str[0]) {
 					/* queue divertingLegInformation3 to be send with next Q931_CONNECT */
 					rose_diverting_leg_information3_encode(pri, call, Q931_CONNECT);
-					call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+					call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO3SEND;
 				}
 			}
 			break;
@@ -649,11 +654,22 @@ int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_re
 	if (!pri || !call)
 		return -1;
 
-	libpri_copy_string(call->divertedtonum, redirecting->to.number, sizeof(call->divertedtonum));
-	libpri_copy_string(call->divertedtoname, redirecting->to.name, sizeof(call->divertedtoname));
-	call->divertedtoplan = redirecting->to.number_type;
-	call->divertedtopres = redirecting->to.number_presentation;
-	call->divertedtoreason = redirecting->reason;
+	call->redirecting.to.number.status = Q931_PARTY_DATA_STATUS_CHANGED;
+	call->redirecting.to.number.presentation = redirecting->to.number_presentation;
+	call->redirecting.to.number.plan = redirecting->to.number_type;
+	libpri_copy_string(call->redirecting.to.number.str, redirecting->to.number,
+		sizeof(call->redirecting.to.number.str));
+
+	if (redirecting->to.name[0]) {
+		call->redirecting.to.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->redirecting.to.name.presentation = redirecting->to.number_presentation;
+		call->redirecting.to.name.char_set = 1;	/* iso8859-1 */
+		libpri_copy_string(call->redirecting.to.name.str, redirecting->to.name,
+			sizeof(call->redirecting.to.name.str));
+	} else {
+		q931_party_name_init(&call->redirecting.to.name);
+	}
+	call->redirecting.reason = redirecting->reason;
 
 	if (pri->switchtype == PRI_SWITCH_QSIG) {
 		switch (call->ourcallstate) {
@@ -663,17 +679,17 @@ int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_re
 			break;
 		case Q931_CALL_STATE_OVERLAP_RECEIVING:
 		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
-			call->divertedstate = DIVERTEDSTATE_DIVERTED;
+			call->redirecting.state = DIVERTEDSTATE_DIVERTED;
 
-			if (call->divertedtonum[0]) {
+			if (call->redirecting.to.number.str[0]) {
 				/* immediately send divertingLegInformation1 APDU */
 				qsig_initiate_diverting_leg_information1(pri, call);
-				call->divertedstate = DIVERTEDSTATE_DIVLEGINFO1SEND;
+				call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO1SEND;
 			}
-			if ((call->divertedstate == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->divertedtoname[0]) {
+			if ((call->redirecting.state == DIVERTEDSTATE_DIVLEGINFO1SEND) && call->redirecting.to.name.str[0]) {
 				/* queue divertingLegInformation3 to be send with next Q931_ALERTING */
 				rose_diverting_leg_information3_encode(pri, call, Q931_ALERTING);
-				call->divertedstate = DIVERTEDSTATE_DIVLEGINFO3SEND;
+				call->redirecting.state = DIVERTEDSTATE_DIVLEGINFO3SEND;
 			}
 			break;
 		default:
