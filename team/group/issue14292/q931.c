@@ -1284,10 +1284,37 @@ static int receive_calling_party_subaddr(int full_ie, struct pri *pri, q931_call
 
 static int receive_called_party_number(int full_ie, struct pri *pri, q931_call *call, int msgtype, q931_ie *ie, int len)
 {
+	size_t called_len;
+	size_t max_len;
+	char *called_end;
+
+	if (len < 3) {
+		return -1;
+	}
+
 	call->called_number.status = Q931_PARTY_DATA_STATUS_CHANGED;
 	call->called_number.plan = ie->data[0] & 0x7f;
-	/* copy digits to call->called_number.str */
- 	q931_get_number((unsigned char *) call->called_number.str, sizeof(call->called_number.str), ie->data + 1, len - 3);
+	if (msgtype == Q931_SETUP) {
+		q931_get_number((unsigned char *) call->called_number.str,
+			sizeof(call->called_number.str), ie->data + 1, len - 3);
+	} else if (call->ourcallstate == Q931_CALL_STATE_OVERLAP_RECEIVING) {
+		/*
+		 * Since we are receiving overlap digits now, we need to append
+		 * them to any previously received digits in call->called_number.str.
+		 */
+		called_len = strlen(call->called_number.str);
+		called_end = call->called_number.str + called_len;
+		max_len = (sizeof(call->called_number.str) - 1) - called_len;
+		if (max_len < len - 3) {
+			called_len = max_len;
+		} else {
+			called_len = len - 3;
+		}
+		strncat(called_end, (char *) ie->data + 1, called_len);
+	}
+
+ 	q931_get_number((unsigned char *) call->overlap_digits, sizeof(call->overlap_digits),
+		ie->data + 1, len - 3);
 	return 0;
 }
 
@@ -1300,9 +1327,9 @@ static int transmit_called_party_number(int full_ie, struct pri *pri, q931_call 
 	}
 	call->called_number.status = Q931_PARTY_DATA_STATUS_VALID;
 
-	datalen = strlen(call->called_number.str);
+	datalen = strlen(call->overlap_digits);
 	ie->data[0] = 0x80 | call->called_number.plan;
-	memcpy(ie->data + 1, call->called_number.str, datalen);
+	memcpy(ie->data + 1, call->overlap_digits, datalen);
 	return datalen + (1 + 2);
 }
 
@@ -1812,16 +1839,8 @@ static int transmit_keypad_facility(int full_ie, struct pri *pri, q931_call *cal
 	int sublen;
 
 	sublen = strlen(call->keypad_digits);
-
-	if (sublen > 32) {
-		sublen = 32;
-		call->keypad_digits[32] = '\0';
-	}
-
 	if (sublen) {
-		libpri_copy_string((char *)ie->data, (char *)call->keypad_digits, sizeof(call->keypad_digits));
-		/* Make sure we clear the field */
-		call->keypad_digits[0] = '\0';
+		libpri_copy_string((char *) ie->data, call->keypad_digits, sizeof(call->keypad_digits));
 		return sublen + 2;
 	} else
 		return 0;
@@ -3013,14 +3032,23 @@ static int q931_status(struct pri *pri, q931_call *c, int cause)
 	return send_message(pri, cur, Q931_STATUS, status_ies);
 }
 
-static int information_ies[] = { Q931_IE_KEYPAD_FACILITY, Q931_CALLED_PARTY_NUMBER, -1 };
+static int information_ies[] = { Q931_CALLED_PARTY_NUMBER, -1 };
 
 int q931_information(struct pri *pri, q931_call *c, char digit)
 {
-/* BUGBUG this needs to be reexamined. */
+	c->overlap_digits[0] = digit;
+	c->overlap_digits[1] = '\0';
+
+	/*
+	 * Since we are doing overlap dialing now, we need to accumulate
+	 * the digits into call->called_number.str.
+	 */
 	c->called_number.status = Q931_PARTY_DATA_STATUS_CHANGED;
-	c->called_number.str[0] = digit;
-	c->called_number.str[1] = '\0';
+	if (strlen(c->called_number.str) < sizeof(c->called_number.str) - 1) {
+		/* There is enough room for the new digit. */
+		strcat(c->called_number.str, c->overlap_digits);
+	}
+
 	return send_message(pri, c, Q931_INFORMATION, information_ies);
 }
 
@@ -3463,6 +3491,7 @@ int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 		c->called_number.plan = req->calledplan;
 		libpri_copy_string(c->called_number.str, req->called,
 			sizeof(c->called_number.str));
+		libpri_copy_string(c->overlap_digits, req->called, sizeof(c->overlap_digits));
 	} else
 		return -1;
 
@@ -3904,7 +3933,12 @@ static int prepare_to_handle_q931_message(struct pri *pri, q931_mh *mh, q931_cal
 		c->channelno = -1;
 		break;
 	case Q931_INFORMATION:
-		c->called_number.str[0] = '\0';
+		/*
+		 * Make sure that keypad and overlap digit buffers are empty in
+		 * case they are not in the message.
+		 */
+		c->keypad_digits[0] = '\0';
+		c->overlap_digits[0] = '\0';
 		break;
 	case Q931_STATUS_ENQUIRY:
 		break;
@@ -4674,15 +4708,12 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			pri->ev.digit.call = c;
 			pri->ev.digit.channel = c->channelno | (c->ds1no << 8);
 			libpri_copy_string(pri->ev.digit.digits, c->keypad_digits, sizeof(pri->ev.digit.digits));
-			/* Make sure we clear it out before we return */
-			c->keypad_digits[0] = '\0';
 			return Q931_RES_HAVEEVENT;
 		}
 		pri->ev.e = PRI_EVENT_INFO_RECEIVED;
 		pri->ev.ring.call = c;
 		pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-/* BUGBUG need to redo overlap dialing. */
-		libpri_copy_string(pri->ev.ring.callednum, c->called_number.str, sizeof(pri->ev.ring.callednum));
+		libpri_copy_string(pri->ev.ring.callednum, c->overlap_digits, sizeof(pri->ev.ring.callednum));
 		libpri_copy_string(pri->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(pri->ev.ring.callingsubaddr));
 		pri->ev.ring.complete = c->complete; 	/* this covers IE 33 (Sending Complete) */
 		return Q931_RES_HAVEEVENT;
