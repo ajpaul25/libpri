@@ -365,9 +365,9 @@ enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
 /*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
 	/*! Subscriber phone number */
-	char number[256];
+	char number[64];
 	/*! Subscriber name */
-	char name[256];
+	char name[64];
 	/*! Q.931 encoded "type of number" and "numbering plan identification" */
 	int number_type;
 	/*! Q.931 encoded "presentation indicator" and "screening indicator" */
@@ -479,7 +479,7 @@ struct pri_subcommand {
 	int cmd;
 	union {
 		/*! Reserve room for possible expansion to maintain ABI compatibility. */
-		char reserve_space[2048];
+		char reserve_space[512];
 		struct pri_subcmd_connected_line connected_line;
 		struct pri_subcmd_redirecting redirecting;
 		struct pri_subcmd_cc_ccbs_rr cc_ccbs_rr;
@@ -493,7 +493,7 @@ struct pri_subcommand {
 };
 
 /* Max number of subcommands per event message */
-#define PRI_MAX_SUBCOMMANDS	4
+#define PRI_MAX_SUBCOMMANDS	6
 
 struct pri_subcommands {
 	int counter_subcmd;
@@ -528,7 +528,7 @@ typedef struct pri_event_ringing {
 	char callednum[256];
 	int calledpres;
 	int calledplan;
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_ringing;
 
 typedef struct pri_event_answer {
@@ -544,7 +544,7 @@ typedef struct pri_event_answer {
 	int connectedpres;
 	int connectedplan;
 	int source;
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_answer;
 
 /*! Deprecated replaced by struct pri_event_facility. */
@@ -568,7 +568,7 @@ struct pri_event_facility {
 	q931_call *call;
 	int callingpres;			/*!< Presentation of Calling CallerID (Deprecated, preserved for struct pri_event_facname compatibility) */
 	int callingplan;			/*!< Dialing plan of Calling entity (Deprecated, preserved for struct pri_event_facname compatibility) */
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 };
 
 #define PRI_CALLINGPLANANI
@@ -605,7 +605,7 @@ typedef struct pri_event_ring {
 	int origredirectingreason;
 	int redirectingpres;
 	int redirectingcount;
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -616,7 +616,7 @@ typedef struct pri_event_hangup {
 	q931_call *call;			/* Opaque call pointer */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_hangup;	
 
 typedef struct pri_event_restart_ack {
@@ -633,20 +633,21 @@ typedef struct pri_event_proceeding {
 	int progressmask;
 	int cause;
 	q931_call *call;
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_proceeding;
  
 typedef struct pri_event_setup_ack {
 	int e;
 	int channel;
 	q931_call *call;
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_setup_ack;
 
 typedef struct pri_event_notify {
 	int e;
 	int channel;
 	int info;
+	struct pri_subcommands *subcmds;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {
@@ -654,7 +655,7 @@ typedef struct pri_event_keypad_digit {
 	int channel;
 	q931_call *call;
 	char digits[64];
-	struct pri_subcommands subcmds;
+	struct pri_subcommands *subcmds;
 } pri_event_keypad_digit;
 
 typedef struct pri_event_service {
