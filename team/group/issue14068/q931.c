@@ -3626,17 +3626,15 @@ int q931_hangup(struct pri *pri, q931_call *c, int cause)
 	return 0;
 }
 
-static void clr_subcommands(struct pri_subcommands *sub)
+static void q931_clr_subcommands(struct pri *ctrl)
 {
-	sub->counter_subcmd = 0;
+	ctrl->subcmds.counter_subcmd = 0;
 }
 
-static struct pri_subcommand *get_ptr_subcommand(struct pri_subcommands *sub)
+struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl)
 {
-	if (sub->counter_subcmd < PRI_MAX_SUBCOMMANDS) {
-		int count = sub->counter_subcmd;
-		sub->counter_subcmd++;
-		return &sub->subcmd[count];
+	if (ctrl->subcmds.counter_subcmd < PRI_MAX_SUBCOMMANDS) {
+		return &ctrl->subcmds.subcmd[ctrl->subcmds.counter_subcmd++];
 	}
 
 	return NULL;
@@ -3859,6 +3857,7 @@ int q931_receive(struct pri *pri, q931_h *h, int len)
 	} else {
 		prepare_to_handle_q931_message(pri, mh, c);
 	}
+	q931_clr_subcommands(pri);
 	
 	/* Handle IEs */
 	memset(mandies, 0, sizeof(mandies));
@@ -4050,6 +4049,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			break;
 		}
 		pri->ev.e = PRI_EVENT_RING;
+		pri->ev.ring.subcmds = &pri->subcmds;
 		pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.ring.callingpres = q931_party_id_presentation(&c->caller_id);
 		pri->ev.ring.callingplan = c->caller_id.number.plan;
@@ -4096,6 +4096,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_DELIVERED);
 		c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
 		pri->ev.e = PRI_EVENT_RINGING;
+		pri->ev.ringing.subcmds = &pri->subcmds;
 		pri->ev.ringing.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.ringing.cref = c->cr;
 		pri->ev.ringing.call = c;
@@ -4139,6 +4140,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
 		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 		pri->ev.e = PRI_EVENT_ANSWER;
+		pri->ev.answer.subcmds = &pri->subcmds;
 		pri->ev.answer.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.answer.cref = c->cr;
 		pri->ev.answer.call = c;
@@ -4162,8 +4164,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			int haveevent = 0;
 			struct pri_subcommand *subcmd;
 
-			clr_subcommands(&pri->ev.facility.subcmds);
-
 			if (c->newcall) {
 				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 				break;
@@ -4175,7 +4175,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 					/* answered(0) */
 					pri_message(pri, "Got CT-Complete, callStatus = answered(0)\n");
 
-					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+					subcmd = q931_alloc_subcommand(pri);
 					if (subcmd) {
 						struct pri_subcmd_connected_line *cmdcl = &subcmd->connected_line;
 
@@ -4192,7 +4192,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 					/* alerting(1) */
 					pri_message(pri, "Got CT-Complete, callStatus = alerting(1)\n");
 
-					subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+					subcmd = q931_alloc_subcommand(pri);
 					if (subcmd) {
 						struct pri_subcmd_redirecting *cmdr = &subcmd->redirecting;
 
@@ -4218,7 +4218,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				pri_message(pri, "Got CT-Active\n");
 
-				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+				subcmd = q931_alloc_subcommand(pri);
 				if (subcmd) {
 					struct pri_subcmd_connected_line *cmdcl = &subcmd->connected_line;
 
@@ -4236,7 +4236,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 				pri_message(pri, "Got DivertingLegInformation1\n");
 
-				subcmd = get_ptr_subcommand(&pri->ev.facility.subcmds);
+				subcmd = q931_alloc_subcommand(pri);
 				if (subcmd) {
 					struct pri_subcmd_redirecting *cmdr = &subcmd->redirecting;
 
@@ -4258,6 +4258,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 			if (haveevent) {
 				pri->ev.e = PRI_EVENT_FACILITY;
+				pri->ev.facility.subcmds = &pri->subcmds;
 				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 				pri->ev.facility.cref = c->cr;
 				pri->ev.facility.call = c;
@@ -4282,6 +4283,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.proceeding.cause = c->cause;
 		/* Fall through */
 	case Q931_CALL_PROCEEDING:
+		pri->ev.proceeding.subcmds = &pri->subcmds;
 		if (c->newcall) {
 			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
@@ -4353,6 +4355,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 		if (!c->sugcallstate) {
 #endif
+			pri->ev.hangup.subcmds = &pri->subcmds;
 			pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 			pri->ev.hangup.cause = c->cause;
 			pri->ev.hangup.cref = c->cr;
@@ -4381,6 +4384,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 	case Q931_RELEASE_COMPLETE:
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
+		pri->ev.hangup.subcmds = &pri->subcmds;
 		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.hangup.cause = c->cause;
 		pri->ev.hangup.cref = c->cr;
@@ -4416,6 +4420,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		}
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 		pri->ev.e = PRI_EVENT_HANGUP;
+		pri->ev.hangup.subcmds = &pri->subcmds;
 		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.hangup.cause = c->cause;
 		pri->ev.hangup.cref = c->cr;
@@ -4450,6 +4455,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 
 		/* Return such an event */
 		pri->ev.e = PRI_EVENT_HANGUP_REQ;
+		pri->ev.hangup.subcmds = &pri->subcmds;
 		pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.hangup.cause = c->cause;
 		pri->ev.hangup.cref = c->cr;
@@ -4479,12 +4485,14 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		}
 		if (c->ourcallstate != Q931_CALL_STATE_OVERLAP_RECEIVING) {
 			pri->ev.e = PRI_EVENT_KEYPAD_DIGIT;
+			pri->ev.digit.subcmds = &pri->subcmds;
 			pri->ev.digit.call = c;
 			pri->ev.digit.channel = c->channelno | (c->ds1no << 8);
 			libpri_copy_string(pri->ev.digit.digits, c->keypad_digits, sizeof(pri->ev.digit.digits));
 			return Q931_RES_HAVEEVENT;
 		}
 		pri->ev.e = PRI_EVENT_INFO_RECEIVED;
+		pri->ev.ring.subcmds = &pri->subcmds;
 		pri->ev.ring.call = c;
 		pri->ev.ring.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		libpri_copy_string(pri->ev.ring.callednum, c->overlap_digits, sizeof(pri->ev.ring.callednum));
@@ -4505,6 +4513,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_OVERLAP_SENDING);
 		c->peercallstate = Q931_CALL_STATE_OVERLAP_RECEIVING;
 		pri->ev.e = PRI_EVENT_SETUP_ACK;
+		pri->ev.setup_ack.subcmds = &pri->subcmds;
 		pri->ev.setup_ack.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 		pri->ev.setup_ack.call = c;
 
@@ -4520,6 +4529,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		return Q931_RES_HAVEEVENT;
 	case Q931_NOTIFY:
 		pri->ev.e = PRI_EVENT_NOTIFY;
+		pri->ev.notify.subcmds = &pri->subcmds;
 		pri->ev.notify.channel = c->channelno;
 		pri->ev.notify.info = c->notify;
 		return Q931_RES_HAVEEVENT;
@@ -4570,6 +4580,7 @@ static int pri_internal_clear(void *data)
 
 	UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 	c->peercallstate = Q931_CALL_STATE_NULL;
+	pri->ev.hangup.subcmds = &pri->subcmds;
 	pri->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
 	pri->ev.hangup.cause = c->cause;      		
 	pri->ev.hangup.cref = c->cr;          		
