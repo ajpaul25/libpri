@@ -3689,115 +3689,6 @@ struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl)
 	return NULL;
 }
 
-static struct pri_subcommand *get_ptr_q931_subcommand_by_index(struct pri_subcommands *sub, int index)
-{
-	if (index < PRI_MAX_SUBCOMMANDS) {
-		sub->counter_subcmd--;
-		return &sub->subcmd[index];
-	}
-
-	return NULL;
-}
-
-static int q931_facilities2eventfacilities(struct pri *pri, q931_call *c, struct pri_subcommands *subcmds)
-{
-	int facilitypos;
-	int facility_number;
-	struct pri_subcommand *c_subcmd;
-	struct pri_subcommand *e_subcmd;
-
-	if (c->subcmds.counter_subcmd) {
-		facility_number = c->subcmds.counter_subcmd;
-
-		for (facilitypos = 0; facilitypos < facility_number; facilitypos++) {
-			c->subcmds.counter_subcmd--;
-			c_subcmd = get_ptr_q931_subcommand_by_index(&c->subcmds, facilitypos);
-			e_subcmd = get_ptr_subcommand(subcmds);
-			if (c_subcmd && e_subcmd) {
-				switch (c_subcmd->cmd) {
-				case PRI_SUBCMD_CC_CCBSREQUEST_RR:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_ccbs_rr, &e_subcmd->cc_ccbs_rr, sizeof(c_subcmd->cc_ccbs_rr));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_CCBSREQUEST) (%d/%d)\n",
-										e_subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation,
-										e_subcmd->cc_ccbs_rr.cc_request_res.retain_service);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					c->ccrequestresult = 1;
-					break;
-				case PRI_SUBCMD_CC_CCNRREQUEST_RR:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_ccnr_rr, &e_subcmd->cc_ccnr_rr, sizeof(c_subcmd->cc_ccnr_rr));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_CCNRREQUEST) (%d/%d)\n",
-										e_subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation,
-										e_subcmd->cc_ccnr_rr.cc_request_res.retain_service);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					c->ccrequestresult = 1;
-					break;
-				case PRI_SUBCMD_CC_CANCEL_INV:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_cancel_inv, &e_subcmd->cc_cancel_inv, sizeof(c_subcmd->cc_cancel_inv));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_CANCEL) (%s/%s)\n",
-										e_subcmd->cc_cancel_inv.cc_optional_arg.number_A,
-										e_subcmd->cc_cancel_inv.cc_optional_arg.number_B);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					break;
-				case PRI_SUBCMD_CC_EXECPOSIBLE_INV:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_execposible_inv, &e_subcmd->cc_execposible_inv, sizeof(c_subcmd->cc_execposible_inv));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_EXECPOSIBLE) (%s/%s)\n",
-										e_subcmd->cc_execposible_inv.cc_optional_arg.number_A,
-										e_subcmd->cc_execposible_inv.cc_optional_arg.number_B);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					break;
-				case PRI_SUBCMD_CC_RINGOUT_INV:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_ringout_inv, &e_subcmd->cc_ringout_inv, sizeof(c_subcmd->cc_ringout_inv));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_RINGOUT) (%d)\n",
-										e_subcmd->cc_ringout_inv.cc_extension.cc_extension_tag);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					break;
-				case PRI_SUBCMD_CC_SUSPEND_INV:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_suspend_inv, &e_subcmd->cc_suspend_inv, sizeof(c_subcmd->cc_suspend_inv));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_SUSPEND) (%d)\n",
-										e_subcmd->cc_suspend_inv.cc_extension.cc_extension_tag);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					break;
-				case PRI_SUBCMD_CC_ERROR:
-					e_subcmd->cmd = c_subcmd->cmd;
-					memcpy(&c_subcmd->cc_error, &e_subcmd->cc_error, sizeof(c_subcmd->cc_error));
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "facility(QSIG_CC_ERROR) (%d)\n",
-										e_subcmd->cc_error.error_value);
-					if (pri->debug & PRI_DEBUG_APDU)
-						pri_message(pri, "counter_subcmd(%d)\n", subcmds->counter_subcmd);
-					break;
-				default:
-					pri_error(pri, "Don't know how to handle Facility subcmd %d\n", c_subcmd->cmd);
-					break;
-				}
-			}
-		}
-#if 0
-	} else {
-		pri_message(pri, "No facilities specified\n");
-#endif
-	}
-	return 0;
-}
-
 static int prepare_to_handle_maintenance_message(struct pri *pri, q931_mh *mh, q931_call *c)
 {
 	if ((!pri) || (!mh) || (!c)) {
@@ -3841,7 +3732,6 @@ static int prepare_to_handle_q931_message(struct pri *pri, q931_mh *mh, q931_cal
 		break;
 	case Q931_FACILITY:
 		q931_party_name_init(&c->caller_id.name);
-		c->subcmds.counter_subcmd = 0;
 		break;
 	case Q931_SETUP:
 		if (pri->debug & PRI_DEBUG_Q931_STATE)
@@ -3887,7 +3777,6 @@ static int prepare_to_handle_q931_message(struct pri *pri, q931_mh *mh, q931_cal
 	case Q931_CONNECT:
 		c->ccrequestresult = 0;
 	case Q931_ALERTING:
-		c->subcmds.counter_subcmd = 0;
 	case Q931_PROGRESS:
 		c->useruserinfo[0] = '\0';
 		c->cause = -1;
@@ -3903,7 +3792,6 @@ static int prepare_to_handle_q931_message(struct pri *pri, q931_mh *mh, q931_cal
 		break;
 	case Q931_RELEASE:
 	case Q931_DISCONNECT:
-		c->subcmds.counter_subcmd = 0;
 		c->cause = -1;
 		c->causecode = -1;
 		c->causeloc = -1;
@@ -3918,7 +3806,6 @@ static int prepare_to_handle_q931_message(struct pri *pri, q931_mh *mh, q931_cal
 			pri_schedule_del(pri, c->retranstimer);
 		c->retranstimer = 0;
 		c->useruserinfo[0] = '\0';
-		c->subcmds.counter_subcmd = 0;
 		/* Fall through */
 	case Q931_STATUS:
 		c->cause = -1;
@@ -4200,9 +4087,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		if (!c->newcall) {
 			break;
 		}
-
-		clr_subcommands(&pri->ev.ring.subcmds);
-
 		if (c->progressmask & PRI_PROG_CALLER_NOT_ISDN)
 			c->nonisdn = 1;
 		c->newcall = 0;
@@ -4253,19 +4137,12 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.ring.ctype = c->transcapability;
 		pri->ev.ring.progress = c->progress;
 		pri->ev.ring.progressmask = c->progressmask;
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending ring event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.ring.cref, c->nochannelsignalling, pri->ev.ring.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.ring.subcmds);
 		return Q931_RES_HAVEEVENT;
 	case Q931_ALERTING:
 		if (c->newcall) {
 			q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
-		clr_subcommands(&pri->ev.ringing.subcmds);
-
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_CALL_DELIVERED);
 		c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
 		pri->ev.e = PRI_EVENT_RINGING;
@@ -4290,11 +4167,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		}
 		libpri_copy_string(pri->ev.ringing.useruserinfo, c->useruserinfo, sizeof(pri->ev.ringing.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending ringing event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.ringing.cref, c->nochannelsignalling, pri->ev.ringing.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.ringing.subcmds);
 
 		cur = c->apdus;
 		while (cur) {
@@ -4315,8 +4187,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			q931_status(pri, c, PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
-		clr_subcommands(&pri->ev.answer.subcmds);
-
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_ACTIVE);
 		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 		pri->ev.e = PRI_EVENT_ANSWER;
@@ -4333,11 +4203,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.answer.source = PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER;
 		libpri_copy_string(pri->ev.answer.useruserinfo, c->useruserinfo, sizeof(pri->ev.answer.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending answer event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.answer.cref, c->nochannelsignalling, pri->ev.answer.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.answer.subcmds);
 		q931_connect_acknowledge(pri, c);
 		if (c->nochannelsignalling) {
 			if (c->ccrequestresult) {
@@ -4360,17 +4225,7 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 				break;
 			}
-			if (c->subcmds.counter_subcmd) {
-				pri->ev.e = PRI_EVENT_FACILITY;
-				pri->ev.facility.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
-				pri->ev.facility.cref = c->cr;
-				pri->ev.facility.call = c;
-
-				if (pri->debug & PRI_DEBUG_APDU) {
-					pri_message(pri, "Sending facility event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-											pri->ev.facility.cref, c->nochannelsignalling, pri->ev.facility.subcmds.counter_subcmd);
-				}
-				q931_facilities2eventfacilities(pri, c, &pri->ev.facility.subcmds);
+			if (pri->subcmds.counter_subcmd) {
 				haveevent = 1;
 			}
 			if (c->ctcompleteflag) {
@@ -4587,8 +4442,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		}
 		break;
 	case Q931_RELEASE_COMPLETE:
-		clr_subcommands(&pri->ev.hangup.subcmds);
-
 		UPDATE_OURCALLSTATE(pri, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
 		pri->ev.hangup.subcmds = &pri->subcmds;
@@ -4599,11 +4452,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		/* Free resources */
 		if (c->alive) {
 			pri->ev.e = PRI_EVENT_HANGUP;
@@ -4621,8 +4469,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			q931_hangup(pri,c,c->cause);
 		break;
 	case Q931_RELEASE:
-		clr_subcommands(&pri->ev.hangup.subcmds);
-
 		if (missingmand) {
 			/* Force cause to be mandatory IE missing */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
@@ -4642,11 +4488,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		/* Don't send release complete if they send us release 
 		   while we sent it, assume a NULL state */
 		if (c->newcall)
@@ -4655,8 +4496,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			return Q931_RES_HAVEEVENT;
 		break;
 	case Q931_DISCONNECT:
-		clr_subcommands(&pri->ev.hangup.subcmds);
-
 		if (missingmand) {
 			/* Still let user call release */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
@@ -4684,11 +4523,6 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 		pri->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(pri->ev.hangup.useruserinfo, c->useruserinfo, sizeof(pri->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (pri->debug & PRI_DEBUG_APDU) {
-			pri_message(pri, "Sending hangup event (%d) nochannelsignalling (%d) facility_number (%d)\n",
-									pri->ev.hangup.cref, c->nochannelsignalling, pri->ev.hangup.subcmds.counter_subcmd);
-		}
-		q931_facilities2eventfacilities(pri, c, &pri->ev.hangup.subcmds);
 		if (c->alive)
 			return Q931_RES_HAVEEVENT;
 		else
