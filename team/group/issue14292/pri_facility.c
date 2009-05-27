@@ -1910,18 +1910,6 @@ int add_qsigCcInv_facility_ie(struct pri *ctrl, q931_call *call, int messagetype
 }
 /* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
 
-static struct pri_subcommand *get_ptr_subcommand(struct pri_subcommands *sub)
-{
-	if (sub->counter_subcmd < PRI_MAX_SUBCOMMANDS) {
-		int count = sub->counter_subcmd;
-
-		sub->counter_subcmd++;
-		return &sub->subcmd[count];
-	}
-
-	return NULL;
-}
-
 /*!
  * \brief Put the APDU on the call queue.
  *
@@ -2226,7 +2214,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
@@ -2400,7 +2388,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		}
 		break;
 	case ROSE_QSIG_CcbsRequest:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
@@ -2413,7 +2401,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		c_subcmd->cc_ccbs_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
 		break;
 	case ROSE_QSIG_CcnrRequest:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
@@ -2943,7 +2931,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CcCancel:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
@@ -2962,7 +2950,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		}
 		break;
 	case ROSE_QSIG_CcExecPossible:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
@@ -2985,7 +2973,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CcRingout:
-		c_subcmd = get_ptr_subcommand(&call->subcmds);
+		c_subcmd = q931_alloc_subcommand(ctrl);
 		if (!c_subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;

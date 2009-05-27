@@ -332,8 +332,6 @@ struct q931_call {
 	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
 	int ccrequestresult;
 	int cctimer2;			/* Timer for QSIG-timer2 */
-	/* QSIG cc infos (receive) */
-	struct pri_subcommands subcmds;
 
 	int ani2;               /* ANI II */
 
