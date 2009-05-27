@@ -113,6 +113,8 @@ struct pri {
 	struct timeval tv;
 	int schedev;
 	pri_event ev;		/* Static event thingy */
+	/*! Subcommands for static event thingy. */
+	struct pri_subcommands subcmds;
 	
 	/* Q.921 Re-transmission queue */
 	struct q921_frame *txqueue;
@@ -422,5 +424,7 @@ void q931_party_number_init(struct q931_party_number *number);
 void q931_party_id_init(struct q931_party_id *id);
 void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
 int q931_party_id_presentation(const struct q931_party_id *id);
+
+struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 #endif
