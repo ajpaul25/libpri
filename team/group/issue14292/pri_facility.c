@@ -2955,17 +2955,17 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_EXECPOSIBLE_INV;
-		c_subcmd->cc_execposible_inv.cc_optional_arg.number_A[0] = '\0';
-		c_subcmd->cc_execposible_inv.cc_optional_arg.number_B[0] = '\0';
-		c_subcmd->cc_execposible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
+		c_subcmd->cmd = PRI_SUBCMD_CC_EXECPOSSIBLE_INV;
+		c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A[0] = '\0';
+		c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B[0] = '\0';
+		c_subcmd->cc_execpossible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
 		if (invoke->args.qsig.CcExecPossible.full_arg_present) {
-			libpri_copy_string(c_subcmd->cc_execposible_inv.cc_optional_arg.number_A,
+			libpri_copy_string(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A,
 				(char *) invoke->args.qsig.CcExecPossible.number_a.str,
-				sizeof(c_subcmd->cc_execposible_inv.cc_optional_arg.number_A));
-			libpri_copy_string(c_subcmd->cc_execposible_inv.cc_optional_arg.number_B,
+				sizeof(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A));
+			libpri_copy_string(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B,
 				(char *) invoke->args.qsig.CcExecPossible.number_b.str,
-				sizeof(c_subcmd->cc_execposible_inv.cc_optional_arg.number_B));
+				sizeof(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B));
 		}
 		break;
 #if 0	/* Not handled yet */
