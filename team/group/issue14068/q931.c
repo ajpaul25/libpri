@@ -3251,6 +3251,7 @@ static void pri_release_finaltimeout(void *data)
 	c->peercallstate = Q931_CALL_STATE_NULL;
 	pri->schedev = 1;
 	pri->ev.e = PRI_EVENT_HANGUP_ACK;
+	pri->ev.hangup.subcmds = &pri->subcmds;
 	pri->ev.hangup.channel = c->channelno;
 	pri->ev.hangup.cause = c->cause;
 	pri->ev.hangup.cref = c->cr;
@@ -4167,6 +4168,9 @@ static int post_handle_q931_message(struct pri *pri, struct q931_mh *mh, struct 
 			if (c->newcall) {
 				q931_release_complete(pri,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 				break;
+			}
+			if (pri->subcmds.counter_subcmd) {
+				haveevent = 1;
 			}
 			if (c->ctcompleteflag) {
 				c->ctcompleteflag = 0;
