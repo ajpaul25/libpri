@@ -429,7 +429,7 @@ struct pri_qsig_cc_request_res {
 #define PRI_SUBCMD_CC_CCBSREQUEST_RR	3
 #define PRI_SUBCMD_CC_CCNRREQUEST_RR	4
 #define PRI_SUBCMD_CC_CANCEL_INV		5
-#define PRI_SUBCMD_CC_EXECPOSIBLE_INV	6
+#define PRI_SUBCMD_CC_EXECPOSSIBLE_INV	6
 #define PRI_SUBCMD_CC_RINGOUT_INV		7
 #define PRI_SUBCMD_CC_SUSPEND_INV		8
 #define PRI_SUBCMD_CC_ERROR				9
@@ -458,7 +458,7 @@ struct pri_subcmd_cc_cancel_inv {
 	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
-struct pri_subcmd_cc_execposible_inv {
+struct pri_subcmd_cc_execpossible_inv {
 	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
@@ -485,7 +485,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_ccbs_rr cc_ccbs_rr;
 		struct pri_subcmd_cc_ccnr_rr cc_ccnr_rr;
 		struct pri_subcmd_cc_cancel_inv cc_cancel_inv;
-		struct pri_subcmd_cc_execposible_inv cc_execposible_inv;
+		struct pri_subcmd_cc_execpossible_inv cc_execpossible_inv;
 		struct pri_subcmd_cc_suspend_inv cc_suspend_inv;
 		struct pri_subcmd_cc_ringout_inv cc_ringout_inv;
 		struct pri_subcmd_cc_error cc_error;
