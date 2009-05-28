@@ -2210,17 +2210,17 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_error *error)
 {
 	const char *dms100_operation;
-	struct pri_subcommand *c_subcmd;
+	struct pri_subcommand *subcmd;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_ERROR;
-		c_subcmd->cc_error.error_value = PRI_CCERROR_UNSPECIFIED;
+		subcmd->cmd = PRI_SUBCMD_CC_ERROR;
+		subcmd->cc_error.error_value = PRI_CCERROR_UNSPECIFIED;
 		break;
 	default:
 		break;
@@ -2266,7 +2266,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie,
 void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_result *result)
 {
-	struct pri_subcommand *c_subcmd;
+	struct pri_subcommand *subcmd;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
@@ -2388,30 +2388,30 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		}
 		break;
 	case ROSE_QSIG_CcbsRequest:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_CCBSREQUEST_RR;
-		c_subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation =
+		subcmd->cmd = PRI_SUBCMD_CC_CCBSREQUEST_RR;
+		subcmd->cc_ccbs_rr.cc_request_res.no_path_reservation =
 			result->args.qsig.CcbsRequest.no_path_reservation;
-		c_subcmd->cc_ccbs_rr.cc_request_res.retain_service =
+		subcmd->cc_ccbs_rr.cc_request_res.retain_service =
 			result->args.qsig.CcbsRequest.retain_service;
-		c_subcmd->cc_ccbs_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
+		subcmd->cc_ccbs_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
 		break;
 	case ROSE_QSIG_CcnrRequest:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_CCNRREQUEST_RR;
-		c_subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation =
+		subcmd->cmd = PRI_SUBCMD_CC_CCNRREQUEST_RR;
+		subcmd->cc_ccnr_rr.cc_request_res.no_path_reservation =
 			result->args.qsig.CcnrRequest.no_path_reservation;
-		c_subcmd->cc_ccnr_rr.cc_request_res.retain_service =
+		subcmd->cc_ccnr_rr.cc_request_res.retain_service =
 			result->args.qsig.CcnrRequest.retain_service;
-		c_subcmd->cc_ccnr_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
+		subcmd->cc_ccnr_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_CcPathReserve:
@@ -2448,7 +2448,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie,
 void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_invoke *invoke)
 {
-	struct pri_subcommand *c_subcmd;
+	struct pri_subcommand *subcmd;
 
 	switch (invoke->operation) {
 #if 0	/* Not handled yet */
@@ -2931,41 +2931,41 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CcCancel:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_CANCEL_INV;
-		c_subcmd->cc_cancel_inv.cc_optional_arg.number_A[0] = '\0';
-		c_subcmd->cc_cancel_inv.cc_optional_arg.number_B[0] = '\0';
-		c_subcmd->cc_cancel_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
+		subcmd->cmd = PRI_SUBCMD_CC_CANCEL_INV;
+		subcmd->cc_cancel_inv.cc_optional_arg.number_A[0] = '\0';
+		subcmd->cc_cancel_inv.cc_optional_arg.number_B[0] = '\0';
+		subcmd->cc_cancel_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
 		if (invoke->args.qsig.CcCancel.full_arg_present) {
-			libpri_copy_string(c_subcmd->cc_cancel_inv.cc_optional_arg.number_A,
+			libpri_copy_string(subcmd->cc_cancel_inv.cc_optional_arg.number_A,
 				(char *) invoke->args.qsig.CcCancel.number_a.str,
-				sizeof(c_subcmd->cc_cancel_inv.cc_optional_arg.number_A));
-			libpri_copy_string(c_subcmd->cc_cancel_inv.cc_optional_arg.number_B,
+				sizeof(subcmd->cc_cancel_inv.cc_optional_arg.number_A));
+			libpri_copy_string(subcmd->cc_cancel_inv.cc_optional_arg.number_B,
 				(char *) invoke->args.qsig.CcCancel.number_b.str,
-				sizeof(c_subcmd->cc_cancel_inv.cc_optional_arg.number_B));
+				sizeof(subcmd->cc_cancel_inv.cc_optional_arg.number_B));
 		}
 		break;
 	case ROSE_QSIG_CcExecPossible:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_EXECPOSSIBLE_INV;
-		c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A[0] = '\0';
-		c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B[0] = '\0';
-		c_subcmd->cc_execpossible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
+		subcmd->cmd = PRI_SUBCMD_CC_EXECPOSSIBLE_INV;
+		subcmd->cc_execpossible_inv.cc_optional_arg.number_A[0] = '\0';
+		subcmd->cc_execpossible_inv.cc_optional_arg.number_B[0] = '\0';
+		subcmd->cc_execpossible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
 		if (invoke->args.qsig.CcExecPossible.full_arg_present) {
-			libpri_copy_string(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A,
+			libpri_copy_string(subcmd->cc_execpossible_inv.cc_optional_arg.number_A,
 				(char *) invoke->args.qsig.CcExecPossible.number_a.str,
-				sizeof(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_A));
-			libpri_copy_string(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B,
+				sizeof(subcmd->cc_execpossible_inv.cc_optional_arg.number_A));
+			libpri_copy_string(subcmd->cc_execpossible_inv.cc_optional_arg.number_B,
 				(char *) invoke->args.qsig.CcExecPossible.number_b.str,
-				sizeof(c_subcmd->cc_execpossible_inv.cc_optional_arg.number_B));
+				sizeof(subcmd->cc_execpossible_inv.cc_optional_arg.number_B));
 		}
 		break;
 #if 0	/* Not handled yet */
@@ -2973,13 +2973,13 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CcRingout:
-		c_subcmd = q931_alloc_subcommand(ctrl);
-		if (!c_subcmd) {
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
 			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		c_subcmd->cmd = PRI_SUBCMD_CC_RINGOUT_INV;
-		c_subcmd->cc_ringout_inv.cc_extension.cc_extension_tag = 0;
+		subcmd->cmd = PRI_SUBCMD_CC_RINGOUT_INV;
+		subcmd->cc_ringout_inv.cc_extension.cc_extension_tag = 0;
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_CcSuspend:
