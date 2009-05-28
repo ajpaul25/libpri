@@ -3262,6 +3262,7 @@ static void pri_release_finaltimeout(void *data)
 	c->peercallstate = Q931_CALL_STATE_NULL;
 	pri->schedev = 1;
 	pri->ev.e = PRI_EVENT_HANGUP_ACK;
+	pri->ev.hangup.subcmds = &pri->subcmds;
 	pri->ev.hangup.channel = c->channelno;
 	pri->ev.hangup.cause = c->cause;
 	pri->ev.hangup.cref = c->cr;
