@@ -333,11 +333,32 @@ struct q931_call {
 	/*! Current dialed digits to be sent or just received. */
 	char overlap_digits[PRI_MAX_NUMBER_LEN];
 
-/* BUGBUG need to check usage of elements in caller_id */
-	struct q931_party_id caller_id;
-
-/* BUGBUG need to check usage of elements in called_name */
-	struct q931_party_name called_name;
+	/*!
+	 * \brief Local party ID
+	 * \details
+	 * The Caller-ID and connected-line ID are just roles the local and remote party
+	 * play while a call is being established.  Which roll depends upon the direction
+	 * of the call.
+	 * Outgoing party info is to identify the local party to the other end.
+	 *    (Caller-ID for originated or connected-line for answered calls.)
+	 * Incoming party info is to identify the remote party to us.
+	 *    (Caller-ID for answered or connected-line for originated calls.)
+	 */
+/* BUGBUG need to check usage of elements in local_id */
+	struct q931_party_id local_id;
+	/*!
+	 * \brief Remote party ID
+	 * \details
+	 * The Caller-ID and connected-line ID are just roles the local and remote party
+	 * play while a call is being established.  Which roll depends upon the direction
+	 * of the call.
+	 * Outgoing party info is to identify the local party to the other end.
+	 *    (Caller-ID for originated or connected-line for answered calls.)
+	 * Incoming party info is to identify the remote party to us.
+	 *    (Caller-ID for answered or connected-line for originated calls.)
+	 */
+/* BUGBUG need to check usage of elements in remote_id */
+	struct q931_party_id remote_id;
 
 	/*!
 	 * \brief Called party number.
@@ -364,11 +385,11 @@ struct q931_call {
 /* BUGBUG need to check usage of elements in orig_called */
 	struct q931_party_id orig_called;
 
-/* BUGBUG need to check usage of elements in connected_line */
-	struct q931_party_id connected_line;
 /* BUGBUG need to check usage of elements in ct_complete */
+/* BUGBUG This will also become part of local/remote party id behaviour. */
 	struct q931_party_id ct_complete;
 /* BUGBUG need to check usage of elements in ct_active */
+/* BUGBUG This will also become part of local/remote party id behaviour. */
 	struct q931_party_id ct_active;
 
 	/* divertingLegInformation1 */

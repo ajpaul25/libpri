@@ -918,13 +918,13 @@ static unsigned char *enc_ni2_information_following(struct pri *ctrl, unsigned c
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param pos Starting position to encode the facility ie contents.
  * \param end End of facility ie contents encoding data buffer.
- * \param call Call leg from which to encode name.
+ * \param name Name data which to encode name.
  *
  * \retval Start of the next ASN.1 component to encode on success.
  * \retval NULL on error.
  */
 static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, q931_call *call)
+	unsigned char *end, const struct q931_party_name *name)
 {
 	struct fac_extension_header header;
 	struct rose_msg_invoke msg;
@@ -946,13 +946,13 @@ static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos
 	msg.operation = ROSE_QSIG_CallingName;
 	msg.invoke_id = get_invokeid(ctrl);
 
-	/* CallingName is the caller_id.name */
+	/* CallingName */
 	msg.args.qsig.CallingName.name.presentation = qsig_name_presentation_from_q931(ctrl,
-		call->caller_id.name.presentation, call->caller_id.name.str[0]);
-	msg.args.qsig.CallingName.name.char_set = call->caller_id.name.char_set;
-	/* Truncate the caller_id.name.str if necessary. */
+		name->presentation, name->str[0]);
+	msg.args.qsig.CallingName.name.char_set = name->char_set;
+	/* Truncate the name->str if necessary. */
 	libpri_copy_string((char *) msg.args.qsig.CallingName.name.data,
-		call->caller_id.name.str, sizeof(msg.args.qsig.CallingName.name.data));
+		name->str, sizeof(msg.args.qsig.CallingName.name.data));
 	msg.args.qsig.CallingName.name.length =
 		strlen((char *) msg.args.qsig.CallingName.name.data);
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
@@ -979,7 +979,7 @@ static int add_callername_facility_ies(struct pri *ctrl, q931_call *call, int cp
 	unsigned char *end;
 	int mymessage;
 
-	if (call->caller_id.name.status == Q931_PARTY_DATA_STATUS_INVALID) {
+	if (call->local_id.name.status == Q931_PARTY_DATA_STATUS_INVALID) {
 		return 0;
 	}
 
@@ -999,8 +999,10 @@ static int add_callername_facility_ies(struct pri *ctrl, q931_call *call, int cp
 		 */
 	}
 
-	call->caller_id.name.status = Q931_PARTY_DATA_STATUS_VALID;
-	end = enc_qsig_calling_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	/* CallingName is the local_id.name */
+	call->local_id.name.status = Q931_PARTY_DATA_STATUS_VALID;
+	end = enc_qsig_calling_name(ctrl, buffer, buffer + sizeof(buffer),
+		&call->local_id.name);
 	if (!end) {
 		return -1;
 	}
@@ -1340,9 +1342,13 @@ int qsig_cf_callrerouting(struct pri *ctrl, q931_call *call, const char *dest,
 	unsigned char *end;
 	int res;
 
+	/*
+	 * We are deflecting an incoming call back to the network.
+	 * Therefore, the Caller-ID is the remote party.
+	 */
 	end =
 		enc_qsig_call_rerouting(ctrl, buffer, buffer + sizeof(buffer),
-			call->caller_id.number.str, dest, original ? original :
+			call->remote_id.number.str, dest, original ? original :
 			call->called_number.str, reason);
 	if (!end) {
 		return -1;
@@ -1622,36 +1628,36 @@ static unsigned char *enc_qsig_call_transfer_complete(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.args.qsig.CallTransferComplete.end_designation = 0;	/* primaryEnd */
 
-	/* redirectionNumber is the connected_line.number */
+	/* redirectionNumber is the local_id.number */
 	msg.args.qsig.CallTransferComplete.redirection.presentation =
-		presentation_from_q931(ctrl, call->connected_line.number.presentation,
-			call->connected_line.number.str[0]);
+		presentation_from_q931(ctrl, call->local_id.number.presentation,
+			call->local_id.number.str[0]);
 	msg.args.qsig.CallTransferComplete.redirection.screened.screening_indicator =
-		call->connected_line.number.presentation & 0x03;
+		call->local_id.number.presentation & 0x03;
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.plan =
-		numbering_plan_from_q931(ctrl, call->connected_line.number.plan);
+		numbering_plan_from_q931(ctrl, call->local_id.number.plan);
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.ton =
-		typeofnumber_from_q931(ctrl, call->connected_line.number.plan);
+		typeofnumber_from_q931(ctrl, call->local_id.number.plan);
 	libpri_copy_string((char *)
 		msg.args.qsig.CallTransferComplete.redirection.screened.number.str,
-		call->connected_line.number.str,
+		call->local_id.number.str,
 		sizeof(msg.args.qsig.CallTransferComplete.redirection.screened.number.str));
 	msg.args.qsig.CallTransferComplete.redirection.screened.number.length =
 		strlen((char *)
 		msg.args.qsig.CallTransferComplete.redirection.screened.number.str);
 
-	/* redirectionName is the connected_line.name */
-	if (call->connected_line.name.status != Q931_PARTY_DATA_STATUS_INVALID) {
-		call->connected_line.name.status = Q931_PARTY_DATA_STATUS_VALID;
+	/* redirectionName is the local_id.name */
+	if (call->local_id.name.status != Q931_PARTY_DATA_STATUS_INVALID) {
+		call->local_id.name.status = Q931_PARTY_DATA_STATUS_VALID;
 		msg.args.qsig.CallTransferComplete.redirection_name.presentation =
 			qsig_name_presentation_from_q931(ctrl,
-				call->connected_line.name.presentation,
-				call->connected_line.name.str[0]);
+				call->local_id.name.presentation,
+				call->local_id.name.str[0]);
 		msg.args.qsig.CallTransferComplete.redirection_name.char_set =
-			call->connected_line.name.char_set;
+			call->local_id.name.char_set;
 		libpri_copy_string((char *)
 			msg.args.qsig.CallTransferComplete.redirection_name.data,
-			call->connected_line.name.str,
+			call->local_id.name.str,
 			sizeof(msg.args.qsig.CallTransferComplete.redirection_name.data));
 		msg.args.qsig.CallTransferComplete.redirection_name.length =
 			strlen((char *) msg.args.qsig.CallTransferComplete.redirection_name.data);
@@ -1701,13 +1707,13 @@ static int rose_call_transfer_complete_encode(struct pri *ctrl, q931_call *call,
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param pos Starting position to encode the facility ie contents.
  * \param end End of facility ie contents encoding data buffer.
- * \param call Call leg from which to encode name.
+ * \param name Name data which to encode name.
  *
  * \retval Start of the next ASN.1 component to encode on success.
  * \retval NULL on error.
  */
 static unsigned char *enc_qsig_called_name(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, q931_call *call)
+	unsigned char *end, const struct q931_party_name *name)
 {
 	struct fac_extension_header header;
 	struct rose_msg_invoke msg;
@@ -1727,12 +1733,12 @@ static unsigned char *enc_qsig_called_name(struct pri *ctrl, unsigned char *pos,
 	msg.operation = ROSE_QSIG_CalledName;
 	msg.invoke_id = get_invokeid(ctrl);
 
-	/* CalledName is the connected_line.name */
+	/* CalledName */
 	msg.args.qsig.CalledName.name.presentation = qsig_name_presentation_from_q931(ctrl,
-		call->connected_line.name.presentation, call->connected_line.name.str[0]);
-	msg.args.qsig.CalledName.name.char_set = call->connected_line.name.char_set;
+		name->presentation, name->str[0]);
+	msg.args.qsig.CalledName.name.char_set = name->char_set;
 	libpri_copy_string((char *)
-		msg.args.qsig.CalledName.name.data, call->connected_line.name.str,
+		msg.args.qsig.CalledName.name.data, name->str,
 		sizeof(msg.args.qsig.CalledName.name.data));
 	msg.args.qsig.CalledName.name.length =
 		strlen((char *) msg.args.qsig.CalledName.name.data);
@@ -1757,7 +1763,9 @@ int rose_called_name_encode(struct pri *ctrl, q931_call *call, int messagetype)
 	unsigned char buffer[256];
 	unsigned char *end;
 
-	end = enc_qsig_called_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	/* CalledName is the local_id.name */
+	end = enc_qsig_called_name(ctrl, buffer, buffer + sizeof(buffer),
+		&call->local_id.name);
 	if (!end) {
 		return -1;
 	}
@@ -1772,13 +1780,13 @@ int rose_called_name_encode(struct pri *ctrl, q931_call *call, int messagetype)
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param pos Starting position to encode the facility ie contents.
  * \param end End of facility ie contents encoding data buffer.
- * \param call Call leg from which to encode name.
+ * \param name Name data which to encode name.
  *
  * \retval Start of the next ASN.1 component to encode on success.
  * \retval NULL on error.
  */
 static unsigned char *enc_qsig_connected_name(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, q931_call *call)
+	unsigned char *end, const struct q931_party_name *name)
 {
 	struct fac_extension_header header;
 	struct rose_msg_invoke msg;
@@ -1798,12 +1806,12 @@ static unsigned char *enc_qsig_connected_name(struct pri *ctrl, unsigned char *p
 	msg.operation = ROSE_QSIG_ConnectedName;
 	msg.invoke_id = get_invokeid(ctrl);
 
-	/* ConnectedName is the connected_line.name */
+	/* ConnectedName */
 	msg.args.qsig.ConnectedName.name.presentation = qsig_name_presentation_from_q931(ctrl,
-		call->connected_line.name.presentation, call->connected_line.name.str[0]);
-	msg.args.qsig.ConnectedName.name.char_set = call->connected_line.name.char_set;
+		name->presentation, name->str[0]);
+	msg.args.qsig.ConnectedName.name.char_set = name->char_set;
 	libpri_copy_string((char *)
-		msg.args.qsig.ConnectedName.name.data, call->connected_line.name.str,
+		msg.args.qsig.ConnectedName.name.data, name->str,
 		sizeof(msg.args.qsig.ConnectedName.name.data));
 	msg.args.qsig.ConnectedName.name.length =
 		strlen((char *) msg.args.qsig.ConnectedName.name.data);
@@ -1828,7 +1836,9 @@ int rose_connected_name_encode(struct pri *ctrl, q931_call *call, int messagetyp
 	unsigned char buffer[256];
 	unsigned char *end;
 
-	end = enc_qsig_connected_name(ctrl, buffer, buffer + sizeof(buffer), call);
+	/* ConnectedName is the local_id.name */
+	end = enc_qsig_connected_name(ctrl, buffer, buffer + sizeof(buffer),
+		&call->local_id.name);
 	if (!end) {
 		return -1;
 	}
@@ -2262,35 +2272,35 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 #endif	/* Not handled yet */
 	case ROSE_QSIG_CallingName:
-		/* CallingName is put in caller_id.name */
-		call->caller_id.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
-		call->caller_id.name.presentation = qsig_name_presentation_for_q931(ctrl,
+		/* CallingName is put in remote_id.name */
+		call->remote_id.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->remote_id.name.presentation = qsig_name_presentation_for_q931(ctrl,
 			invoke->args.qsig.CallingName.name.presentation);
-		call->caller_id.name.char_set = invoke->args.qsig.CallingName.name.char_set;
-		libpri_copy_string(call->caller_id.name.str,
+		call->remote_id.name.char_set = invoke->args.qsig.CallingName.name.char_set;
+		libpri_copy_string(call->remote_id.name.str,
 			(char *) invoke->args.qsig.CallingName.name.data,
-			sizeof(call->caller_id.name.str));
+			sizeof(call->remote_id.name.str));
 		break;
 	case ROSE_QSIG_CalledName:
-		/* CalledName is put in called.name */
-		call->called_name.status = Q931_PARTY_DATA_STATUS_CHANGED;
-		call->called_name.presentation = qsig_name_presentation_for_q931(ctrl,
+		/* CalledName is put in remote_id.name */
+		call->remote_id.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->remote_id.name.presentation = qsig_name_presentation_for_q931(ctrl,
 			invoke->args.qsig.CalledName.name.presentation);
-		call->called_name.char_set = invoke->args.qsig.CalledName.name.char_set;
-		libpri_copy_string(call->called_name.str,
+		call->remote_id.name.char_set = invoke->args.qsig.CalledName.name.char_set;
+		libpri_copy_string(call->remote_id.name.str,
 			(char *) invoke->args.qsig.CalledName.name.data,
-			sizeof(call->called_name.str));
+			sizeof(call->remote_id.name.str));
 		break;
 	case ROSE_QSIG_ConnectedName:
-		/* ConnectedName is put in connected_line.name */
-		call->connected_line.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
-		call->connected_line.name.presentation = qsig_name_presentation_for_q931(ctrl,
+		/* ConnectedName is put in remote_id.name */
+		call->remote_id.name.status = Q931_PARTY_DATA_STATUS_CHANGED;
+		call->remote_id.name.presentation = qsig_name_presentation_for_q931(ctrl,
 			invoke->args.qsig.ConnectedName.name.presentation);
-		call->connected_line.name.char_set =
+		call->remote_id.name.char_set =
 			invoke->args.qsig.ConnectedName.name.char_set;
-		libpri_copy_string(call->connected_line.name.str,
+		libpri_copy_string(call->remote_id.name.str,
 			(char *) invoke->args.qsig.ConnectedName.name.data,
-			sizeof(call->connected_line.name.str));
+			sizeof(call->remote_id.name.str));
 		break;
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_BusyName:
@@ -2414,22 +2424,22 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		switch (invoke->args.qsig.CallTransferUpdate.redirection.presentation) {
 		case 0:	/* presentationAllowedNumber */
 		case 3:	/* presentationRestrictedNumber */
-			libpri_copy_string(call->caller_id.number.str, (char *)
+			libpri_copy_string(call->remote_id.number.str, (char *)
 				invoke->args.qsig.CallTransferUpdate.redirection.screened.number.str,
-				sizeof(call->caller_id.number.str));
+				sizeof(call->remote_id.number.str));
 			break;
 		default:
-			call->caller_id.number.str[0] = '\0';
+			call->remote_id.number.str[0] = '\0';
 			break;
 		}
-		call->caller_id.name.str[0] = '\0';
+		call->remote_id.name.str[0] = '\0';
 		if (invoke->args.qsig.CallTransferUpdate.redirection_name_present) {
 			switch (invoke->args.qsig.CallTransferUpdate.redirection_name.presentation) {
 			case 1:	/* presentation_allowed */
 			case 2:	/* presentation_restricted */
-				libpri_copy_string(call->caller_id.name.str,
+				libpri_copy_string(call->remote_id.name.str,
 					(char *) invoke->args.qsig.CallTransferUpdate.redirection_name.data,
-					sizeof(call->caller_id.name.str));
+					sizeof(call->remote_id.name.str));
 				break;
 			default:
 				break;
