@@ -928,6 +928,14 @@ int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1)
 	return 0;
 }
 
+int pri_sr_set_lowlayer(struct pri_sr *sr, int transmode, int userl1)
+{
+	sr->usellc = 1;
+	sr->llctransmode = transmode;
+	sr->llcuserl1 = userl1;
+	return 0;
+}
+
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int numcomplete)
 {
 	sr->called = called;
