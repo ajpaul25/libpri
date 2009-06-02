@@ -614,11 +614,209 @@ static char *int_rate2str(int proto)
     return code2str(proto, protos, sizeof(protos) / sizeof(protos[0]));
 }
 
+static FUNC_RECV(receive_low_layer_compatibility)
+{
+	/* len contains the full length of the IE, including octet 1 and 2 */
+	/* data[] starts with octet 3 */
+	/* pos is the offset from data[0] */
+	int pos = 0;
+	char octet = 'a';
+	int negotiation = 0;
+
+	pri_message(pri, "    receive_low_layer_compatibility\n");
+
+	if (len < 4) {
+		pri_error(pri, "Low layer compatibility does not have minimum length of 4 octets!\n");
+		return -1;
+	}
+
+	/* octet 3: coding standard, information transfer capability */
+	if (ie->data[pos] & 0x60) {
+		pri_error(pri, "!! non-ITU-T coding standard (cannot negotiate)\n");
+		return -1;
+	}
+	call->llctranscapability = ie->data[pos] & 0x1f;
+	pos++;
+	/* check for spare octet 3a */
+	if ((ie->data[pos - 1] & 0x80) == 0) {
+		/* octet 3a: negot. indic. */
+		negotiation = (ie->data[pos] & 0x40) ? 1 : 0;
+		pos++;
+	}
+
+	if (pos >= len - 2) {
+		pri_error(pri, "Low layer compatibility does not include mandatory octet 4!\n");
+		return -1;
+	}
+
+	/* octet 4: transfer mode, information transfer rate */
+	call->llctransmode = ie->data[pos] & 0x60;
+	call->llctransrate = ie->data[pos] & 0x1f;
+	pos++;
+	/* octet 4.1 exists if mode/rate is multirate */
+	if ((call->llctransmode | call->llctransrate) == TRANS_MODE_MULTIRATE) {
+		if (pos >= len - 2) {
+			pri_error(pri, "Low layer compatibility: IE too short to include octet 4.1!\n");
+			return -1;
+		}
+		/* octet 4.1: rate multiplier */
+		call->llctransmultiplier = ie->data[pos] & 0x7f;
+		pos++;
+	}
+
+	if (pos >= len - 2) {
+		return 0;
+	}
+
+	/* Look for octet 5; this is identified by bits 7,6 == 0 1 */
+	if ((ie->data[pos] & 0x60) == 0x20) {
+		do {
+			call->llcuser1proto = ie->data[pos] & 0x1f;
+			if (pri->debug & PRI_DEBUG_Q931_STATE) {
+				pri_message(pri, "    LLC User layer 1: %s (%d)\n", 
+					    l12str(call->llcuser1proto & 0x20), call->llcuser1proto);
+			}
+			pos++;
+
+			if (!(ie->data[pos] & 0x80)) {
+				/* Protocol indicates no further information encoded */
+				return 0;
+			}
+
+			if ((call->llcuser1proto & 0x20) != PRI_LAYER_1_ITU_RATE_ADAPT &&
+				(call->llcuser1proto & 0x20) != PRI_LAYER_1_ULAW &&
+				(call->llcuser1proto & 0x20) != PRI_LAYER_1_NON_ITU_ADAPT &&
+				(call->llcuser1proto & 0x20) != PRI_LAYER_1_V120_RATE_ADAPT) {
+				/* Nothing else in octet 5 */
+				break;
+			}
+
+			/* octet 5a-5d */
+			for (octet = 'a'; octet <= 'd'; octet++) {
+				if (pos >= len - 2) {
+					pri_error(pri, "Low layer compatibility: IE too short to include octet 5%c!\n", octet);
+					return -1;
+				}
+				call->llcuser1.octet5[octet - 'a'] = ie->data[pos] & 0x7f;
+
+				if (!(ie->data[pos] & 0x80)) {
+					/* Protocol indicates no further information encoded */
+					return 0;
+				}
+
+				if (call->llcuser1.async == 0) {
+					/* Octets 5b-5d omitted */
+					break;
+				}
+
+				if (octet == 'b' && !((call->llctranscapability == PRI_TRANS_CAP_DIGITAL &&
+						((call->llcuser1proto | 0x20) == PRI_LAYER_1_ITU_RATE_ADAPT ||
+						 (call->llcuser1proto | 0x20) == PRI_LAYER_1_V120_RATE_ADAPT)) ||
+					(call->llctranscapability == PRI_TRANS_CAP_3_1K_AUDIO && (call->llcuser1proto | 0x20) == PRI_LAYER_1_ULAW))) {
+					/* Octets 5c-5d omitted */
+					break;
+				}
+				pos++;
+			}
+		} while (0);
+	}
+
+	if (pos >= len - 2) {
+		return 0;
+	}
+
+	/* ignore layer 2 and layer 3! Note: below decoder is not complete!!! */
+	return 0;
+
+	/* Look for octet 6; this is identified by bits 7,6 == 10 */
+	if ((ie->data[pos] & 0x60) == 0x40) {
+		call->userl2 = ie->data[pos++] & 0x1f;
+	}
+
+	if (pos >= len - 2) {
+		return 0;
+	}
+
+	/* Look for octet 7; this is identified by bits 7,6 == 11 */
+	if ((ie->data[pos] & 0x60) == 0x60) {
+		call->userl3 = ie->data[pos++] & 0x1f;
+	}
+	return 0;
+}
+
+static FUNC_SEND(transmit_low_layer_compatibility)
+{
+	/* len contains the full length of the IE, including octet 1 and 2 */
+	/* data[] starts with octet 3 */
+	/* pos is the offset from data[0] */
+	int pos=0;
+	int tc;
+
+	/* We are ready to transmit single IE only */	
+	if(order > 1)
+		return 0;
+
+	/* Add usellc only if needed */	
+	if (call->usellc == 0)
+		return 0;
+
+	tc = call->transcapability;
+	
+	if (pri->switchtype == PRI_SWITCH_ATT4ESS) {
+		/* 4ESS uses a different trans capability for 3.1khz audio */
+		if (tc == PRI_TRANS_CAP_3_1K_AUDIO)
+			tc = PRI_TRANS_CAP_AUDIO_4ESS;
+	}
+	ie->data[0] = 0x80 | tc;
+	ie->data[1] = call->transmoderate | 0x80;
+
+	pos=2;
+	/* octet 4.1 exists iff mode/rate is multirate */
+	if (call->transmoderate == TRANS_MODE_MULTIRATE ) {
+	    ie->data[pos++] = call->transmultiple | 0x80;
+	}
+
+	if (call->transmoderate != TRANS_MODE_PACKET) {
+		/* If you have an AT&T 4ESS, you don't send any more info */
+		if ((pri->switchtype != PRI_SWITCH_ATT4ESS) && (call->userl1 > -1)) {
+			ie->data[pos++] = call->userl1 | 0x80; /* XXX Ext bit? XXX */
+			if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
+				ie->data[pos++] = call->rateadaption | 0x80;
+			}
+			return pos+2;
+		}
+
+		ie->data[pos++] = 0xA0 | (call->userl1 & 0x1F);
+
+		if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
+		    ie->data[pos-1] &= ~0x80; /* clear EXT bit in octet 5 */
+		    ie->data[pos++] = call->rateadaption | 0x80;
+		}
+	}
+	
+	
+	if(call->userl2 != -1 )
+	    ie->data[pos++] = 0xC0 | (call->userl2 & 0x1F);
+
+	if(call->userl3 != -1 )
+	    ie->data[pos++] = 0xE0 | (call->userl3 & 0x1F);
+
+	return pos+2;
+}
+
+/* this is used for dumping both Bearer Capability and Low-layer Compatability */
 static void dump_bearer_capability(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
 	int pos=2;
-	pri_message(ctrl, "%c Bearer Capability (len=%2d) [ Ext: %d  Q.931 Std: %d  Info transfer capability: %s (%d)\n",
-		prefix, len, (ie->data[0] & 0x80 ) >> 7, (ie->data[0] & 0x60) >> 5, cap2str(ie->data[0] & 0x1f), (ie->data[0] & 0x1f));
+	const char *iename;
+	if (full_ie == Q931_BEARER_CAPABILITY)
+		iename = "Bearer Capability";
+	else if (full_ie == Q931_LOW_LAYER_COMPAT)
+		iename = "Low-layer Compatability";
+	else
+		iename = "Unknown";
+	pri_message(ctrl, "%c %s (len=%2d) [ Ext: %d  Q.931 Std: %d  Info transfer capability: %s (%d)\n",
+		prefix, iename, len, (ie->data[0] & 0x80 ) >> 7, (ie->data[0] & 0x60) >> 5, cap2str(ie->data[0] & 0x1f), (ie->data[0] & 0x1f));
 	pri_message(ctrl, "%c                              Ext: %d  Trans mode/rate: %s (%d)\n", prefix, (ie->data[1] & 0x80) >> 7, mode2str(ie->data[1] & 0x7f), ie->data[1] & 0x7f);
 
 	/* octet 4.1 exists iff mode/rate is multirate */
@@ -840,7 +1038,7 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
 
 	if (call->transmoderate != TRANS_MODE_PACKET) {
 		/* If you have an AT&T 4ESS, you don't send any more info */
-		if ((ctrl->switchtype != PRI_SWITCH_ATT4ESS) && (call->userl1 > -1)) {
+		if ((ctrl->switchtype != PRI_SWITCH_ATT4ESS) && (call->userl1 > -1) && (call->usellc == 0)) {
 			ie->data[pos++] = call->userl1 | 0x80; /* XXX Ext bit? XXX */
 			if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
 				ie->data[pos++] = call->rateadaption | 0x80;
@@ -2161,7 +2359,7 @@ static struct ie ies[] = {
 	{ 1, Q931_REDIRECTING_SUBADDR, "Redirecting Subaddress", dump_redirecting_subaddr },
 	{ 0, Q931_TRANSIT_NET_SELECT, "Transit Network Selection" },
 	{ 1, Q931_RESTART_INDICATOR, "Restart Indicator", dump_restart_indicator, receive_restart_indicator, transmit_restart_indicator },
-	{ 0, Q931_LOW_LAYER_COMPAT, "Low-layer Compatibility" },
+	{ 4, Q931_LOW_LAYER_COMPAT, "Low-layer Compatibility", dump_bearer_capability, receive_low_layer_compatibility, transmit_low_layer_compatibility},
 	{ 0, Q931_HIGH_LAYER_COMPAT, "High-layer Compatibility" },
 	{ 1, Q931_PACKET_SIZE, "Packet Size" },
 	{ 0, Q931_IE_FACILITY, "Facility" , dump_facility, receive_facility, transmit_facility },
@@ -3095,7 +3293,7 @@ int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 }
 
 static int setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_NETWORK_SPEC_FAC, Q931_DISPLAY,
-	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_IE_USER_USER, Q931_SENDING_COMPLETE,
+	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_IE_USER_USER, Q931_LOW_LAYER_COMPAT, Q931_SENDING_COMPLETE,
 	Q931_IE_ORIGINATING_LINE_INFO, Q931_IE_GENERIC_DIGITS, -1 };
 
 static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1 };
@@ -3114,6 +3312,15 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->userl1 = req->userl1;
 	c->userl2 = -1;
 	c->userl3 = -1;
+	c->usellc = req->usellc;
+	c->llctranscapability = req->llctransmode;
+	c->llctransrate = TRANS_MODE_64_CIRCUIT;
+
+	if (!req->llcuserl1) {
+		req->llcuserl1 = PRI_LAYER_1_ULAW;
+	}
+	c->llcuser1proto = req->llcuserl1;
+
 	c->ds1no = (req->channel & 0xff00) >> 8;
 	c->ds1explicit = (req->channel & 0x10000) >> 16;
 	req->channel &= 0xff;
@@ -3391,6 +3598,12 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->userl2 = -1;
 		c->userl3 = -1;
 		c->rateadaption = -1;
+		c->usellc = 0;
+		c->llctranscapability = -1;
+		c->llctransmode = -1;
+		c->llctransrate = -1;
+		c->llctransmultiplier = -1;
+		c->llcuser1proto = -1;
 		c->calledplan = -1;
 		c->callerplan = -1;
 		c->callerpres = -1;

@@ -156,6 +156,9 @@ struct pri_sr {
 	int justsignalling;
 	const char *useruserinfo;
 	int transferable;
+	int usellc;
+	int llctransmode;
+	int llcuserl1;
 };
 
 /* Internal switch types */
@@ -205,7 +208,59 @@ struct q931_call {
 	int userl2;
 	int userl3;
 	int rateadaption;
-	
+
+	/* Low Layer Capability */
+	int usellc;
+	int llctranscapability;
+	int llctransmode;
+	int llctransrate;
+	int llctransmultiplier;
+	int llcuser1proto;
+	/* Note: this struct within a union within a struct within a union within a struct
+	 * is purely designed to make the code logic easier to follow without having to
+	 * ensure that the bitmaps are correct.  As this is an internal header, it does not
+	 * translate to assisting any part of the API (though that might be helpful in
+	 * libpri.h, as well). */
+	union {
+		char octet5[4];
+		struct {
+			unsigned int e5a:1;
+			unsigned int async:1;
+			unsigned int negot:1;
+			unsigned int userrate:5;
+			unsigned int e5b:1;
+			union {
+				/* For V.110, I.460, and X.30 rate adaption */
+				struct {
+					unsigned int interrate:2;
+					unsigned int nicontx:1;
+					unsigned int niconrx:1;
+					unsigned int flowontx:1;
+					unsigned int flowonrx:1;
+				};
+				/* For V.120 rate adaption */
+				struct {
+					unsigned int header:1;
+					unsigned int multiframe:1;
+					unsigned int mode:1;
+					unsigned int negotlli:1;
+					unsigned int assignor:1;
+					unsigned int inbandnegot:1;
+				};
+			};
+			unsigned int s5b:1;
+			unsigned int e5c:1;
+			unsigned int stopbits:2;
+			unsigned int databits:2;
+			unsigned int parity:3;
+			unsigned int e5d:1;
+			unsigned int duplex:1;
+			unsigned int modemtype:6;
+		} __attribute__((packed));
+	} llcuser1;
+
+	/* TODO user layer 2, 3 */
+
 	int sentchannel;
 	int justsignalling;		/* for a signalling-only connection */
 
