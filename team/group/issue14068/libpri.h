@@ -344,41 +344,71 @@
 
 typedef struct q931_call q931_call;
 
-/*! \brief Connected line update source code */
-enum PRI_CONNECTED_LINE_UPDATE_SOURCE {
-	/*! Update for unknown reason (May be interpreted to mean from answer) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_UNKNOWN,
-	/*! Update from normal call answering */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_ANSWER,
-	/*! Update from call transfer(active) (Party has already answered) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER,
-	/*! Update from call transfer(alerting) (Party has not answered yet) */
-	PRI_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING
+/* Name character set enumeration values */
+#define PRI_CHAR_SET_UNKNOWN				0
+#define PRI_CHAR_SET_ISO8859_1				1
+#define PRI_CHAR_SET_WITHDRAWN				2
+#define PRI_CHAR_SET_ISO8859_2				3
+#define PRI_CHAR_SET_ISO8859_3				4
+#define PRI_CHAR_SET_ISO8859_4				5
+#define PRI_CHAR_SET_ISO8859_5				6
+#define PRI_CHAR_SET_ISO8859_7				7
+#define PRI_CHAR_SET_ISO10646_BMPSTRING		8
+#define PRI_CHAR_SET_ISO10646_UTF_8STRING	9
+
+/*! \brief Q.SIG name information. */
+struct pri_party_name {
+	/*! \brief TRUE if the name information is valid/present */
+	int valid;
+	/*!
+	 * \brief Q.931 presentation-indicator encoded field
+	 * \note Must tollerate the Q.931 screening-indicator field values being present.
+	 */
+	int presentation;
+	/*!
+	 * \brief Character set the name is using.
+	 * \details
+	 * unknown(0),
+	 * iso8859-1(1),
+	 * enum-value-withdrawn-by-ITU-T(2)
+	 * iso8859-2(3),
+	 * iso8859-3(4),
+	 * iso8859-4(5),
+	 * iso8859-5(6),
+	 * iso8859-7(7),
+	 * iso10646-BmpString(8),
+	 * iso10646-utf-8String(9)
+	 * \details
+	 * Set to iso8859-1(1) if unsure what to use.
+	 */
+	int char_set;
+	/*! \brief Name data with null terminator. */
+	char str[64];
+};
+
+struct pri_party_number {
+	/*! \brief TRUE if the number information is valid/present */
+	int valid;
+	/*! \brief Q.931 presentation-indicator and screening-indicator encoded fields */
+	int presentation;
+	/*! \brief Q.931 Type-Of-Number and numbering-plan encoded fields */
+	int plan;
+	/*! \brief Number data with null terminator. */
+	char str[64];
 };
 
 /*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
-	/*! Subscriber phone number */
-	char number[64];
-	/*! Subscriber name */
-	char name[64];
-	/*! Q.931 encoded "type of number" and "numbering plan identification" */
-	int number_type;
-	/*! Q.931 encoded "presentation indicator" and "screening indicator" */
-	int number_presentation;
+	/*! \brief Subscriber name */
+	struct pri_party_name name;
+	/*! \brief Subscriber phone number */
+	struct pri_party_number number;
 };
 
 /*! \brief Connected Line/Party information */
 struct pri_party_connected_line {
 	/*! Connected party ID */
 	struct pri_party_id id;
-	/*!
-	 * \brief Information about the source of an update.
-	 * \details
-	 * enum PRI_CONNECTED_LINE_UPDATE_SOURCE values
-	 * for Normal-Answer, Call-transfer
-	 */
-	int source;
 };
 
 /*!
@@ -392,9 +422,13 @@ struct pri_party_redirecting {
 	struct pri_party_id from;
 	/*! Call is redirecting to a new party (Sent to the caller) */
 	struct pri_party_id to;
+	/*! Originally called party (in cases of multiple redirects) */
+	struct pri_party_id orig_called;
 	/*! Number of times the call was redirected */
 	int count;
-	/*! Redirection reasons */
+	/*! Original reason for redirect (in cases of multiple redirects) */
+	int orig_reason;
+	/*! Redirection reason */
 	int reason;
 };
 
@@ -403,11 +437,11 @@ struct pri_party_redirecting {
 #define PRI_SUBCMD_CONNECTED_LINE	2
 
 
-struct pri_subcmd_connected_line {
+struct pri_subcmd_connected_line {/* BUGBUG eliminate this struct since it is not adding anything useful. */
 	struct pri_party_connected_line party;
 };
 
-struct pri_subcmd_redirecting {
+struct pri_subcmd_redirecting {/* BUGBUG eliminate this struct since it is not adding anything useful. */
 	struct pri_party_redirecting party;
 };
 
@@ -419,11 +453,11 @@ struct pri_subcommand {
 		char reserve_space[512];
 		struct pri_subcmd_connected_line connected_line;
 		struct pri_subcmd_redirecting redirecting;
-	};
+	} u;
 };
 
 /* Max number of subcommands per event message */
-#define PRI_MAX_SUBCOMMANDS	6
+#define PRI_MAX_SUBCOMMANDS	8
 
 struct pri_subcommands {
 	int counter_subcmd;
@@ -454,10 +488,6 @@ typedef struct pri_event_ringing {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
-	char calledname[256];
-	char callednum[256];
-	int calledpres;
-	int calledplan;
 	struct pri_subcommands *subcmds;
 } pri_event_ringing;
 
@@ -469,11 +499,6 @@ typedef struct pri_event_answer {
 	int progressmask;
 	q931_call *call;
 	char useruserinfo[260];		/* User->User info */
-	char connectednum[256];
-	char connectedname[256];
-	int connectedpres;
-	int connectedplan;
-	int source;
 	struct pri_subcommands *subcmds;
 } pri_event_answer;
 
@@ -533,8 +558,6 @@ typedef struct pri_event_ring {
 	char origcallednum[256];
 	int callingplanorigcalled;		/* Dialing plan of Originally Called Number */
 	int origredirectingreason;
-	int redirectingpres;
-	int redirectingcount;
 	struct pri_subcommands *subcmds;
 } pri_event_ring;
 
@@ -704,11 +727,17 @@ int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisd
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
-/*! \brief Give connected line information to a call */
-int pri_connected_line_update(struct pri *pri, q931_call *call, struct pri_party_connected_line *connected);
+/*! 
+ * \brief Give connected line information to a call 
+ * \note Could be used instead of pri_sr_set_caller() before calling pri_setup().
+ */
+int pri_connected_line_update(struct pri *pri, q931_call *call, const struct pri_party_connected_line *connected);
 
-/*! \brief Give redirection information to a call */
-int pri_redirecting_update(struct pri *pri, q931_call *call, struct pri_party_redirecting *redirecting);
+/*! 
+ * \brief Give redirection information to a call
+ * \note Should be used instead of pri_sr_set_redirecting() before calling pri_setup().
+ */
+int pri_redirecting_update(struct pri *pri, q931_call *call, const struct pri_party_redirecting *redirecting);
 
 /* Set CRV reference for GR-303 calls */
 
@@ -764,9 +793,11 @@ void pri_sr_free(struct pri_sr *sr);
 int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int nonisdn);
 int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
+/*! \note Use pri_connected_line_update() instead to pass more precise caller information. */
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
+/*! \note Use pri_redirecting_update() instead to pass more precise redirecting information. */
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
-void pri_sr_set_redirecting_name(struct pri_sr *sr, char *name);
+
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
 void pri_sr_set_useruser(struct pri_sr *sr, const char *userchars);
