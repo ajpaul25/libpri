@@ -4342,7 +4342,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			if (subcmd) {
 				/* Setup redirecting subcommand */
 				subcmd->cmd = PRI_SUBCMD_REDIRECTING;
-				q931_party_redirecting_copy_to_pri(&subcmd->u.redirecting.party,
+				q931_party_redirecting_copy_to_pri(&subcmd->u.redirecting,
 					&c->redirecting);
 			}
 		}
@@ -4410,7 +4410,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			subcmd = q931_alloc_subcommand(ctrl);
 			if (subcmd) {
 				subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
-				q931_party_id_copy_to_pri(&subcmd->u.connected_line.party.id, &c->remote_id);
+				q931_party_id_copy_to_pri(&subcmd->u.connected_line.id, &c->remote_id);
 			}
 
 			return Q931_RES_HAVEEVENT;
@@ -4426,7 +4426,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			subcmd = q931_alloc_subcommand(ctrl);
 			if (subcmd) {
 				subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
-				q931_party_id_copy_to_pri(&subcmd->u.connected_line.party.id, &c->remote_id);
+				q931_party_id_copy_to_pri(&subcmd->u.connected_line.id, &c->remote_id);
 			}
 			break;
 		default:

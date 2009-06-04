@@ -437,22 +437,14 @@ struct pri_party_redirecting {
 #define PRI_SUBCMD_CONNECTED_LINE	2
 
 
-struct pri_subcmd_connected_line {/* BUGBUG eliminate this struct since it is not adding anything useful. */
-	struct pri_party_connected_line party;
-};
-
-struct pri_subcmd_redirecting {/* BUGBUG eliminate this struct since it is not adding anything useful. */
-	struct pri_party_redirecting party;
-};
-
 struct pri_subcommand {
 	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
 	union {
 		/*! Reserve room for possible expansion to maintain ABI compatibility. */
 		char reserve_space[512];
-		struct pri_subcmd_connected_line connected_line;
-		struct pri_subcmd_redirecting redirecting;
+		struct pri_party_connected_line connected_line;
+		struct pri_party_redirecting redirecting;
 	} u;
 };
 

@@ -2356,7 +2356,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			break;
 		}
 		subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
-		q931_party_id_copy_to_pri(&subcmd->u.connected_line.party.id, &call->remote_id);
+		q931_party_id_copy_to_pri(&subcmd->u.connected_line.id, &call->remote_id);
 		break;
 	case ROSE_QSIG_ConnectedName:
 		/* ConnectedName is put in remote_id.name */
@@ -2716,7 +2716,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 			}
 			/* Setup redirecting subcommand */
 			subcmd->cmd = PRI_SUBCMD_REDIRECTING;
-			q931_party_redirecting_copy_to_pri(&subcmd->u.redirecting.party,
+			q931_party_redirecting_copy_to_pri(&subcmd->u.redirecting,
 				&call->redirecting);
 			break;
 		default:
