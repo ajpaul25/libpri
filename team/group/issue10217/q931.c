@@ -614,6 +614,22 @@ static char *int_rate2str(int proto)
     return code2str(proto, protos, sizeof(protos) / sizeof(protos[0]));
 }
 
+#define CHECK_COMPAT                                                               \
+		if (msgtype == Q931_CONNECT) {                                             \
+			/* Check for compatibility */                                          \
+			int i;                                                                 \
+			for (i = 0; i < 4; i++) {                                              \
+				if (memcmp(llc, &call->llc[i], sizeof(*llc)) == 0) {               \
+					call->llcacceptable = 1;                                       \
+					if (i != 0) {                                                  \
+						/* Copy negotiated parameters into the first LLC record */ \
+						memcpy(&call->llc[0], llc, sizeof(struct llc));            \
+						memset(&call->llc[1], 0, sizeof(struct llc) * 3);          \
+					}                                                              \
+				}                                                                  \
+			}                                                                      \
+		}
+
 static FUNC_RECV(receive_low_layer_compatibility)
 {
 	/* len contains the full length of the IE, including octet 1 and 2 */
@@ -621,12 +637,23 @@ static FUNC_RECV(receive_low_layer_compatibility)
 	/* pos is the offset from data[0] */
 	int pos = 0;
 	char octet = 'a';
-	int negotiation = 0;
+	struct llc *llc = &call->llc[call->llccount];
+	struct llc connect_llc;
 
 	pri_message(pri, "    receive_low_layer_compatibility\n");
 
+	if (msgtype == Q931_CONNECT) {
+		/* We sent the original SETUP, response is given with the acceptable LLC */
+		llc = &connect_llc;
+	}
+
 	if (len < 4) {
 		pri_error(pri, "Low layer compatibility does not have minimum length of 4 octets!\n");
+		return -1;
+	}
+
+	if (msgtype == Q931_SETUP && call->llccount >= 4) {
+		pri_error(pri, "Excess of 4 LLC IEs included in negotiation.  Only 4 are possible.\n");
 		return -1;
 	}
 
@@ -635,12 +662,12 @@ static FUNC_RECV(receive_low_layer_compatibility)
 		pri_error(pri, "!! non-ITU-T coding standard (cannot negotiate)\n");
 		return -1;
 	}
-	call->llctranscapability = ie->data[pos] & 0x1f;
+	llc->transcapability = ie->data[pos] & 0x1f;
 	pos++;
 	/* check for spare octet 3a */
 	if ((ie->data[pos - 1] & 0x80) == 0) {
-		/* octet 3a: negot. indic. */
-		negotiation = (ie->data[pos] & 0x40) ? 1 : 0;
+		/* octet 3a: OOB negot. indic. */
+		llc->negotiateoob = (ie->data[pos] & 0x40) ? 1 : 0;
 		pos++;
 	}
 
@@ -650,158 +677,271 @@ static FUNC_RECV(receive_low_layer_compatibility)
 	}
 
 	/* octet 4: transfer mode, information transfer rate */
-	call->llctransmode = ie->data[pos] & 0x60;
-	call->llctransrate = ie->data[pos] & 0x1f;
+	llc->transmode = ie->data[pos] & 0x60;
+	llc->transrate = ie->data[pos] & 0x1f;
 	pos++;
 	/* octet 4.1 exists if mode/rate is multirate */
-	if ((call->llctransmode | call->llctransrate) == TRANS_MODE_MULTIRATE) {
+	if ((llc->transmode | llc->transrate) == TRANS_MODE_MULTIRATE) {
 		if (pos >= len - 2) {
 			pri_error(pri, "Low layer compatibility: IE too short to include octet 4.1!\n");
 			return -1;
 		}
 		/* octet 4.1: rate multiplier */
-		call->llctransmultiplier = ie->data[pos] & 0x7f;
+		llc->transmultiplier = ie->data[pos] & 0x7f;
 		pos++;
 	}
 
-	if (pos >= len - 2) {
+	if (llc->negotiateoob == 0) {
+		if (msgtype == Q931_SETUP) {
+			pri_message(pri, "Out-of-band negotiation not possible.  Will not negotiate LLC on CONNECT\n");
+		}
 		return 0;
+	}
+
+	if (pos >= len - 2) {
+		CHECK_COMPAT;
+		return 0;
+	}
+
+	/* Far enough along that this constitutes a full LLC IE */
+	if (msgtype == Q931_SETUP) {
+		call->llccount++;
 	}
 
 	/* Look for octet 5; this is identified by bits 7,6 == 0 1 */
 	if ((ie->data[pos] & 0x60) == 0x20) {
 		do {
-			call->llcuser1proto = ie->data[pos] & 0x1f;
+			llc->layer1proto = ie->data[pos] & 0x1f;
 			if (pri->debug & PRI_DEBUG_Q931_STATE) {
 				pri_message(pri, "    LLC User layer 1: %s (%d)\n", 
-					    l12str(call->llcuser1proto & 0x20), call->llcuser1proto);
+					    l12str(llc->layer1proto | 0x20), llc->layer1proto);
 			}
 			pos++;
 
-			if (!(ie->data[pos] & 0x80)) {
-				/* Protocol indicates no further information encoded */
-				return 0;
-			}
-
-			if ((call->llcuser1proto & 0x20) != PRI_LAYER_1_ITU_RATE_ADAPT &&
-				(call->llcuser1proto & 0x20) != PRI_LAYER_1_ULAW &&
-				(call->llcuser1proto & 0x20) != PRI_LAYER_1_NON_ITU_ADAPT &&
-				(call->llcuser1proto & 0x20) != PRI_LAYER_1_V120_RATE_ADAPT) {
-				/* Nothing else in octet 5 */
+			if (ie->data[pos] & 0x80) {
+				/* End of octet */
 				break;
 			}
 
 			/* octet 5a-5d */
 			for (octet = 'a'; octet <= 'd'; octet++) {
 				if (pos >= len - 2) {
-					pri_error(pri, "Low layer compatibility: IE too short to include octet 5%c!\n", octet);
+					if (msgtype == Q931_SETUP) {
+						pri_error(pri, "Low layer compatibility: IE too short to include octet 5%c!\n", octet);
+					}
+					CHECK_COMPAT;
 					return -1;
 				}
-				call->llcuser1.octet5[octet - 'a'] = ie->data[pos] & 0x7f;
+				llc->layer1.octet5[octet - 'a'] = ie->data[pos];
 
-				if (!(ie->data[pos] & 0x80)) {
-					/* Protocol indicates no further information encoded */
-					return 0;
-				}
-
-				if (call->llcuser1.async == 0) {
-					/* Octets 5b-5d omitted */
+				if (ie->data[pos] & 0x80) {
+					/* End of octet */
 					break;
 				}
 
-				if (octet == 'b' && !((call->llctranscapability == PRI_TRANS_CAP_DIGITAL &&
-						((call->llcuser1proto | 0x20) == PRI_LAYER_1_ITU_RATE_ADAPT ||
-						 (call->llcuser1proto | 0x20) == PRI_LAYER_1_V120_RATE_ADAPT)) ||
-					(call->llctranscapability == PRI_TRANS_CAP_3_1K_AUDIO && (call->llcuser1proto | 0x20) == PRI_LAYER_1_ULAW))) {
-					/* Octets 5c-5d omitted */
-					break;
-				}
 				pos++;
 			}
 		} while (0);
 	}
 
 	if (pos >= len - 2) {
+		CHECK_COMPAT;
 		return 0;
 	}
 
-	/* ignore layer 2 and layer 3! Note: below decoder is not complete!!! */
-	return 0;
-
 	/* Look for octet 6; this is identified by bits 7,6 == 10 */
 	if ((ie->data[pos] & 0x60) == 0x40) {
-		call->userl2 = ie->data[pos++] & 0x1f;
+		do {
+			llc->layer2proto = ie->data[pos++] & 0x1f;
+			if (ie->data[pos] & 0x80) {
+				/* End of octet */
+				break;
+			}
+			pos++;
+
+			/* All protocols excluding these 4  allow for at least octet 6a */
+			if (llc->layer2proto != PRI_LAYER2_PROTO_BASIC && llc->layer2proto != PRI_LAYER2_PROTO_EXTENDED_LAPB && llc->layer2proto != PRI_LAYER2_PROTO_LAN && llc->layer2proto != PRI_LAYER2_PROTO_Q922_CORE) {
+				for (octet = 'a'; octet <= 'b'; octet++) {
+					if (pos >= len - 2) {
+						pri_error(pri, "Low layer compatibility: IE too short to include octet 6%c!\n", octet);
+						CHECK_COMPAT;
+						return -1;
+					}
+					llc->layer2.octet6[octet - 'a'] = ie->data[pos];
+
+					if (ie->data[pos] & 0x80) {
+						/* End of octet */
+						break;
+					}
+
+					pos++;
+				}
+			}
+		} while (0);
 	}
 
 	if (pos >= len - 2) {
+		CHECK_COMPAT;
 		return 0;
 	}
 
 	/* Look for octet 7; this is identified by bits 7,6 == 11 */
 	if ((ie->data[pos] & 0x60) == 0x60) {
-		call->userl3 = ie->data[pos++] & 0x1f;
+		do {
+			llc->layer3proto = ie->data[pos++] & 0x1f;
+			if (ie->data[pos] & 0x80) {
+				/* End of octet */
+				break;
+			}
+			pos++;
+
+			if (pos >= len - 2) {
+				CHECK_COMPAT;
+				return 0;
+			}
+
+			for (octet = 'a'; octet <= 'c'; octet++) {
+				llc->layer3.octet7[octet - 'a'] = ie->data[pos];
+
+				if (ie->data[pos] & 0x80) {
+					/* End of octet */
+					break;
+				}
+
+				pos++;
+			}
+		} while (0);
 	}
+
+	CHECK_COMPAT;
 	return 0;
 }
+#undef CHECK_COMPAT
 
 static FUNC_SEND(transmit_low_layer_compatibility)
 {
 	/* len contains the full length of the IE, including octet 1 and 2 */
 	/* data[] starts with octet 3 */
 	/* pos is the offset from data[0] */
-	int pos=0;
+	int pos = 0;
 	int tc;
+	struct llc *llc = &call->llc[order];
 
 	/* We are ready to transmit single IE only */	
-	if(order > 1)
+	if (msgtype == Q931_CONNECT && order > 1) {
 		return 0;
+	}
 
-	/* Add usellc only if needed */	
-	if (call->usellc == 0)
+	/* Do we need to send LLC? */	
+	if (call->usellc == 0) {
 		return 0;
+	}
 
-	tc = call->transcapability;
-	
+	tc = llc->transcapability;
+
 	if (pri->switchtype == PRI_SWITCH_ATT4ESS) {
 		/* 4ESS uses a different trans capability for 3.1khz audio */
-		if (tc == PRI_TRANS_CAP_3_1K_AUDIO)
+		if (tc == PRI_TRANS_CAP_3_1K_AUDIO) {
 			tc = PRI_TRANS_CAP_AUDIO_4ESS;
+		}
 	}
-	ie->data[0] = 0x80 | tc;
-	ie->data[1] = call->transmoderate | 0x80;
+	ie->data[0] = tc;
+	ie->data[1] = 0xC0; /* Negotiation indicator */
+	ie->data[2] = 0x80 | llc->transmode | llc->transrate;
 
-	pos=2;
+	pos = 3;
 	/* octet 4.1 exists iff mode/rate is multirate */
-	if (call->transmoderate == TRANS_MODE_MULTIRATE ) {
-	    ie->data[pos++] = call->transmultiple | 0x80;
+	if ((llc->transmode | llc->transrate) == TRANS_MODE_MULTIRATE) {
+	    ie->data[pos++] = 0x80 | llc->transmultiplier;
 	}
 
-	if (call->transmoderate != TRANS_MODE_PACKET) {
+	/* Octet 5 */
+	if ((llc->transmode | llc->transrate) != TRANS_MODE_PACKET) {
 		/* If you have an AT&T 4ESS, you don't send any more info */
-		if ((pri->switchtype != PRI_SWITCH_ATT4ESS) && (call->userl1 > -1)) {
-			ie->data[pos++] = call->userl1 | 0x80; /* XXX Ext bit? XXX */
-			if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
-				ie->data[pos++] = call->rateadaption | 0x80;
+		if ((pri->switchtype != PRI_SWITCH_ATT4ESS) && (llc->layer1proto > -1)) {
+			ie->data[pos++] = 0x80 | llc->layer1proto;
+			if (llc->layer1proto == PRI_LAYER_1_ITU_RATE_ADAPT) {
+				ie->data[pos++] = 0x80 | call->rateadaption;
 			}
-			return pos+2;
+			return pos + 2;
 		}
 
-		ie->data[pos++] = 0xA0 | (call->userl1 & 0x1F);
+		do {
+			ie->data[pos++] = 0x20 | (llc->layer1proto & 0x1F);
 
-		if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
-		    ie->data[pos-1] &= ~0x80; /* clear EXT bit in octet 5 */
-		    ie->data[pos++] = call->rateadaption | 0x80;
-		}
+			if ((llc->layer1proto | 0x20) != PRI_LAYER_1_ITU_RATE_ADAPT && (llc->layer1proto | 0x20) != PRI_LAYER_1_NON_ITU_ADAPT && (llc->layer1proto | 0x20) != PRI_LAYER_1_V120_RATE_ADAPT) {
+				ie->data[pos - 1] |= 0x80; /* Set octet termination bit */
+				break;
+			}
+
+			/* Octet 5a */
+		    ie->data[pos++] = ~0x80 & llc->layer1.octet5[0];
+
+			/* Octets 5b-5d are omitted for synchronous data */
+			if (!(llc->layer1.octet5[0] & 0x40)) {
+				ie->data[pos - 1] |= 0x80; /* Set octet termination bit */
+				break;
+			}
+
+			if (!(llc->transcapability == PRI_TRANS_CAP_DIGITAL &&
+					(llc->layer1proto == PRI_LAYER_1_ITU_RATE_ADAPT ||
+					 llc->layer1proto == PRI_LAYER_1_V120_RATE_ADAPT)) ||
+				!(llc->transcapability == PRI_TRANS_CAP_3_1K_AUDIO && llc->layer1proto == PRI_LAYER_1_ULAW)) {
+				/* Specified in Q.931 (1998) Figure 4-25 Note 2 (page 84)
+				 * There is also a possibility of encoding non-ITU capabilities
+				 * into octets 5b-5d, but since we don't support this mode, it
+				 * is excluded. */
+				ie->data[pos - 1] |= 0x80; /* Set octet termination bit */
+				break;
+			}
+
+			/* Octet 5b */
+		    ie->data[pos++] = ~0x80 & llc->layer1.octet5[1];
+
+			if ((llc->layer1.octet5[2] & 0x60) == 0 || (llc->layer1.octet5[2] & 0x18) == 0) {
+				/* Illegal values == octet 5c not included */
+				ie->data[pos - 1] |= 0x80; /* Set octet termination bit */
+				break;
+			}
+
+			/* Octet 5c */
+		    ie->data[pos++] = ~0x80 & llc->layer1.octet5[2];
+
+			/* Octet 5d */
+		    ie->data[pos++] = 0x80 | llc->layer1.octet5[3];
+		} while (0);
 	}
-	
-	
-	if(call->userl2 != -1 )
-	    ie->data[pos++] = 0xC0 | (call->userl2 & 0x1F);
 
-	if(call->userl3 != -1 )
-	    ie->data[pos++] = 0xE0 | (call->userl3 & 0x1F);
+	if (llc->layer2proto & 0x1f) {
+		do {
+			/* Octet 6 */
+			ie->data[pos++] = 0x40 | (0x1F & llc->layer2proto);
 
-	return pos+2;
+			if (llc->layer2proto == PRI_LAYER2_PROTO_USERSPEC) {
+				/* Octet 6a */
+				ie->data[pos++] = 0x80 | llc->layer2.octet6[0];
+				break;
+			} else if (llc->layer2proto == PRI_LAYER2_PROTO_Q921 || llc->layer2proto == PRI_LAYER2_PROTO_X25 || llc->layer2proto == PRI_LAYER2_PROTO_X25_MULTILINK || llc->layer2proto == PRI_LAYER2_PROTO_HDLC_ARM || llc->layer2proto == PRI_LAYER2_PROTO_HDLC_NRM || llc->layer2proto == PRI_LAYER2_PROTO_HDLC_ABM || llc->layer2proto == PRI_LAYER2_PROTO_X75 || llc->layer2proto == PRI_LAYER2_PROTO_Q922 || llc->layer2proto == PRI_LAYER2_PROTO_DTE_DCE) {
+				/* Octet 6a */
+				ie->data[pos++] = ~0x80 & llc->layer2.octet6[0];
+				if (llc->layer2.windowsize != 0) {
+					/* Octet 6b */
+					ie->data[pos++] = llc->layer2.octet6[1];
+				}
+				ie->data[pos - 1] |= 0x80; /* Set octet termination bit */
+			}
+		} while (0);
+	}
+
+	if (llc->layer3proto & 0x1f) {
+		do {
+			/* Octet 7 */
+			ie->data[pos++] = 0x60 | (0x1F & llc->layer2proto);
+
+
+		} while (0);
+	}
+	return pos + 2;
 }
 
 /* this is used for dumping both Bearer Capability and Low-layer Compatability */
@@ -3324,13 +3464,13 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->userl2 = -1;
 	c->userl3 = -1;
 	c->usellc = req->usellc;
-	c->llctranscapability = req->llctransmode;
-	c->llctransrate = TRANS_MODE_64_CIRCUIT;
+	c->llc[0].transcapability = req->llctransmode;
+	c->llc[0].transrate = TRANS_MODE_64_CIRCUIT;
 
 	if (!req->llcuserl1) {
 		req->llcuserl1 = PRI_LAYER_1_ULAW;
 	}
-	c->llcuser1proto = req->llcuserl1;
+	c->llc[0].layer1proto = req->llcuserl1;
 
 	c->ds1no = (req->channel & 0xff00) >> 8;
 	c->ds1explicit = (req->channel & 0x10000) >> 16;
@@ -3620,11 +3760,6 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->userl3 = -1;
 		c->rateadaption = -1;
 		c->usellc = 0;
-		c->llctranscapability = -1;
-		c->llctransmode = -1;
-		c->llctransrate = -1;
-		c->llctransmultiplier = -1;
-		c->llcuser1proto = -1;
 		c->calledplan = -1;
 		c->callerplan = -1;
 		c->callerpres = -1;
