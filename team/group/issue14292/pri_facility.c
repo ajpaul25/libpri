@@ -468,7 +468,7 @@ static int qsig_name_presentation_for_q931(struct pri *ctrl, int presentation)
 	return value;
 }
 
-static int presentation_to_subscription(struct pri *pri, int presentation)
+static int presentation_to_subscription(struct pri *ctrl, int presentation)
 {
 	/* derive subscription value from presentation value */
 
@@ -480,7 +480,7 @@ static int presentation_to_subscription(struct pri *pri, int presentation)
 	case PRI_PRES_UNAVAILABLE:	/* Number not available due to interworking */
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;	/* ?? QSIG_NO_NOTIFICATION */
 	default:
-		pri_message(pri, "!! Unknown Q.SIG presentationIndicator 0x%02x\n",
+		pri_message(ctrl, "!! Unknown Q.SIG presentationIndicator 0x%02x\n",
 			presentation);
 		return QSIG_NOTIFICATION_WITHOUT_DIVERTED_TO_NR;
 	}
@@ -1004,6 +1004,7 @@ static unsigned char *enc_qsig_calling_name(struct pri *ctrl, unsigned char *pos
 		name->str, sizeof(msg.args.qsig.CallingName.name.data));
 	msg.args.qsig.CallingName.name.length =
 		strlen((char *) msg.args.qsig.CallingName.name.data);
+
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
@@ -1434,13 +1435,13 @@ int qsig_cf_callrerouting(struct pri *ctrl, q931_call *call, const char *dest,
  *
  * Just need to resend the message to the other tromboned leg of the call.
  */
-static int anfpr_pathreplacement_respond(struct pri *pri, q931_call *call, q931_ie *ie)
+static int anfpr_pathreplacement_respond(struct pri *ctrl, q931_call *call, q931_ie *ie)
 {
 	int res;
 
 	res = pri_call_apdu_queue_cleanup(call->bridged_call);
 	if (res) {
-		pri_message(pri, "Could not Clear queue ADPU\n");
+		pri_message(ctrl, "Could not Clear queue ADPU\n");
 		return -1;
 	}
 
@@ -1449,7 +1450,7 @@ static int anfpr_pathreplacement_respond(struct pri *pri, q931_call *call, q931_
 		pri_call_apdu_queue(call->bridged_call, Q931_FACILITY, ie->data, ie->len, NULL,
 		NULL);
 	if (res) {
-		pri_message(pri, "Could not queue ADPU in facility message\n");
+		pri_message(ctrl, "Could not queue ADPU in facility message\n");
 		return -1;
 	}
 
@@ -1458,7 +1459,7 @@ static int anfpr_pathreplacement_respond(struct pri *pri, q931_call *call, q931_
 
 	res = q931_facility(call->bridged_call->pri, call->bridged_call);
 	if (res) {
-		pri_message(pri, "Could not schedule facility message for call %d\n",
+		pri_message(ctrl, "Could not schedule facility message for call %d\n",
 			call->bridged_call->cr);
 		return -1;
 	}
@@ -2144,15 +2145,17 @@ static int add_qsigCcRequestArg_facility_ie(struct pri *ctrl, q931_call *call)
 /* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
 
 /*! \note Only called when sending the SETUP message. */
-int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
+int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 {
-	if (!pri->sendfacility)
+	if (!ctrl->sendfacility) {
 		return 0;
+	}
 
-	if (pri->switchtype == PRI_SWITCH_QSIG) {
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
 		/* For Q.SIG it does network and cpe operations */
 		if (call->redirecting.count) {
-			rose_diverting_leg_information2_encode(pri, call);
+			rose_diverting_leg_information2_encode(ctrl, call);
 
 			/*
 			 * Expect a DivertingLegInformation3 to update the COLR of the
@@ -2160,76 +2163,55 @@ int pri_call_add_standard_apdus(struct pri *pri, q931_call *call)
 			 */
 			call->redirecting.state = Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3;
 		}
-		add_callername_facility_ies(pri, call, 1);
+		add_callername_facility_ies(ctrl, call, 1);
 		if (call->ccoperation) {
 			switch (call->ccoperation) {
 			case 0:
 				break;
 			case PRI_CC_CCBSREQUEST:
 			case PRI_CC_CCNRREQUEST:
-				add_qsigCcRequestArg_facility_ie(pri, call);
+				add_qsigCcRequestArg_facility_ie(ctrl, call);
 				break;
 			case PRI_CC_RINGOUT:
-				add_qsigCcInv_facility_ie(pri, call, Q931_SETUP);
+				add_qsigCcInv_facility_ie(ctrl, call, Q931_SETUP);
 				break;
 			default:
 				break;
 			}
 		}
-		return 0;
-	}
-
-#if 0
-	if (pri->localtype == PRI_NETWORK) {
-		switch (pri->switchtype) {
-		case PRI_SWITCH_NI2:
-			add_callername_facility_ies(pri, call, 0);
-			break;
-		default:
-			break;
+		break;
+	case PRI_SWITCH_NI2:
+		add_callername_facility_ies(ctrl, call, (ctrl->localtype == PRI_CPE));
+		break;
+	case PRI_SWITCH_DMS100:
+		if (ctrl->localtype == PRI_CPE) {
+			add_dms100_transfer_ability_apdu(ctrl, call);
 		}
-		return 0;
-	} else if (pri->localtype == PRI_CPE) {
-		switch (pri->switchtype) {
-		case PRI_SWITCH_NI2:
-			add_callername_facility_ies(pri, call, 1);
-			break;
-		default:
-			break;
-		}
-		return 0;
+		break;
+	default:
+		break;
 	}
-#else
-	if (pri->switchtype == PRI_SWITCH_NI2)
-		add_callername_facility_ies(pri, call, (pri->localtype == PRI_CPE));
-#endif
-
-	if ((pri->switchtype == PRI_SWITCH_DMS100) && (pri->localtype == PRI_CPE)) {
-		add_dms100_transfer_ability_apdu(pri, call);
-	}
-
-
 
 	return 0;
 }
 
-int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call)
+int qsig_initiate_diverting_leg_information1(struct pri *ctrl, q931_call *call)
 {
-	if (rose_diverting_leg_information1_encode(pri, call)
-		|| q931_facility(pri, call)) {
-		pri_message(pri, "Could not schedule facility message for divertingLegInfo1\n");
+	if (rose_diverting_leg_information1_encode(ctrl, call)
+		|| q931_facility(ctrl, call)) {
+		pri_message(ctrl, "Could not schedule facility message for divertingLegInfo1\n");
 		return -1;
 	}
 
 	return 0;
 }
 
-int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call,
+int qsig_initiate_call_transfer_complete(struct pri *ctrl, q931_call *call,
 	int call_status)
 {
-	if (rose_call_transfer_complete_encode(pri, call, call_status)
-		|| q931_facility(pri, call)) {
-		pri_message(pri,
+	if (rose_call_transfer_complete_encode(ctrl, call, call_status)
+		|| q931_facility(ctrl, call)) {
+		pri_message(ctrl,
 			"Could not schedule facility message for callTransferComplete\n");
 		return -1;
 	}
