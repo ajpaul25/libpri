@@ -2454,26 +2454,12 @@ static unsigned char *enc_qsig_CCRequestArg(struct pri *ctrl, unsigned char *pos
 	msg.invoke_id = get_invokeid(ctrl);
 
 	/* numberA is the local_id.number */
-	msg.args.qsig.CcbsRequest.number_a.presentation = presentation_from_q931(ctrl,
-		call->local_id.number.presentation, call->local_id.number.str[0]);
-	msg.args.qsig.CcbsRequest.number_a.number.plan = numbering_plan_from_q931(ctrl,
-		call->local_id.number.plan);
-	msg.args.qsig.CcbsRequest.number_a.number.ton = typeofnumber_from_q931(ctrl,
-		call->local_id.number.plan);
-	libpri_copy_string((char *) msg.args.qsig.CcbsRequest.number_a.number.str,
-		call->local_id.number.str, sizeof(msg.args.qsig.CcbsRequest.number_a.number.str));
-	msg.args.qsig.CcbsRequest.number_a.number.length = strlen((char *)
-		msg.args.qsig.CcbsRequest.number_a.number.str);
+	q931_copy_presented_number_unscreened_to_rose(ctrl,
+		&msg.args.qsig.CcbsRequest.number_a, &call->local_id.number);
 
 	/* numberB is the called_number */
-	msg.args.qsig.CcbsRequest.number_b.plan = numbering_plan_from_q931(ctrl,
-		call->called_number.plan);
-	msg.args.qsig.CcbsRequest.number_b.ton = typeofnumber_from_q931(ctrl,
-		call->called_number.plan);
-	libpri_copy_string((char *) msg.args.qsig.CcbsRequest.number_b.str,
-		call->called_number.str, sizeof(msg.args.qsig.CcbsRequest.number_b.str));
-	msg.args.qsig.CcbsRequest.number_b.length = strlen((char *)
-		msg.args.qsig.CcbsRequest.number_b.str);
+	q931_copy_number_to_rose(ctrl, &msg.args.qsig.CcbsRequest.number_b,
+		&call->called_number);
 
 	msg.args.qsig.CcbsRequest.q931ie.length = sizeof(q931ie);
 	memcpy(msg.args.qsig.CcbsRequest.q931ie_contents, q931ie, sizeof(q931ie));
