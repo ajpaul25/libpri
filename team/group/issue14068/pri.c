@@ -643,27 +643,39 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 	}
 	call->local_id = party_id;
 
-	switch (ctrl->switchtype) {
-	case PRI_SWITCH_QSIG:
-		switch (call->ourcallstate) {
-		case Q931_CALL_STATE_CALL_INITIATED:
-		case Q931_CALL_STATE_OVERLAP_SENDING:
-		case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
-		case Q931_CALL_STATE_CALL_DELIVERED:
-			/*
-			 * The local party transferred to someone else before
-			 * the remote end answered.
-			 */
-		case Q931_CALL_STATE_ACTIVE:
+	switch (call->ourcallstate) {
+	case Q931_CALL_STATE_CALL_INITIATED:
+	case Q931_CALL_STATE_OVERLAP_SENDING:
+	case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+	case Q931_CALL_STATE_CALL_DELIVERED:
+		/*
+		 * The local party transferred to someone else before
+		 * the remote end answered.
+		 */
+	case Q931_CALL_STATE_ACTIVE:
+		switch (ctrl->switchtype) {
+		case PRI_SWITCH_EUROISDN_E1:
+		case PRI_SWITCH_EUROISDN_T1:
+			if (q931_is_ptmp(ctrl)) {
+				/* PTMP mode */
+				q931_notify_redirection(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
+					&call->local_id.number);
+			} else {
+				/* PTP mode */
+				/* Immediately send EctInform APDU, callStatus=answered(0) */
+				send_call_transfer_complete(ctrl, call, 0);
+			}
+			break;
+		case PRI_SWITCH_QSIG:
 			/* Immediately send CallTransferComplete APDU, callStatus=answered(0) */
-			qsig_initiate_call_transfer_complete(ctrl, call, 0);
+			send_call_transfer_complete(ctrl, call, 0);
 			break;
 		default:
-			/* Just save the data for further developments. */
 			break;
 		}
 		break;
 	default:
+		/* Just save the data for further developments. */
 		break;
 	}
 
@@ -688,6 +700,10 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 		call->redirecting.orig_reason = redirecting->orig_reason;
 		if (redirecting->count <= 0) {
 			if (call->redirecting.from.number.valid) {
+				/*
+				 * We are redirecting with an unknown count
+				 * so assume the count is one.
+				 */
 				call->redirecting.count = 1;
 			} else {
 				call->redirecting.count = 0;
@@ -708,6 +724,16 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 		}
 
 		switch (ctrl->switchtype) {
+		case PRI_SWITCH_EUROISDN_E1:
+		case PRI_SWITCH_EUROISDN_T1:
+			if (q931_is_ptmp(ctrl)) {
+				/* PTMP mode */
+				q931_notify_redirection(ctrl, call, PRI_NOTIFY_CALL_DIVERTING,
+					&call->redirecting.to.number);
+				break;
+			}
+			/* PTP mode - same behaviour as Q.SIG */
+			/* fall through */
 		case PRI_SWITCH_QSIG:
 			if (call->redirecting.state != Q931_REDIRECTING_STATE_PENDING_TX_DIV_LEG_3
 				|| strcmp(call->redirecting.to.number.str, call->called_number.str) != 0) {

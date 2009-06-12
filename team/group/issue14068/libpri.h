@@ -298,8 +298,8 @@
 #define PRI_RATE_ADAPT_ASYNC		0x40
 
 /* Notifications */
-#define PRI_NOTIFY_USER_SUSPENDED		0x00	/* User suspended */
-#define PRI_NOTIFY_USER_RESUMED			0x01	/* User resumed */
+#define PRI_NOTIFY_USER_SUSPENDED		0x00	/* User suspended (Q.931) (Call is placed on hold) */
+#define PRI_NOTIFY_USER_RESUMED			0x01	/* User resumed (Q.931) (Call is taken off hold) */
 #define PRI_NOTIFY_BEARER_CHANGE		0x02	/* Bearer service change (DSS1) */
 #define PRI_NOTIFY_ASN1_COMPONENT		0x03	/* ASN.1 encoded component (DSS1) */
 #define PRI_NOTIFY_COMPLETION_DELAY		0x04	/* Call completion delay */
@@ -314,12 +314,12 @@
 #define PRI_NOTIFY_CONF_OTHER_DISCONNECTED	0x4a	/* Other party disconnected */
 #define PRI_NOTIFY_CONF_FLOATING		0x4b	/* Conference floating */
 #define PRI_NOTIFY_WAITING_CALL			0x60	/* Call is waiting call */
-#define PRI_NOTIFY_DIVERSION_ACTIVATED		0x68	/* Diversion activated (DSS1) */
-#define PRI_NOTIFY_TRANSFER_ALERTING		0x69	/* Call transfer, alerting */
-#define PRI_NOTIFY_TRANSFER_ACTIVE		0x6a	/* Call transfer, active */
+#define PRI_NOTIFY_DIVERSION_ACTIVATED		0x68	/* Diversion activated (DSS1) (cfu, cfb, cfnr) (EN 300 207-1 Section 7.2.1) */
+#define PRI_NOTIFY_TRANSFER_ALERTING		0x69	/* Call transfer, alerting (EN 300 369-1 Section 7.2) */
+#define PRI_NOTIFY_TRANSFER_ACTIVE		0x6a	/* Call transfer, active(answered) (EN 300 369-1 Section 7.2) */
 #define PRI_NOTIFY_REMOTE_HOLD			0x79	/* Remote hold */
 #define PRI_NOTIFY_REMOTE_RETRIEVAL		0x7a	/* Remote retrieval */
-#define PRI_NOTIFY_CALL_DIVERTING		0x7b	/* Call is diverting */
+#define PRI_NOTIFY_CALL_DIVERTING		0x7b	/* Call is diverting (EN 300 207-1 Section 7.2.1) */
 
 #define PRI_COPY_DIGITS_CALLED_NUMBER
 
