@@ -342,7 +342,7 @@ struct q931_call {
 	int progress;			/* Progress indicator */
 	int progressmask;		/* Progress Indicator bitmask */
 	
-	int notify;				/* Notification */
+	int notify;				/* Notification indicator. */
 	
 	int causecode;			/* Cause Coding */
 	int causeloc;			/* Cause Location */
@@ -388,6 +388,14 @@ struct q931_call {
 	 *    (Caller-ID for answered or connected-line for originated calls.)
 	 */
 	struct q931_party_id remote_id;
+
+	/*!
+	 * \brief Staging place for the Q.931 redirection number ie.
+	 * \note
+	 * The number could be the remote_id.number or redirecting.to.number
+	 * depending upon the notification indicator.
+	 */
+	struct q931_party_number redirection_number;
 
 	/*!
 	 * \brief Called party number.
@@ -461,6 +469,9 @@ int q931_party_id_presentation(const struct q931_party_id *id);
 
 const char *q931_call_state_str(int callstate);
 
+int q931_is_ptmp(struct pri *ctrl);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
+
+int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
 
 #endif

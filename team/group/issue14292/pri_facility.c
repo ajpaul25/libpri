@@ -791,6 +791,49 @@ static unsigned char *enc_qsig_diverting_leg_information1(struct pri *ctrl,
 
 /*!
  * \internal
+ * \brief Encode the ETSI DivertingLegInformation1 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 1.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_diverting_leg_information1(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_DivertingLegInformation1;
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.args.etsi.DivertingLegInformation1.diversion_reason =
+		redirectingreason_from_q931(ctrl, call->redirecting.reason);
+
+	if (call->redirecting.to.number.valid) {
+		msg.args.etsi.DivertingLegInformation1.subscription_option = 2;
+
+		/* divertedToNumber is the redirecting.to.number */
+		msg.args.etsi.DivertingLegInformation1.diverted_to_present = 1;
+		q931_copy_presented_number_unscreened_to_rose(ctrl,
+			&msg.args.etsi.DivertingLegInformation1.diverted_to,
+			&call->redirecting.to.number);
+	} else {
+		msg.args.etsi.DivertingLegInformation1.subscription_option = 1;
+	}
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
  * \brief Encode and queue the DivertingLegInformation1 invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -805,6 +848,11 @@ int rose_diverting_leg_information1_encode(struct pri *ctrl, q931_call *call)
 	unsigned char *end;
 
 	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end = enc_etsi_diverting_leg_information1(ctrl, buffer, buffer + sizeof(buffer),
+			call);
+		break;
 	case PRI_SWITCH_QSIG:
 		end = enc_qsig_diverting_leg_information1(ctrl, buffer, buffer + sizeof(buffer),
 			call);
@@ -904,6 +952,57 @@ static unsigned char *enc_qsig_diverting_leg_information2(struct pri *ctrl,
 
 /*!
  * \internal
+ * \brief Encode the ETSI DivertingLegInformation2 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 2.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_diverting_leg_information2(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_DivertingLegInformation2;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	/* diversionCounter is the redirecting.count */
+	msg.args.etsi.DivertingLegInformation2.diversion_counter = call->redirecting.count;
+
+	msg.args.etsi.DivertingLegInformation2.diversion_reason =
+		redirectingreason_from_q931(ctrl, call->redirecting.reason);
+
+	/* divertingNr is the redirecting.from.number */
+	msg.args.etsi.DivertingLegInformation2.diverting_present = 1;
+	q931_copy_presented_number_unscreened_to_rose(ctrl,
+		&msg.args.etsi.DivertingLegInformation2.diverting,
+		&call->redirecting.from.number);
+
+	if (1 < call->redirecting.count) {
+		/* originalCalledNr is the redirecting.orig_called.number */
+		msg.args.etsi.DivertingLegInformation2.original_called_present = 1;
+		q931_copy_presented_number_unscreened_to_rose(ctrl,
+			&msg.args.etsi.DivertingLegInformation2.original_called,
+			&call->redirecting.orig_called.number);
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
  * \brief Encode and queue the DivertingLegInformation2 invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -918,6 +1017,11 @@ static int rose_diverting_leg_information2_encode(struct pri *ctrl, q931_call *c
 	unsigned char *end;
 
 	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end = enc_etsi_diverting_leg_information2(ctrl, buffer, buffer + sizeof(buffer),
+			call);
+		break;
 	case PRI_SWITCH_QSIG:
 		end = enc_qsig_diverting_leg_information2(ctrl, buffer, buffer + sizeof(buffer),
 			call);
@@ -984,6 +1088,41 @@ static unsigned char *enc_qsig_diverting_leg_information3(struct pri *ctrl,
 }
 
 /*!
+ * \internal
+ * \brief Encode the ETSI DivertingLegInformation3 invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode diversion leg 3.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_diverting_leg_information3(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, q931_call *call)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_DivertingLegInformation3;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if ((call->redirecting.to.number.presentation & PRI_PRES_RESTRICTION) == PRI_PRES_ALLOWED) {
+		msg.args.etsi.DivertingLegInformation3.presentation_allowed_indicator = 1;	/* TRUE */
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
  * \brief Encode and queue the DivertingLegInformation3 invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -1000,6 +1139,11 @@ int rose_diverting_leg_information3_encode(struct pri *ctrl, q931_call *call,
 	unsigned char *end;
 
 	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end = enc_etsi_diverting_leg_information3(ctrl, buffer, buffer + sizeof(buffer),
+			call);
+		break;
 	case PRI_SWITCH_QSIG:
 		end = enc_qsig_diverting_leg_information3(ctrl, buffer, buffer + sizeof(buffer),
 			call);
@@ -1914,7 +2058,51 @@ static unsigned char *enc_qsig_call_transfer_complete(struct pri *ctrl,
 
 /*!
  * \internal
- * \brief Encode and queue the Q.SIG CallTransferComplete invoke message.
+ * \brief Encode the ETSI EctInform invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode inform message.
+ * \param call_status TRUE if call is alerting.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ect_inform(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call, int call_status)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_EctInform;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (!call_status) {
+		msg.args.etsi.EctInform.status = 1;/* active */
+
+		/*
+		 * EctInform(active) contains the redirectionNumber
+		 * redirectionNumber is the local_id.number
+		 */
+		msg.args.etsi.EctInform.redirection_present = 1;
+		q931_copy_presented_number_unscreened_to_rose(ctrl,
+			&msg.args.etsi.EctInform.redirection, &call->local_id.number);
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue the CallTransferComplete/EctInform invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode call transfer.
@@ -1930,6 +2118,11 @@ static int rose_call_transfer_complete_encode(struct pri *ctrl, q931_call *call,
 	unsigned char *end;
 
 	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end =
+			enc_etsi_ect_inform(ctrl, buffer, buffer + sizeof(buffer), call, call_status);
+		break;
 	case PRI_SWITCH_QSIG:
 		end =
 			enc_qsig_call_transfer_complete(ctrl, buffer, buffer + sizeof(buffer), call,
@@ -2336,6 +2529,23 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 	}
 
 	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		if (q931_is_ptmp(ctrl)) {
+			/* PTMP mode */
+			break;
+		}
+		/* PTP mode */
+		if (call->redirecting.count) {
+			rose_diverting_leg_information2_encode(ctrl, call);
+
+			/*
+			 * Expect a DivertingLegInformation3 to update the COLR of the
+			 * redirecting-to party we are attempting to call now.
+			 */
+			call->redirecting.state = Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3;
+		}
+		break;
 	case PRI_SWITCH_QSIG:
 		/* For Q.SIG it does network and cpe operations */
 		if (call->redirecting.count) {
@@ -2379,24 +2589,22 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 	return 0;
 }
 
-int qsig_initiate_diverting_leg_information1(struct pri *ctrl, q931_call *call)
-{
-	if (rose_diverting_leg_information1_encode(ctrl, call)
-		|| q931_facility(ctrl, call)) {
-		pri_message(ctrl, "Could not schedule facility message for divertingLegInfo1\n");
-		return -1;
-	}
-
-	return 0;
-}
-
-int qsig_initiate_call_transfer_complete(struct pri *ctrl, q931_call *call,
-	int call_status)
+/*!
+ * \brief Send the CallTransferComplete/EctInform invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode call transfer.
+ * \param call_status TRUE if call is alerting.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int send_call_transfer_complete(struct pri *ctrl, q931_call *call, int call_status)
 {
 	if (rose_call_transfer_complete_encode(ctrl, call, call_status)
 		|| q931_facility(ctrl, call)) {
 		pri_message(ctrl,
-			"Could not schedule facility message for callTransferComplete\n");
+			"Could not schedule facility message for call transfer completed.\n");
 		return -1;
 	}
 
@@ -2700,13 +2908,92 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 	case ROSE_ETSI_InterrogateServedUserNumbers:
 		break;
+#endif	/* Not handled yet */
 	case ROSE_ETSI_DivertingLegInformation1:
+		/* divertedToNumber is put in redirecting.to.number */
+		switch (invoke->args.etsi.DivertingLegInformation1.subscription_option) {
+		default:
+		case 0:	/* noNotification */
+		case 1:	/* notificationWithoutDivertedToNr */
+			q931_party_number_init(&call->redirecting.to.number);
+			call->redirecting.to.number.valid = 1;
+			call->redirecting.to.number.presentation =
+				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
+			break;
+		case 2:	/* notificationWithDivertedToNr */
+			if (invoke->args.etsi.DivertingLegInformation1.diverted_to_present) {
+				rose_copy_presented_number_unscreened_to_q931(ctrl,
+					&call->redirecting.to.number,
+					&invoke->args.etsi.DivertingLegInformation1.diverted_to);
+			} else {
+				q931_party_number_init(&call->redirecting.to.number);
+				call->redirecting.to.number.valid = 1;
+			}
+			break;
+		}
+
+		call->redirecting.reason = redirectingreason_for_q931(ctrl,
+			invoke->args.etsi.DivertingLegInformation1.diversion_reason);
+		if (call->redirecting.count < PRI_MAX_REDIRECTS) {
+			++call->redirecting.count;
+		}
+		call->redirecting.state = Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3;
 		break;
 	case ROSE_ETSI_DivertingLegInformation2:
+		call->redirecting.state = Q931_REDIRECTING_STATE_PENDING_TX_DIV_LEG_3;
+		call->redirecting.count =
+			invoke->args.etsi.DivertingLegInformation2.diversion_counter;
+		if (!call->redirecting.count) {
+			/* To be safe, make sure that the count is non-zero. */
+			call->redirecting.count = 1;
+		}
+		call->redirecting.reason = redirectingreason_for_q931(ctrl,
+			invoke->args.etsi.DivertingLegInformation2.diversion_reason);
+
+		/* divertingNr is put in redirecting.from.number */
+		if (invoke->args.etsi.DivertingLegInformation2.diverting_present) {
+			rose_copy_presented_number_unscreened_to_q931(ctrl,
+				&call->redirecting.from.number,
+				&invoke->args.etsi.DivertingLegInformation2.diverting);
+		} else {
+			q931_party_number_init(&call->redirecting.from.number);
+			call->redirecting.from.number.valid = 1;
+		}
+
+		call->redirecting.orig_reason = PRI_REDIR_UNKNOWN;
+
+		/* originalCalledNr is put in redirecting.orig_called.number */
+		if (invoke->args.etsi.DivertingLegInformation2.original_called_present) {
+			rose_copy_presented_number_unscreened_to_q931(ctrl,
+				&call->redirecting.orig_called.number,
+				&invoke->args.etsi.DivertingLegInformation2.original_called);
+		} else {
+			q931_party_number_init(&call->redirecting.orig_called.number);
+		}
 		break;
 	case ROSE_ETSI_DivertingLegInformation3:
+		if (!invoke->args.etsi.DivertingLegInformation3.presentation_allowed_indicator) {
+			call->redirecting.to.number.presentation =
+				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
+		}
+
+		switch (call->redirecting.state) {
+		case Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3:
+			call->redirecting.state = Q931_REDIRECTING_STATE_IDLE;
+			subcmd = q931_alloc_subcommand(ctrl);
+			if (!subcmd) {
+				pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+				break;
+			}
+			/* Setup redirecting subcommand */
+			subcmd->cmd = PRI_SUBCMD_REDIRECTING;
+			q931_party_redirecting_copy_to_pri(&subcmd->u.redirecting,
+				&call->redirecting);
+			break;
+		default:
+			break;
+		}
 		break;
-#endif	/* Not handled yet */
 	case ROSE_ETSI_ChargingRequest:
 		/* Ignore messsage */
 		break;
@@ -2754,14 +3041,30 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie,
 		break;
 	case ROSE_ETSI_ExplicitEctExecute:
 		break;
+#endif	/* Not handled yet */
 	case ROSE_ETSI_RequestSubaddress:
+		/* Ignore since we are not handling subaddresses yet. */
 		break;
+#if 0	/* Not handled yet */
 	case ROSE_ETSI_SubaddressTransfer:
 		break;
 	case ROSE_ETSI_EctLinkIdRequest:
 		break;
+#endif	/* Not handled yet */
 	case ROSE_ETSI_EctInform:
+		/* redirectionNumber is put in remote_id.number */
+		if (invoke->args.etsi.EctInform.redirection_present) {
+			rose_copy_presented_number_unscreened_to_q931(ctrl,
+				&call->remote_id.number, &invoke->args.etsi.EctInform.redirection);
+		}
+		if (!invoke->args.etsi.EctInform.status) {
+			/* The remote party for the transfer has not answered yet. */
+			call->incoming_ct_state = INCOMING_CT_STATE_EXPECT_CT_ACTIVE;
+		} else {
+			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
+		}
 		break;
+#if 0	/* Not handled yet */
 	case ROSE_ETSI_EctLoopTest:
 		break;
 #endif	/* Not handled yet */
