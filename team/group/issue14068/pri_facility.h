@@ -78,16 +78,12 @@ int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const
 /* starts a QSIG Path Replacement */
 int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
-int qsig_initiate_diverting_leg_information1(struct pri *pri, q931_call *call);
-
-int qsig_initiate_call_transfer_complete(struct pri *pri, q931_call *call, int call_status);
+int send_call_transfer_complete(struct pri *pri, q931_call *call, int call_status);
 
 int rose_diverting_leg_information1_encode(struct pri *pri, q931_call *call);
-
 int rose_diverting_leg_information3_encode(struct pri *pri, q931_call *call, int messagetype);
 
 int rose_connected_name_encode(struct pri *pri, q931_call *call, int messagetype);
-
 int rose_called_name_encode(struct pri *pri, q931_call *call, int messagetype);
 
 /* Use this function to queue a facility-IE born APDU onto a call
