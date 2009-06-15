@@ -928,11 +928,14 @@ int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1)
 	return 0;
 }
 
-int pri_sr_set_lowlayer(struct pri_sr *sr, int transmode, int userl1)
+int pri_sr_set_lowlayercompat(struct pri_sr *sr, int record, struct pri_lowlayercompat *llc)
 {
-	sr->usellc = 1;
-	sr->llctransmode = transmode;
-	sr->llcuserl1 = userl1;
+	if (record < 1 || record > 4) {
+		/* Invalid record number */
+		return -1;
+	}
+	memcpy(&sr->llc[record - 1], llc, sizeof(*llc));
+
 	return 0;
 }
 

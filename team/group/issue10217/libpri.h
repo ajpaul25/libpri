@@ -526,6 +526,100 @@ typedef union {
 struct pri;
 struct pri_sr;
 
+struct pri_lowlayercompat {
+	int transcapability;
+	int negotiateoob;
+	int transmode;
+	int transrate;
+	int transmultiplier;
+	int layer1proto;
+	/* Note: this struct within a union within a struct within a union
+	 * is purely designed to make the code logic easier to follow without having to
+	 * ensure that the bitmaps are correct.
+	 */
+	union {
+		char octet5[4];
+		struct {
+			unsigned int extend5a:1;
+			unsigned int async:1;
+			unsigned int negot:1;
+			unsigned int userrate:5;
+			unsigned int extend5b:1;
+			union {
+				/* For V.110, I.460, and X.30 rate adaption */
+				struct {
+					unsigned int interrate:2;
+					unsigned int nicontx:1;
+					unsigned int niconrx:1;
+					unsigned int flowontx:1;
+					unsigned int flowonrx:1;
+				};
+				/* For V.120 rate adaption */
+				struct {
+					unsigned int header:1;
+					unsigned int multiframe:1;
+					unsigned int mode:1;
+					unsigned int negotlli:1; /*!< Logical Link Layer Negotiation */
+					unsigned int assignor:1;
+					unsigned int inbandnegot:1;
+				};
+			};
+			unsigned int spare5b:1;
+			unsigned int extend5c:1;
+			unsigned int stopbits:2;
+			unsigned int databits:2;
+			unsigned int parity:3;
+			unsigned int extend5d:1;
+			unsigned int duplex:1;
+			unsigned int modemtype:6;
+		} __attribute__((packed));
+	} layer1;
+
+	int layer2proto;
+	union {
+		char octet6[2];
+		struct {
+			unsigned int extend6a:1;
+			unsigned int mode:2;
+			unsigned int spare6a:3;
+			unsigned int q933:2;
+			unsigned int extend6b:1;
+			unsigned int windowsize:7;
+		};
+		struct {
+			unsigned int extend6a2:1;
+			unsigned int userproto:7;
+		};
+	} layer2 __attribute__((packed));
+
+	int layer3proto;
+	union {
+		char octet7[3];
+		struct {
+			unsigned int extend7a:1;
+			unsigned int mode:2;
+			unsigned int spare7a:5;
+			unsigned int extend7b:1;
+			unsigned int spare7b:3;
+			unsigned int packetsize:4;
+			unsigned int extend7c:1;
+			unsigned int windowsize:7;
+		}; /* Note 7 */
+		struct {
+			unsigned int extend7a2:1;
+			unsigned int optional:7;
+		}; /* Note 8 */
+		struct {
+			unsigned int extend7a3:1;
+			unsigned int spare7a3:3;
+			unsigned int infomsb:4;
+			unsigned int extend7b3:1;
+			unsigned int spare7b3:3;
+			unsigned int infolsb:4;
+		}; /* Note 9 */
+	} layer3 __attribute__((packed));
+};
+
 #define PRI_IO_FUNCS
 /* Type declaration for callbacks to read or write a HDLC frame as below */
 typedef int (*pri_io_cb)(struct pri *pri, void *buf, int buflen);
@@ -660,7 +754,15 @@ void pri_sr_free(struct pri_sr *sr);
 
 int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int nonisdn);
 int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
-int pri_sr_set_lowlayer(struct pri_sr *sr, int transmode, int userl1);
+
+/*!\brief Set the call setup low layer compatibility record
+ * \param sr Call setup record
+ * \param record LLC record number.  Must be in the range 1-4.
+ * \param llc Pointer to a set of LLC negotiation parameters
+ * \retval 0 Success
+ * \retval <1 Invalid record
+ */
+int pri_sr_set_lowlayercompat(struct pri_sr *sr, int record, struct pri_lowlayercompat *llc);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);

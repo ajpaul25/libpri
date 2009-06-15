@@ -156,9 +156,7 @@ struct pri_sr {
 	int justsignalling;
 	const char *useruserinfo;
 	int transferable;
-	int usellc;
-	int llctransmode;
-	int llcuserl1;
+	struct pri_lowlayercompat llc[4];
 };
 
 /* Internal switch types */
@@ -173,102 +171,6 @@ struct apdu_event {
 	int apdu_len; 			/* Length of ADPU */
 	int sent;  			/* Have we been sent already? */
 	struct apdu_event *next;	/* Linked list pointer */
-};
-
-/* Organized into a structure, because we could have up to 4 in a single message. */
-struct llc {
-	int transcapability;
-	int negotiateoob;
-	int transmode;
-	int transrate;
-	int transmultiplier;
-	int layer1proto;
-	/* Note: this struct within a union within a struct within a union
-	 * is purely designed to make the code logic easier to follow without having to
-	 * ensure that the bitmaps are correct.  As this is an internal header, it does not
-	 * translate to assisting any part of the API (though that might be helpful in
-	 * libpri.h, as well). */
-	union {
-		char octet5[4];
-		struct {
-			unsigned int extend5a:1;
-			unsigned int async:1;
-			unsigned int negot:1;
-			unsigned int userrate:5;
-			unsigned int extend5b:1;
-			union {
-				/* For V.110, I.460, and X.30 rate adaption */
-				struct {
-					unsigned int interrate:2;
-					unsigned int nicontx:1;
-					unsigned int niconrx:1;
-					unsigned int flowontx:1;
-					unsigned int flowonrx:1;
-				};
-				/* For V.120 rate adaption */
-				struct {
-					unsigned int header:1;
-					unsigned int multiframe:1;
-					unsigned int mode:1;
-					unsigned int negotlli:1;
-					unsigned int assignor:1;
-					unsigned int inbandnegot:1;
-				};
-			};
-			unsigned int spare5b:1;
-			unsigned int extend5c:1;
-			unsigned int stopbits:2;
-			unsigned int databits:2;
-			unsigned int parity:3;
-			unsigned int extend5d:1;
-			unsigned int duplex:1;
-			unsigned int modemtype:6;
-		} __attribute__((packed));
-	} layer1;
-
-	int layer2proto;
-	union {
-		char octet6[2];
-		struct {
-			unsigned int extend6a:1;
-			unsigned int mode:2;
-			unsigned int spare6a:3;
-			unsigned int q933:2;
-			unsigned int extend6b:1;
-			unsigned int windowsize:7;
-		};
-		struct {
-			unsigned int extend6a2:1;
-			unsigned int userproto:7;
-		};
-	} layer2 __attribute__((packed));
-
-	int layer3proto;
-	union {
-		char octet7[3];
-		struct {
-			unsigned int extend7a:1;
-			unsigned int mode:2;
-			unsigned int spare7a:5;
-			unsigned int extend7b:1;
-			unsigned int spare7b:3;
-			unsigned int packetsize:4;
-			unsigned int extend7c:1;
-			unsigned int windowsize:7;
-		}; /* Note 7 */
-		struct {
-			unsigned int extend7a2:1;
-			unsigned int optional:7;
-		}; /* Note 8 */
-		struct {
-			unsigned int extend7a3:1;
-			unsigned int spare7a3:3;
-			unsigned int infomsb:4;
-			unsigned int extend7b3:1;
-			unsigned int spare7b3:3;
-			unsigned int infolsb:4;
-		}; /* Note 9 */
-	} layer3 __attribute__((packed));
 };
 
 /* q931_call datastructure */
@@ -310,7 +212,7 @@ struct q931_call {
 	int usellc;        /* Should we transmit LLC IEs? */
 	int llcacceptable; /* LLC negotiation successful? */
 	/* Organized into a structure, because we could have up to 4 in a single message. */
-	struct llc llc[4];
+	struct pri_lowlayercompat llc[4];
 
 	int sentchannel;
 	int justsignalling;		/* for a signalling-only connection */

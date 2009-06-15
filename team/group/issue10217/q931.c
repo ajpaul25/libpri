@@ -618,13 +618,14 @@ static char *int_rate2str(int proto)
 		if (msgtype == Q931_CONNECT) {                                             \
 			/* Check for compatibility */                                          \
 			int i;                                                                 \
+			call->llcacceptable = 0;                                               \
 			for (i = 0; i < 4; i++) {                                              \
 				if (memcmp(llc, &call->llc[i], sizeof(*llc)) == 0) {               \
 					call->llcacceptable = 1;                                       \
 					if (i != 0) {                                                  \
 						/* Copy negotiated parameters into the first LLC record */ \
-						memcpy(&call->llc[0], llc, sizeof(struct llc));            \
-						memset(&call->llc[1], 0, sizeof(struct llc) * 3);          \
+						memcpy(&call->llc[0], llc, sizeof(call->llc[0]));          \
+						memset(&call->llc[1], 0, sizeof(call->llc[1]) * 3);        \
 					}                                                              \
 				}                                                                  \
 			}                                                                      \
@@ -637,8 +638,8 @@ static FUNC_RECV(receive_low_layer_compatibility)
 	/* pos is the offset from data[0] */
 	int pos = 0;
 	char octet = 'a';
-	struct llc *llc = &call->llc[call->llccount];
-	struct llc connect_llc;
+	struct pri_lowlayercompat *llc = &call->llc[call->llccount];
+	struct pri_lowlayercompat connect_llc;
 
 	pri_message(pri, "    receive_low_layer_compatibility\n");
 
@@ -669,6 +670,10 @@ static FUNC_RECV(receive_low_layer_compatibility)
 		/* octet 3a: OOB negot. indic. */
 		llc->negotiateoob = (ie->data[pos] & 0x40) ? 1 : 0;
 		pos++;
+	} else {
+		/* Lack of octet 3a indicates OOB negotiation is not possible.
+		 * See Q.931(05/98) Page 84, Table 4-16, NOTE 4 */
+		call->llcacceptable = llc->negotiateoob = 0;
 	}
 
 	if (pos >= len - 2) {
@@ -693,6 +698,7 @@ static FUNC_RECV(receive_low_layer_compatibility)
 
 	if (llc->negotiateoob == 0) {
 		if (msgtype == Q931_SETUP) {
+			call->llcacceptable = 0;
 			pri_message(pri, "Out-of-band negotiation not possible.  Will not negotiate LLC on CONNECT\n");
 		}
 		return 0;
@@ -820,12 +826,15 @@ static FUNC_RECV(receive_low_layer_compatibility)
 
 static FUNC_SEND(transmit_low_layer_compatibility)
 {
+	/* TODO Ensure that all bits are compatible with the transmitted bearer
+	 * info.  Where it conflicts, we use bearer information. */
+
 	/* len contains the full length of the IE, including octet 1 and 2 */
 	/* data[] starts with octet 3 */
 	/* pos is the offset from data[0] */
 	int pos = 0;
 	int tc;
-	struct llc *llc = &call->llc[order];
+	struct pri_lowlayercompat *llc = &call->llc[order];
 
 	/* We are ready to transmit single IE only */	
 	if (msgtype == Q931_CONNECT && order > 1) {
@@ -1202,6 +1211,24 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
  		ie->data[pos++] = 0xe0 | (call->userl3 & 0x1f);
  
  	return pos + 2;
+}
+
+static FUNC_DUMP(dump_repeat_indicator)
+{
+	pri_message(pri, "Restart Indicator");
+}
+
+static FUNC_RECV(receive_repeat_indicator)
+{
+	/* We really don't care - this is fairly useless */
+	return 0;
+}
+
+static FUNC_SEND(transmit_repeat_indicator)
+{
+	/* Again, mostly useless */
+	ie->data[0] = 0x80 | Q931_REPEAT_INDIC;
+	return 1;
 }
 
 char *pri_plan2str(int plan)
@@ -2499,6 +2526,7 @@ static struct ie ies[] = {
 	{ 1, Q931_WINDOW_SIZE, "Packet-layer Window Size" },
 	{ 1, Q931_CLOSED_USER_GROUP, "Closed User Group" },
 	{ 1, Q931_REVERSE_CHARGE_INDIC, "Reverse Charging Indication" },
+	{ 0, Q931_REPEAT_INDIC, "Repeat Indicator", dump_repeat_indicator, receive_repeat_indicator, transmit_repeat_indicator },
 	{ 1, Q931_CALLING_PARTY_NUMBER, "Calling Party Number", dump_calling_party_number, receive_calling_party_number, transmit_calling_party_number },
 	{ 1, Q931_CALLING_PARTY_SUBADDR, "Calling Party Subaddress", dump_calling_party_subaddr, receive_calling_party_subaddr },
 	{ 1, Q931_CALLED_PARTY_NUMBER, "Called Party Number", dump_called_party_number, receive_called_party_number, transmit_called_party_number },
@@ -3262,6 +3290,8 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
+static int llc_connect_ies[] = {  Q931_CHANNEL_IDENT, Q931_PROGRESS_INDICATOR, Q931_LOW_LAYER_COMPAT, -1 };
+ 
 static int connect_ies[] = {  Q931_CHANNEL_IDENT, Q931_PROGRESS_INDICATOR, -1 };
  
 int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
@@ -3372,7 +3402,7 @@ int q931_connect(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 	c->retranstimer = 0;
 	if ((c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) && (ctrl->bri || (!ctrl->subchannel)))
 		c->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T313], pri_connect_timeout, c);
-	return send_message(ctrl, c, Q931_CONNECT, connect_ies);
+	return send_message(ctrl, c, Q931_CONNECT, c->usellc ? llc_connect_ies : connect_ies);
 }
 
 static int release_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
@@ -3444,7 +3474,11 @@ int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 }
 
 static int setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_NETWORK_SPEC_FAC, Q931_DISPLAY,
-	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_IE_USER_USER, Q931_LOW_LAYER_COMPAT, Q931_SENDING_COMPLETE,
+	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_IE_USER_USER, Q931_SENDING_COMPLETE,
+	Q931_IE_ORIGINATING_LINE_INFO, Q931_IE_GENERIC_DIGITS, -1 };
+
+static int llc_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_NETWORK_SPEC_FAC, Q931_DISPLAY,
+	Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_REDIRECTING_NUMBER, Q931_IE_USER_USER, Q931_REPEAT_INDIC, Q931_LOW_LAYER_COMPAT, Q931_SENDING_COMPLETE,
 	Q931_IE_ORIGINATING_LINE_INFO, Q931_IE_GENERIC_DIGITS, -1 };
 
 static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1 };
@@ -3463,14 +3497,14 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->userl1 = req->userl1;
 	c->userl2 = -1;
 	c->userl3 = -1;
-	c->usellc = req->usellc;
+	if ((c->llcacceptable = c->usellc = ((req->llc[0].negotiateoob || req->llc[1].negotiateoob || req->llc[2].negotiateoob || req->llc[2].negotiateoob) ? 1 : 0))) {
+		memcpy(&c->llc[0], &req->llc[0], sizeof(req->llc[0]) * 4);
+	}
+#if 0
+	/* These should probably be worked into a check to verify if LLC is compatible with bearer */
 	c->llc[0].transcapability = req->llctransmode;
 	c->llc[0].transrate = TRANS_MODE_64_CIRCUIT;
-
-	if (!req->llcuserl1) {
-		req->llcuserl1 = PRI_LAYER_1_ULAW;
-	}
-	c->llc[0].layer1proto = req->llcuserl1;
+#endif
 
 	c->ds1no = (req->channel & 0xff00) >> 8;
 	c->ds1explicit = (req->channel & 0x10000) >> 16;
@@ -3545,12 +3579,15 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	pri_call_add_standard_apdus(ctrl, c);
 
-	if (ctrl->subchannel && !ctrl->bri)
+	if (ctrl->subchannel && !ctrl->bri) {
 		res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
-	else if (c->justsignalling)
+	} else if (c->justsignalling) {
 		res = send_message(ctrl, c, Q931_SETUP, cis_setup_ies);
-	else
+	} else if (c->usellc) {
+		res = send_message(ctrl, c, Q931_SETUP, llc_setup_ies);
+	} else {
 		res = send_message(ctrl, c, Q931_SETUP, setup_ies);
+	}
 	if (!res) {
 		c->alive = 1;
 		/* make sure we call PRI_EVENT_HANGUP_ACK once we send/receive RELEASE_COMPLETE */
