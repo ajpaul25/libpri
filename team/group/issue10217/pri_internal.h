@@ -48,10 +48,8 @@ struct q921_frame;
 enum q931_state;
 enum q931_mode;
 
-/* No more than 128 scheduled events */
+/*! Maximum number of scheduled events active at the same time. */
 #define MAX_SCHED 128
-
-#define MAX_TIMERS 32
 
 /*! \brief D channel controller structure */
 struct pri {
@@ -100,7 +98,7 @@ struct pri {
 	int ri;
 	int t200_timer;		/* T-200 retransmission timer */
 	/* All ISDN Timer values */
-	int timers[MAX_TIMERS];
+	int timers[PRI_MAX_TIMERS];
 
 	/* Used by scheduler */
 	struct timeval tv;
@@ -156,6 +154,7 @@ struct pri_sr {
 	int justsignalling;
 	const char *useruserinfo;
 	int transferable;
+	int reversecharge;
 	struct pri_lowlayercompat llc[4];
 };
 
@@ -280,7 +279,10 @@ struct q931_call {
 	q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
 
 	int changestatus;		/* SERVICE message changestatus */
-	int reversecharge;		/* Reverse charging indication */
+	int reversecharge;		/* Reverse charging indication:
+							   -1 - No reverse charging
+							    1 - Reverse charging
+							0,2-7 - Reserved for future use */
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
@@ -291,9 +293,8 @@ extern void pri_schedule_del(struct pri *pri, int ev);
 
 extern pri_event *pri_mkerror(struct pri *pri, char *errstr);
 
-extern void pri_message(struct pri *pri, char *fmt, ...);
-
-extern void pri_error(struct pri *pri, char *fmt, ...);
+void pri_message(struct pri *ctrl, char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void pri_error(struct pri *ctrl, char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 void libpri_copy_string(char *dst, const char *src, size_t size);
 
