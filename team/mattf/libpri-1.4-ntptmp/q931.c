@@ -393,7 +393,7 @@ static int transmit_channel_id(int full_ie, struct pri *ctrl, q931_call *call, i
 		return 0;
 	}
 
-	if (((ctrl->switchtype != PRI_SWITCH_QSIG) && (call->ds1no > 0)) || call->ds1explicit) {
+	if (!ctrl->bri && (((ctrl->switchtype != PRI_SWITCH_QSIG) && (call->ds1no > 0)) || call->ds1explicit)) {
 		/* Note that we are specifying the identifier */
 		ie->data[pos++] |= 0x40;
 		/* We need to use the Channel Identifier Present thingy.  Just specify it and we're done */
