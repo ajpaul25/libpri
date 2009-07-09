@@ -2675,9 +2675,25 @@ static void init_header(struct pri *ctrl, q931_call *call, unsigned char *buf, q
 	*mhb = mh;
 }
 
+static int inline PRI_NT_PTMP(struct pri *ctrl)
+{
+	return (((ctrl)->localtype == PRI_NETWORK) && ((ctrl)->tei == Q921_TEI_GROUP));
+}
+
 static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr)
 {
-	q921_transmit_iframe(ctrl, h, len, cr);
+	/* 
+	 * For NT-PTMP mode, we need to check the following:
+	 * MODE = NT-PTMP
+	 * MESSAGE = SETUP
+	 *
+	 * If those are true, we need to send the SETUP in a UI frame
+	 * instead of an I-frame.
+	 */
+	if (PRI_NT_PTMP(ctrl))
+		q921_transmit_uiframe(ctrl, h, len);
+	else
+		q921_transmit_iframe(ctrl, h, len, cr);
 	/* The transmit operation might dump the q921 header, so logging the q931
 	   message body after the transmit puts the sections of the message in the
 	   right order in the log */

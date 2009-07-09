@@ -27,6 +27,7 @@
  * terms granted here.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -480,6 +481,45 @@ static void t200_expire(void *vpri)
 		pri_error(pri, "T200 counter expired, nothing to send...\n");
 	   	pri->t200_timer = 0;
 	}
+}
+
+int q921_transmit_uiframe(struct pri *pri, void *buf, int len)
+{
+	uint8_t ubuf[512];
+	q921_h *h = (void *)&ubuf[0];
+
+	if (len >= 512) {
+		pri_error(pri, "Requested to send UI frame larger than 512 bytes!\n");
+		return -1;
+	}
+
+	memset(ubuf, 0, sizeof(ubuf));
+	h->h.sapi = 0;
+	h->h.ea1 = 0;
+	h->h.ea2 = 1;
+	h->h.tei = pri->tei;
+	h->u.m3 = 0;
+	h->u.m2 = 0;
+	h->u.p_f = 0;	/* Poll bit set */
+	h->u.ft = Q921_FRAMETYPE_U;
+
+	switch(pri->localtype) {
+	case PRI_NETWORK:
+		h->h.c_r = 1;
+		break;
+	case PRI_CPE:
+		h->h.c_r = 0;
+		break;
+	default:
+		pri_error(pri, "Don't know how to U/A on a type %d node\n", pri->localtype);
+		return -1;
+	}
+
+	memcpy(h->u.data, buf, len);
+
+	q921_transmit(pri, h, len + 3);
+
+	return 0;
 }
 
 int q921_transmit_iframe(struct pri *pri, void *buf, int len, int cr)
