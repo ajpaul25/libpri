@@ -604,10 +604,11 @@ static void t203_expire(void *vpri)
 		pri->t203_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T200], t200_expire, pri);
 	} else {
 		if (pri->debug & PRI_DEBUG_Q921_DUMP)
-			pri_message(pri, "T203 counter expired in weird state %d\n", pri->q921_state);
+			pri_message(pri, "T203 counter expired in weird state %d on pri with sapi %d and tei %d\n", pri->q921_state, pri->sapi, pri->tei);
 		pri->t203_timer = 0;
 	}
 }
+
 static pri_event *q921_handle_iframe(struct pri *pri, q921_i *i, int len)
 {
 	int res;
@@ -1183,7 +1184,6 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			/* Acknowledge */
 			q921_send_ua(pri, h->u.p_f);
 			ev = q921_dchannel_down(pri);
-			q921_restart(pri, 0);
 			return ev;
 		case 3:
 			if (h->u.m2 == 3) {
