@@ -1037,6 +1037,10 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			pri_error(pri, "!! Received short I-frame (expected 4, got %d)\n", len);
 			break;
 		}
+
+		/* T203 is rescheduled only on reception of I frames or S frames */
+		reschedule_t203(pri);
+
 		return q921_handle_iframe(pri, &h->i, len);	
 		break;
 	case 1:
@@ -1048,6 +1052,10 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			pri_error(pri, "!! Received short S-frame (expected 4, got %d)\n", len);
 			break;
 		}
+
+		/* T203 is rescheduled only on reception of I frames or S frames */
+		reschedule_t203(pri);
+
 		switch(h->s.ss) {
 		case 0:
 			/* Receiver Ready */
@@ -1322,7 +1330,6 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 	if (pri->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(pri, "Handling message for SAPI/TEI=%d/%d\n", h->h.sapi, h->h.tei);
 	ev = __q921_receive_qualified(pri, h, len);
-	reschedule_t203(pri);
 	return ev;
 }
 
