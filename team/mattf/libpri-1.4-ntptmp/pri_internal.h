@@ -32,6 +32,7 @@
 
 #include <stddef.h>
 #include <sys/time.h>
+#include "pri_q921.h"
 
 #define ARRAY_LEN(arr)	(sizeof(arr) / sizeof((arr)[0]))
 
@@ -293,5 +294,22 @@ void libpri_copy_string(char *dst, const char *src, size_t size);
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
 
 void __pri_free_tei(struct pri *p);
+
+static inline int BRI_NT_PTMP(struct pri *ctrl)
+{
+	while (ctrl->master)
+		ctrl = ctrl->master;
+
+	return ctrl->bri && (((ctrl)->localtype == PRI_NETWORK) && ((ctrl)->tei == Q921_TEI_GROUP));
+}
+
+static inline int BRI_TE_PTMP(struct pri *ctrl)
+{
+	while (ctrl->master)
+		ctrl = ctrl->master;
+
+	return ctrl->bri && (((ctrl)->localtype == PRI_CPE) && ((ctrl)->tei == Q921_TEI_GROUP));
+}
+
 
 #endif
