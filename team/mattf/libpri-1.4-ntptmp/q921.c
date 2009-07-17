@@ -912,6 +912,12 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	int ri;
 	struct pri *sub;
 	int tei;
+
+	if (!BRI_NT_PTMP(pri) && !BRI_TE_PTMP(pri)) {
+		pri_error(pri, "Received MDL/TEI managemement message, but configured for mode other than PTMP!\n");
+		return NULL;
+	}
+
 	if (pri->debug & PRI_DEBUG_Q921_STATE)
 		pri_message(pri, "Received MDL message\n");
 	if (h->data[0] != 0x0f) {
@@ -926,17 +932,19 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	tei = (h->data[4] >> 1);
 	switch(h->data[3]) {
 	case Q921_TEI_IDENTITY_REQUEST:
+		if (!BRI_NT_PTMP(pri)) {
+			return NULL;
+		}
+
 		if (tei != 127) {
 			pri_error(pri, "Received TEI identity request with invalid TEI %d\n", tei);
 			q921_send_tei(pri, Q921_TEI_IDENTITY_DENIED, ri, tei, 1);
 		}
-		/* Go to master */
-		for (sub = pri; sub->master; sub = sub->master);
 		tei = 64;
-/*! \todo XXX Error:  The following loop never terminates! */
-		while(sub->subchannel) {
-			if(sub->subchannel->tei == tei)
+		while (sub->subchannel) {
+			if (sub->subchannel->tei == tei)
 				++tei;
+			sub = sub->subchannel;
 		}
 		sub->subchannel = __pri_new_tei(-1, pri->localtype, pri->switchtype, pri, NULL, NULL, NULL, tei, 1);
 		if (!sub->subchannel) {
@@ -946,6 +954,9 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		q921_send_tei(pri, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 1);
 		break;
 	case Q921_TEI_IDENTITY_ASSIGNED:
+		if (!BRI_TE_PTMP(pri))
+			return NULL;
+
 		if (ri != pri->ri) {
 			pri_message(pri, "TEI assignment received for invalid Ri %02x (our is %02x)\n", ri, pri->ri);
 			return NULL;
@@ -969,6 +980,8 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		pri->q921_state = Q921_TEI_ASSIGNED;
 		break;
 	case Q921_TEI_IDENTITY_CHECK_REQUEST:
+		if (!BRI_TE_PTMP(pri))
+			return NULL;
 		/* We're assuming one TEI per PRI in TE PTMP mode */
 
 		/* If no subchannel (TEI) ignore */
@@ -981,6 +994,8 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
+		if (!BRI_TE_PTMP(pri))
+			return NULL;
 		/* XXX: Assuming multiframe mode has been disconnected already */
 		if (!pri->subchannel)
 			return NULL;
@@ -1243,6 +1258,28 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 	return NULL;
 }
 
+#if 0
+static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int len)
+{
+	pri_error(pri, "Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n", h->h.sapi, h->h.tei);
+	if (h->h.tei < 64) {
+		pri_error(pri, "Do not support manual TEI range. Discarding\n");
+		return NULL;
+	}
+
+	if (h->h.sapi != Q921_CALL_CTRL) {
+		pri_error(pri, "Message with SAPI other than CALL CTRL is discarded\n");
+		return NULL;
+	}
+
+	pri_message(pri, "Sending TEI release, in order to re-establish TEI state\n");
+
+	/* TODO: Send TEI release message here */
+
+	return NULL;
+}
+#endif
+
 static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 {
 	pri_event *ev;
@@ -1268,7 +1305,17 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 		if (pri->subchannel)
 			return q921_receive(pri->subchannel, h, len + 2);
 		else {
+			/* This means we couldn't find a candidate subchannel for it...
+			 * Time for some corrective action */
+
+#if 0
+			if (pri->master)
+				return q921_handle_unmatched_frame(pri->master, h, len);
+			else
+				return NULL;
+#else
 			return NULL;
+#endif
 		}
 
 	}
