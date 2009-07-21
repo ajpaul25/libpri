@@ -2377,17 +2377,13 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	struct pri *master;
 
 	/* Find the master  - He has the call pool */
-	if (ctrl->master) {
-		master = ctrl->master;
-	} else {
-		master = ctrl;
-	}
+	master = PRI_MASTER(ctrl);
 
 	cur = *master->callpool;
 	prev = NULL;
 	while (cur) {
 		if (cur->cr == cr) {
-			return cur;
+			goto out;
 		}
 		prev = cur;
 		cur = cur->next;
@@ -2411,23 +2407,16 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	cur->ourcallstate = Q931_CALL_STATE_NULL;
 	cur->peercallstate = Q931_CALL_STATE_NULL;
 
-	/* PRI is set to whoever called us */
-	if (ctrl->bri && (ctrl->localtype == PRI_CPE)) {
-		/*
-		 * Point to the master to avoid stale pointer problems if
-		 * the TEI is removed later.
-		 */
-		cur->pri = master;
-	} else {
-		cur->pri = ctrl;
-	}
-
 	/* Append to end of list */
 	if (prev) {
 		prev->next = cur;
 	} else {
 		*master->callpool = cur;
 	}
+
+out:
+	/* PRI is set to whoever called us */
+	cur->pri = ctrl;
 
 	return cur;
 }
@@ -2732,6 +2721,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 	len = sizeof(buf) - len;
 
 	ctrl = call->pri;
+
 	if (ctrl->bri && (ctrl->localtype == PRI_CPE)) {
 		/*
 		 * Must use the BRI subchannel structure to send with the correct TEI.
@@ -2741,7 +2731,8 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 		ctrl = ctrl->subchannel;
 	}
 	if (ctrl) {
-		q931_xmit(ctrl, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
+		pri_message(ctrl, "Sending message for call %p on %p TEI/SAPI %d/%d, call->pri is %p, TEI/SAPI %d/%d\n", call, ctrl, ctrl->tei, ctrl->sapi, call->pri, call->pri->tei, call->pri->sapi);
+		q931_xmit(call->pri, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
 	}
 	call->acked = 1;
 	return 0;
@@ -3317,6 +3308,9 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 			q931_release_complete(ctrl,c,cause);
 		break;
 	case Q931_CALL_STATE_CALL_INITIATED:
+		if (BRI_NT_PTMP(ctrl)) {
+
+		}
 		/* we sent SETUP */
 	case Q931_CALL_STATE_OVERLAP_SENDING:
 		/* received SETUP_ACKNOWLEDGE */
@@ -3592,6 +3586,7 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		pri_error(ctrl, "Unable to locate call %d\n", cref);
 		return -1;
 	}
+	pri_message(ctrl, "Received message for call %p on %p TEI/SAPI %d/%d, call->pri is %p TEI/SAPI %d/%d\n", c, ctrl, ctrl->tei, ctrl->sapi, c->pri, c->pri->tei, c->pri->sapi);
 	/* Preliminary handling */
 	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
 		prepare_to_handle_maintenance_message(ctrl, mh, c);
