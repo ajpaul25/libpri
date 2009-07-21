@@ -2675,7 +2675,7 @@ static void init_header(struct pri *ctrl, q931_call *call, unsigned char *buf, q
 	*mhb = mh;
 }
 
-static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr)
+static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr, int uiframe)
 {
 	/* 
 	 * For NT-PTMP mode, we need to check the following:
@@ -2685,7 +2685,7 @@ static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr)
 	 * If those are true, we need to send the SETUP in a UI frame
 	 * instead of an I-frame.
 	 */
-	if (BRI_NT_PTMP(ctrl))
+	if (BRI_NT_PTMP(ctrl) && uiframe)
 		q921_transmit_uiframe(ctrl, h, len);
 	else
 		q921_transmit_iframe(ctrl, h, len, cr);
@@ -2741,7 +2741,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 		ctrl = ctrl->subchannel;
 	}
 	if (ctrl) {
-		q931_xmit(ctrl, h, len, 1);
+		q931_xmit(ctrl, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
 	}
 	call->acked = 1;
 	return 0;
@@ -3583,7 +3583,7 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		   KLUDGE this by changing byte 4 from a 0xf (SERVICE) 
 		   to a 0x7 (SERVICE ACKNOWLEDGE) */
 		h->raw[h->crlen + 2] -= 0x8;
-		q931_xmit(ctrl, h, len, 1);
+		q931_xmit(ctrl, h, len, 1, 0);
 		return 0;
 	}
 	cref = q931_cr(h);
