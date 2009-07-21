@@ -560,6 +560,7 @@ int q921_transmit_iframe(struct pri *pri, void *buf, int len, int cr)
 			pri->txqueue = f;
 		/* Immediately transmit unless we're in a recovery state, or the window
 		   size is too big */
+		pri_message(pri, "TEI/SAPI: %d/%d state %d retran %d busy %d\n", pri->tei, pri->sapi, pri->q921_state, pri->retrans, pri->busy);
 		if ((pri->q921_state == Q921_LINK_CONNECTION_ESTABLISHED) && (!pri->retrans && !pri->busy)) {
 			if (pri->windowlen < pri->window) {
 				q921_send_queued_iframes(pri);
