@@ -1303,12 +1303,6 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 	if (h->h.ea1 || !(h->h.ea2))
 		return NULL;
 
-#if 0 /* Will be rejected by subchannel analyzis */
-	/* Check for broadcasts - not yet handled */
-	if (h->h.tei == Q921_TEI_GROUP)
-		return NULL;
-#endif
-
 	if (!((h->h.sapi == pri->sapi) && ((h->h.tei == pri->tei) || (h->h.tei == Q921_TEI_GROUP)))) {
 		/* Check for SAPIs we don't yet handle */
 		/* If it's not us, try any subchannels we have */
