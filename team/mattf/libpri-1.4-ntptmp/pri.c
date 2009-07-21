@@ -817,7 +817,7 @@ void pri_message(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_message)
-		__pri_message(pri, tmp);
+		__pri_message(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stdout);
 }
@@ -830,7 +830,7 @@ void pri_error(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_error)
-		__pri_error(pri, tmp);
+		__pri_error(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stderr);
 }
