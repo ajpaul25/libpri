@@ -1285,7 +1285,8 @@ static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int le
 
 	pri_error(pri, "Sending TEI release, in order to re-establish TEI state\n");
 
-	/* TODO: Send TEI release message here */
+	/* Q.931 says we should send the remove message twice, in case of link corruption */
+	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
 	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
 
 	return NULL;
