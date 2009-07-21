@@ -295,20 +295,24 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 
 void __pri_free_tei(struct pri *p);
 
-static inline int BRI_NT_PTMP(struct pri *ctrl)
+static inline struct pri * PRI_MASTER(struct pri *pri)
 {
-	while (ctrl->master)
-		ctrl = ctrl->master;
-
-	return ctrl->bri && (((ctrl)->localtype == PRI_NETWORK) && ((ctrl)->tei == Q921_TEI_GROUP));
+	while (pri->master)
+		pri = pri->master;
+	return pri;
 }
 
-static inline int BRI_TE_PTMP(struct pri *ctrl)
+static inline int BRI_NT_PTMP(struct pri *pri)
 {
-	while (ctrl->master)
-		ctrl = ctrl->master;
+	return pri->bri && (((pri)->localtype == PRI_NETWORK) && ((pri)->tei == Q921_TEI_GROUP));
+}
 
-	return ctrl->bri && (((ctrl)->localtype == PRI_CPE) && ((ctrl)->tei == Q921_TEI_GROUP));
+static inline int BRI_TE_PTMP(struct pri *pri)
+{
+	while (pri->master)
+		pri = pri->master;
+
+	return pri->bri && (((pri)->localtype == PRI_CPE) && ((pri)->tei == Q921_TEI_GROUP));
 }
 
 

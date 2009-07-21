@@ -1266,27 +1266,29 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 	return NULL;
 }
 
-#if 0
 static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int len)
 {
+	pri = PRI_MASTER(pri);
+
 	pri_error(pri, "Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n", h->h.sapi, h->h.tei);
+
 	if (h->h.tei < 64) {
 		pri_error(pri, "Do not support manual TEI range. Discarding\n");
 		return NULL;
 	}
 
-	if (h->h.sapi != Q921_CALL_CTRL) {
+	if (h->h.sapi != Q921_SAPI_CALL_CTRL) {
 		pri_error(pri, "Message with SAPI other than CALL CTRL is discarded\n");
 		return NULL;
 	}
 
-	pri_message(pri, "Sending TEI release, in order to re-establish TEI state\n");
+	pri_error(pri, "Sending TEI release, in order to re-establish TEI state\n");
 
 	/* TODO: Send TEI release message here */
+	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
 
 	return NULL;
 }
-#endif
 
 static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 {
@@ -1316,14 +1318,7 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 			/* This means we couldn't find a candidate subchannel for it...
 			 * Time for some corrective action */
 
-#if 0
-			if (pri->master)
-				return q921_handle_unmatched_frame(pri->master, h, len);
-			else
-				return NULL;
-#else
-			return NULL;
-#endif
+			return q921_handle_unmatched_frame(pri, h, len);
 		}
 
 	}
