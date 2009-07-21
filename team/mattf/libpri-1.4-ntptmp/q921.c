@@ -910,7 +910,7 @@ static void q921_tei_release_and_reacquire(struct pri *master)
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 {
 	int ri;
-	struct pri *sub;
+	struct pri *sub = pri;
 	int tei;
 
 	if (!BRI_NT_PTMP(pri) && !BRI_TE_PTMP(pri)) {
