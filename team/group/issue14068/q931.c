@@ -493,6 +493,30 @@ void q931_party_redirecting_copy_to_pri(struct pri_party_redirecting *pri_redire
 }
 
 /*!
+ * \brief Fixup some values in the q931_party_id that may be objectionable by switches.
+ *
+ * \param ctrl D channel controller.
+ * \param id Party ID to tweak.
+ *
+ * \return Nothing
+ */
+void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id)
+{
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_DMS100:
+	case PRI_SWITCH_ATT4ESS:
+		/* Doesn't like certain presentation types */
+		if (id->number.valid && !(id->number.presentation & 0x7c)) {
+			/* i.e., If presentation is allowed it must be a network number */
+			id->number.presentation = PRES_ALLOWED_NETWORK_NUMBER;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
  * \brief Determine the overall presentation value for the given party.
  *
  * \param id Party to determine the overall presentation value.
@@ -3745,55 +3769,19 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		c->chanflags = FLAG_EXCLUSIVE;
 	else if (c->channelno)
 		c->chanflags = FLAG_PREFERRED;
-	if (req->caller) {
-		switch (ctrl->switchtype) {
-		case PRI_SWITCH_DMS100:
-		case PRI_SWITCH_ATT4ESS:
-			/* Doesn't like certain presentation types */
-			if (!(req->callerpres & 0x7c)) {
-				req->callerpres = PRES_ALLOWED_NETWORK_NUMBER;
-			}
-			break;
-		default:
-			break;
-		}
 
-		c->local_id.number.valid = 1;
-		c->local_id.number.presentation = req->callerpres;
-		c->local_id.number.plan = req->callerplan;
-		libpri_copy_string(c->local_id.number.str, req->caller,
-			sizeof(c->local_id.number.str));
-
-		if (req->callername) {
-			c->local_id.name.valid = 1;
-			c->local_id.name.presentation = req->callerpres;
-			c->local_id.name.char_set = PRI_CHAR_SET_ISO8859_1;
-			libpri_copy_string(c->local_id.name.str, req->callername,
-				sizeof(c->local_id.name.str));
-		}
+	if (req->caller.number.valid) {
+		c->local_id = req->caller;
+		q931_party_id_fixup(ctrl, &c->local_id);
 	}
-	if (req->redirectingnum && req->redirectingnum[0]) {
-		switch (ctrl->switchtype) {
-		case PRI_SWITCH_DMS100:
-		case PRI_SWITCH_ATT4ESS:
-			/* Doesn't like certain presentation types */
-			if (!(req->redirectingpres & 0x7c)) {
-				req->redirectingpres = PRES_ALLOWED_NETWORK_NUMBER;
-			}
-			break;
-		default:
-			break;
-		}
 
-		c->redirecting.from.number.valid = 1;
-		c->redirecting.from.number.presentation = req->redirectingpres;
-		c->redirecting.from.number.plan = req->redirectingplan;
-		libpri_copy_string(c->redirecting.from.number.str, req->redirectingnum,
-			sizeof(c->redirecting.from.number.str));
-
-		c->redirecting.count = 1;
-		c->redirecting.reason = req->redirectingreason;
+	if (req->redirecting.from.number.valid) {
+		c->redirecting = req->redirecting;
+		q931_party_id_fixup(ctrl, &c->redirecting.from);
+		q931_party_id_fixup(ctrl, &c->redirecting.to);
+		q931_party_id_fixup(ctrl, &c->redirecting.orig_called);
 	}
+
 	if (req->called) {
 		c->called_number.valid = 1;
 		c->called_number.plan = req->calledplan;

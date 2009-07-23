@@ -135,44 +135,6 @@ struct pri {
 	unsigned char sendfacility;
 };
 
-/*! \brief New call setup parameter structure */
-struct pri_sr {
-	int transmode;
-	int channel;
-	int exclusive;
-	int nonisdn;
-	char *caller;
-	int callerplan;
-	char *callername;
-	int callerpres;
-	char *called;
-	int calledplan;
-	int userl1;
-	int numcomplete;
-	char *redirectingnum;
-	int redirectingplan;
-	int redirectingpres;
-	int redirectingreason;
-	int justsignalling;
-	const char *useruserinfo;
-	int transferable;
-	int reversecharge;
-};
-
-/* Internal switch types */
-#define PRI_SWITCH_GR303_EOC_PATH	19
-#define PRI_SWITCH_GR303_TMC_SWITCHING	20
-
-struct apdu_event {
-	int message;			/* What message to send the ADPU in */
-	void (*callback)(void *data);	/* Callback function for when response is received */
-	void *data;			/* Data to callback */
-	unsigned char apdu[255];			/* ADPU to send */
-	int apdu_len; 			/* Length of ADPU */
-	int sent;  			/* Have we been sent already? */
-	struct apdu_event *next;	/* Linked list pointer */
-};
-
 /*! \brief Maximum name length plus null terminator (From ECMA-164) */
 #define PRI_MAX_NAME_LEN		(50 + 1)
 
@@ -273,6 +235,38 @@ struct q931_party_redirecting {
 	unsigned char orig_reason;
 	/*! \brief Redirection reasons */
 	unsigned char reason;
+};
+
+/*! \brief New call setup parameter structure */
+struct pri_sr {
+	int transmode;
+	int channel;
+	int exclusive;
+	int nonisdn;
+	struct q931_party_redirecting redirecting;
+	struct q931_party_id caller;
+	char *called;
+	int calledplan;
+	int userl1;
+	int numcomplete;
+	int justsignalling;
+	const char *useruserinfo;
+	int transferable;
+	int reversecharge;
+};
+
+/* Internal switch types */
+#define PRI_SWITCH_GR303_EOC_PATH	19
+#define PRI_SWITCH_GR303_TMC_SWITCHING	20
+
+struct apdu_event {
+	int message;			/* What message to send the ADPU in */
+	void (*callback)(void *data);	/* Callback function for when response is received */
+	void *data;			/* Data to callback */
+	unsigned char apdu[255];			/* ADPU to send */
+	int apdu_len; 			/* Length of ADPU */
+	int sent;  			/* Have we been sent already? */
+	struct apdu_event *next;	/* Linked list pointer */
 };
 
 /*! \brief Incoming call transfer states. */
@@ -459,6 +453,7 @@ void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const st
 void q931_party_id_copy_to_pri(struct pri_party_id *pri_id, const struct q931_party_id *q931_id);
 void q931_party_redirecting_copy_to_pri(struct pri_party_redirecting *pri_redirecting, const struct q931_party_redirecting *q931_redirecting);
 
+void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id);
 int q931_party_id_presentation(const struct q931_party_id *id);
 
 const char *q931_call_state_str(int callstate);
