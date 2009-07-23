@@ -726,13 +726,13 @@ int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
 /*! 
  * \brief Give connected line information to a call 
- * \note Could be used instead of pri_sr_set_caller() before calling pri_setup().
+ * \note Could be used instead of pri_sr_set_caller_party() before calling pri_setup().
  */
 int pri_connected_line_update(struct pri *pri, q931_call *call, const struct pri_party_connected_line *connected);
 
 /*! 
  * \brief Give redirection information to a call
- * \note Should be used instead of pri_sr_set_redirecting() before calling pri_setup().
+ * \note Could be used instead of pri_sr_set_redirecting_parties() before calling pri_setup().
  */
 int pri_redirecting_update(struct pri *pri, q931_call *call, const struct pri_party_redirecting *redirecting);
 
@@ -790,9 +790,29 @@ void pri_sr_free(struct pri_sr *sr);
 int pri_sr_set_channel(struct pri_sr *sr, int channel, int exclusive, int nonisdn);
 int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1);
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int complete);
-/*! \note Use pri_connected_line_update() instead to pass more precise caller information. */
+
+/*!
+ * \brief Set the caller party ID information in the call SETUP record.
+ *
+ * \param sr New call SETUP record.
+ * \param caller Caller party ID information to set.
+ *
+ * \return Nothing
+ */
+void pri_sr_set_caller_party(struct pri_sr *sr, const struct pri_party_id *caller);
+/*! \note Use pri_sr_set_caller_party() instead to pass more precise caller information. */
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
-/*! \note Use pri_redirecting_update() instead to pass more precise redirecting information. */
+
+/*!
+ * \brief Set the redirecting information in the call SETUP record.
+ *
+ * \param sr New call SETUP record.
+ * \param caller Redirecting information to set.
+ *
+ * \return Nothing
+ */
+void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_redirecting *redirecting);
+/*! \note Use pri_sr_set_redirecting_parties() instead to pass more precise redirecting information. */
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
 
 #define PRI_USER_USER_TX
