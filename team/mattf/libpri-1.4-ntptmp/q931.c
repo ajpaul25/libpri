@@ -3275,6 +3275,21 @@ static int q931_connect_acknowledge(struct pri *ctrl, q931_call *c)
 	return 0;
 }
 
+static int pri_internal_clear(void *data);
+
+/* Fake RELEASE for NT-PTMP initiated SETUPs w/o response */
+static void pri_fake_clearing(void *data)
+{
+	struct q931_call *c = data;
+	struct pri *ctrl = c->pri;
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
+		pri_message(ctrl, DBGHEAD "Timed out waiting for data link re-establishment\n", DBGINFO);
+
+	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
+	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
+		ctrl->schedev = 1;
+}
+
 int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 {
 	int disconnect = 1;
@@ -3309,7 +3324,15 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 		break;
 	case Q931_CALL_STATE_CALL_INITIATED:
 		if (BRI_NT_PTMP(ctrl)) {
+			if (c->pri == PRI_MASTER(ctrl)) {
+				/* We need to fake a received clearing message in this case... */
+				if (c->retranstimer)
+					pri_schedule_del(ctrl, c->retranstimer);
 
+				c->retranstimer = pri_schedule_event(ctrl, 0, pri_fake_clearing, c);
+				/* This means that we never got a response from a TEI */
+				return 0;
+			}
 		}
 		/* we sent SETUP */
 	case Q931_CALL_STATE_OVERLAP_SENDING:
