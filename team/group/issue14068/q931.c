@@ -297,6 +297,18 @@ void q931_party_number_init(struct q931_party_number *number)
 }
 
 /*!
+ * \brief Initialize the given struct q931_party_address
+ *
+ * \param address Structure to initialize
+ *
+ * \return Nothing
+ */
+void q931_party_address_init(struct q931_party_address *address)
+{
+	q931_party_number_init(&address->number);
+}
+
+/*!
  * \brief Initialize the given struct q931_party_id
  *
  * \param id Structure to initialize
@@ -2940,7 +2952,7 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	cur->aoc_units = -1;
 	cur->changestatus = -1;
 	q931_party_number_init(&cur->redirection_number);
-	q931_party_number_init(&cur->called.number);
+	q931_party_address_init(&cur->called);
 	q931_party_id_init(&cur->local_id);
 	q931_party_id_init(&cur->remote_id);
 	q931_party_redirecting_init(&cur->redirecting);
@@ -3782,12 +3794,9 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		q931_party_id_fixup(ctrl, &c->redirecting.orig_called);
 	}
 
-	if (req->called) {
-		c->called.number.valid = 1;
-		c->called.number.plan = req->calledplan;
-		libpri_copy_string(c->called.number.str, req->called,
-			sizeof(c->called.number.str));
-		libpri_copy_string(c->overlap_digits, req->called, sizeof(c->overlap_digits));
+	if (req->called.number.valid) {
+		c->called = req->called;
+		libpri_copy_string(c->overlap_digits, req->called.number.str, sizeof(c->overlap_digits));
 	} else
 		return -1;
 
@@ -4033,7 +4042,7 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->userl3 = -1;
 		c->rateadaption = -1;
 
-		q931_party_number_init(&c->called.number);
+		q931_party_address_init(&c->called);
 		q931_party_id_init(&c->local_id);
 		q931_party_id_init(&c->remote_id);
 		q931_party_redirecting_init(&c->redirecting);
@@ -4431,13 +4440,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			 * incoming call was redirected by checking if the
 			 * REDIRECTING(count) is nonzero.
 			 */
-			q931_party_number_init(&c->redirecting.to.number);
-			c->redirecting.to.number.valid = 1;
+			c->redirecting.to.number = c->called.number;
 			c->redirecting.to.number.presentation =
 				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
-			c->redirecting.to.number.plan = c->called.number.plan;
-			libpri_copy_string(c->redirecting.to.number.str, c->called.number.str,
-				sizeof(c->redirecting.to.number.str));
 		}
 
 		ctrl->ev.e = PRI_EVENT_RING;
