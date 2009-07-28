@@ -180,12 +180,56 @@ struct q931_party_number {
 	char str[PRI_MAX_NUMBER_LEN];
 };
 
+/*! \brief Maximum subaddress length plus null terminator */
+#define PRI_MAX_SUBADDRESS_LEN	(20 + 1)
+
+#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
+struct q931_party_subaddress {
+	/*! \brief TRUE if the subaddress information is valid/present */
+	unsigned char valid;
+	/*!
+	 * \brief Subaddress type.
+	 * \details
+	 * nsap(0),
+	 * user_specified(2)
+	 */
+	unsigned char type;
+	/*!
+	 * \brief TRUE if odd number of address signals
+	 * \note The odd/even indicator is used when the type of subaddress is
+	 * user_specified and the coding is BCD.
+	 */
+	unsigned char odd_even_indicator;
+	/*! \brief Length of the subaddress data */
+	unsigned char length;
+	/*!
+	 * \brief Subaddress data with null terminator.
+	 * \note The null terminator is a convenience only since the data could be
+	 * BCD/binary and thus have a null byte as part of the contents.
+	 */
+	char data[PRI_MAX_SUBADDRESS_LEN];
+};
+#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
+
+struct q931_party_address {
+	/*! \brief Subscriber phone number */
+	struct q931_party_number number;
+#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
+	/*! \brief Subscriber subaddress */
+	struct q931_party_subaddress subaddress;
+#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
+};
+
 /*! \brief Information needed to identify an endpoint in a call. */
 struct q931_party_id {
 	/*! \brief Subscriber name */
 	struct q931_party_name name;
 	/*! \brief Subscriber phone number */
 	struct q931_party_number number;
+#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
+	/*! \brief Subscriber subaddress */
+	struct q931_party_subaddress subaddress;
+#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
 };
 
 enum Q931_REDIRECTING_STATE {
@@ -391,12 +435,12 @@ struct q931_call {
 	struct q931_party_number redirection_number;
 
 	/*!
-	 * \brief Called party number.
-	 * \note The called_number.str is the accumulated overlap dial digits
+	 * \brief Called party address.
+	 * \note The called.number.str is the accumulated overlap dial digits
 	 * and enbloc digits.
-	 * \note The called_number.presentation value is not used.
+	 * \note The called.number.presentation value is not used.
 	 */
-	struct q931_party_number called_number;
+	struct q931_party_address called;
 	int nonisdn;
 	int complete;			/* no more digits coming */
 	int newcall;			/* if the received message has a new call reference value */
@@ -411,7 +455,7 @@ struct q931_call {
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];
-	char callingsubaddr[256];	/* Calling party subaddress */
+	char callingsubaddr[PRI_MAX_SUBADDRESS_LEN];	/* Calling party subaddress */
 	
 	long aoc_units;				/* Advice of Charge Units */
 
