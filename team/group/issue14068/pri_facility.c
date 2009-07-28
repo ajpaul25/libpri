@@ -1464,11 +1464,14 @@ static unsigned char *enc_qsig_mwi_activate_message(struct pri *ctrl, unsigned c
 	msg.operation = ROSE_QSIG_MWIActivate;
 	msg.invoke_id = get_invokeid(ctrl);
 
+	/* The called.number is the served user */
+	q931_copy_number_to_rose(ctrl, &msg.args.qsig.MWIActivate.served_user_number,
+		&req->called.number);
+	/*
+	 * For now, we will just force the numbering plan to unknown to preserve
+	 * the original behaviour.
+	 */
 	msg.args.qsig.MWIActivate.served_user_number.plan = 0;	/* unknown */
-	libpri_copy_string((char *) msg.args.qsig.MWIActivate.served_user_number.str,
-		req->called, sizeof(msg.args.qsig.MWIActivate.served_user_number.str));
-	msg.args.qsig.MWIActivate.served_user_number.length = strlen((char *)
-		msg.args.qsig.MWIActivate.served_user_number.str);
 
 	msg.args.qsig.MWIActivate.basic_service = 1;	/* speech */
 
@@ -1510,11 +1513,14 @@ static unsigned char *enc_qsig_mwi_deactivate_message(struct pri *ctrl,
 	msg.operation = ROSE_QSIG_MWIDeactivate;
 	msg.invoke_id = get_invokeid(ctrl);
 
+	/* The called.number is the served user */
+	q931_copy_number_to_rose(ctrl, &msg.args.qsig.MWIDeactivate.served_user_number,
+		&req->called.number);
+	/*
+	 * For now, we will just force the numbering plan to unknown to preserve
+	 * the original behaviour.
+	 */
 	msg.args.qsig.MWIDeactivate.served_user_number.plan = 0;	/* unknown */
-	libpri_copy_string((char *) msg.args.qsig.MWIDeactivate.served_user_number.str,
-		req->called, sizeof(msg.args.qsig.MWIDeactivate.served_user_number.str));
-	msg.args.qsig.MWIDeactivate.served_user_number.length = strlen((char *)
-		msg.args.qsig.MWIDeactivate.served_user_number.str);
 
 	msg.args.qsig.MWIDeactivate.basic_service = 1;	/* speech */
 
@@ -1539,7 +1545,7 @@ int mwi_message_send(struct pri *ctrl, q931_call *call, struct pri_sr *req, int 
 	unsigned char buffer[255];
 	unsigned char *end;
 
-	if (!req->called || !req->called[0]) {
+	if (!req->called.number.valid || !req->called.number.str[0]) {
 		return -1;
 	}
 
