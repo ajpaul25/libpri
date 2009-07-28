@@ -2457,9 +2457,9 @@ static unsigned char *enc_qsig_CCRequestArg(struct pri *ctrl, unsigned char *pos
 	q931_copy_presented_number_unscreened_to_rose(ctrl,
 		&msg.args.qsig.CcbsRequest.number_a, &call->local_id.number);
 
-	/* numberB is the called_number */
+	/* numberB is the called.number */
 	q931_copy_number_to_rose(ctrl, &msg.args.qsig.CcbsRequest.number_b,
-		&call->called_number);
+		&call->called.number);
 
 	msg.args.qsig.CcbsRequest.q931ie.length = sizeof(q931ie);
 	memcpy(msg.args.qsig.CcbsRequest.q931ie_contents, q931ie, sizeof(q931ie));
