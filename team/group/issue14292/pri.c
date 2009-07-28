@@ -915,6 +915,7 @@ static void pri_sr_init(struct pri_sr *req)
 	memset(req, 0, sizeof(struct pri_sr));
 	q931_party_redirecting_init(&req->redirecting);
 	q931_party_id_init(&req->caller);
+	q931_party_address_init(&req->called);
 	req->reversecharge = PRI_REVERSECHARGE_NONE;
 }
 
@@ -1266,8 +1267,12 @@ int pri_sr_set_bearer(struct pri_sr *sr, int transmode, int userl1)
 
 int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int numcomplete)
 {
-	sr->called = called;
-	sr->calledplan = calledplan;
+	q931_party_address_init(&sr->called);
+	if (called) {
+		sr->called.number.valid = 1;
+		sr->called.number.plan = calledplan;
+		libpri_copy_string(sr->called.number.str, called, sizeof(sr->called.number.str));
+	}
 	sr->numcomplete = numcomplete;
 	return 0;
 }

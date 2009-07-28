@@ -289,8 +289,7 @@ struct pri_sr {
 	int nonisdn;
 	struct q931_party_redirecting redirecting;
 	struct q931_party_id caller;
-	char *called;
-	int calledplan;
+	struct q931_party_address called;
 	int userl1;
 	int numcomplete;
 	int justsignalling;
@@ -493,6 +492,7 @@ void __pri_free_tei(struct pri *p);
 
 void q931_party_name_init(struct q931_party_name *name);
 void q931_party_number_init(struct q931_party_number *number);
+void q931_party_address_init(struct q931_party_address *address);
 void q931_party_id_init(struct q931_party_id *id);
 void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
 
