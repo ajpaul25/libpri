@@ -407,12 +407,44 @@ struct pri_party_number {
 	char str[64];
 };
 
+/*!
+ * \note This structure is a place holder for possible future subaddress support
+ * to maintain ABI compatibility.
+ */
+struct pri_party_subaddress {
+	/*! \brief TRUE if the subaddress information is valid/present */
+	int valid;
+	/*!
+	 * \brief Subaddress type.
+	 * \details
+	 * nsap(0),
+	 * user_specified(2)
+	 */
+	int type;
+	/*!
+	 * \brief TRUE if odd number of address signals
+	 * \note The odd/even indicator is used when the type of subaddress is
+	 * user_specified and the coding is BCD.
+	 */
+	int odd_even_indicator;
+	/*! \brief Length of the subaddress data */
+	int length;
+	/*!
+	 * \brief Subaddress data with null terminator.
+	 * \note The null terminator is a convenience only since the data could be
+	 * BCD/binary and thus have a null byte as part of the contents.
+	 */
+	char data[32];
+};
+
 /*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
 	/*! \brief Subscriber name */
 	struct pri_party_name name;
 	/*! \brief Subscriber phone number */
 	struct pri_party_number number;
+	/*! \brief Subscriber subaddress */
+	struct pri_party_subaddress subaddress;
 };
 
 /*! \brief Connected Line/Party information */
@@ -794,13 +826,13 @@ int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisd
    Set non-isdn to non-zero if you are not connecting to ISDN equipment */
 int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn);
 
-/*! 
- * \brief Give connected line information to a call 
+/*!
+ * \brief Give connected line information to a call
  * \note Could be used instead of pri_sr_set_caller_party() before calling pri_setup().
  */
 int pri_connected_line_update(struct pri *pri, q931_call *call, const struct pri_party_connected_line *connected);
 
-/*! 
+/*!
  * \brief Give redirection information to a call
  * \note Could be used instead of pri_sr_set_redirecting_parties() before calling pri_setup().
  */

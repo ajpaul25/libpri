@@ -748,7 +748,7 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 			/* fall through */
 		case PRI_SWITCH_QSIG:
 			if (call->redirecting.state != Q931_REDIRECTING_STATE_PENDING_TX_DIV_LEG_3
-				|| strcmp(call->redirecting.to.number.str, call->called_number.str) != 0) {
+				|| strcmp(call->redirecting.to.number.str, call->called.number.str) != 0) {
 				/* immediately send divertingLegInformation1 APDU */
 				if (rose_diverting_leg_information1_encode(ctrl, call)
 					|| q931_facility(ctrl, call)) {

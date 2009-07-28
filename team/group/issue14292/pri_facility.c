@@ -1757,7 +1757,7 @@ int qsig_cf_callrerouting(struct pri *ctrl, q931_call *call, const char *dest,
 	end =
 		enc_qsig_call_rerouting(ctrl, buffer, buffer + sizeof(buffer),
 			call->remote_id.number.str, dest, original ? original :
-			call->called_number.str, reason);
+			call->called.number.str, reason);
 	if (!end) {
 		return -1;
 	}
