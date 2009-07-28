@@ -1558,19 +1558,19 @@ static int receive_called_party_number(int full_ie, struct pri *ctrl, q931_call 
 		return -1;
 	}
 
-	call->called_number.valid = 1;
-	call->called_number.plan = ie->data[0] & 0x7f;
+	call->called.number.valid = 1;
+	call->called.number.plan = ie->data[0] & 0x7f;
 	if (msgtype == Q931_SETUP) {
-		q931_get_number((unsigned char *) call->called_number.str,
-			sizeof(call->called_number.str), ie->data + 1, len - 3);
+		q931_get_number((unsigned char *) call->called.number.str,
+			sizeof(call->called.number.str), ie->data + 1, len - 3);
 	} else if (call->ourcallstate == Q931_CALL_STATE_OVERLAP_RECEIVING) {
 		/*
 		 * Since we are receiving overlap digits now, we need to append
-		 * them to any previously received digits in call->called_number.str.
+		 * them to any previously received digits in call->called.number.str.
 		 */
-		called_len = strlen(call->called_number.str);
-		called_end = call->called_number.str + called_len;
-		max_len = (sizeof(call->called_number.str) - 1) - called_len;
+		called_len = strlen(call->called.number.str);
+		called_end = call->called.number.str + called_len;
+		max_len = (sizeof(call->called.number.str) - 1) - called_len;
 		if (max_len < len - 3) {
 			called_len = max_len;
 		} else {
@@ -1588,12 +1588,12 @@ static int transmit_called_party_number(int full_ie, struct pri *ctrl, q931_call
 {
 	size_t datalen;
 
-	if (!call->called_number.valid) {
+	if (!call->called.number.valid) {
 		return 0;
 	}
 
 	datalen = strlen(call->overlap_digits);
-	ie->data[0] = 0x80 | call->called_number.plan;
+	ie->data[0] = 0x80 | call->called.number.plan;
 	memcpy(ie->data + 1, call->overlap_digits, datalen);
 	return datalen + (1 + 2);
 }
@@ -2940,7 +2940,7 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	cur->aoc_units = -1;
 	cur->changestatus = -1;
 	q931_party_number_init(&cur->redirection_number);
-	q931_party_number_init(&cur->called_number);
+	q931_party_number_init(&cur->called.number);
 	q931_party_id_init(&cur->local_id);
 	q931_party_id_init(&cur->remote_id);
 	q931_party_redirecting_init(&cur->redirecting);
@@ -3331,12 +3331,12 @@ int q931_information(struct pri *ctrl, q931_call *c, char digit)
 
 	/*
 	 * Since we are doing overlap dialing now, we need to accumulate
-	 * the digits into call->called_number.str.
+	 * the digits into call->called.number.str.
 	 */
-	c->called_number.valid = 1;
-	if (strlen(c->called_number.str) < sizeof(c->called_number.str) - 1) {
+	c->called.number.valid = 1;
+	if (strlen(c->called.number.str) < sizeof(c->called.number.str) - 1) {
 		/* There is enough room for the new digit. */
-		strcat(c->called_number.str, c->overlap_digits);
+		strcat(c->called.number.str, c->overlap_digits);
 	}
 
 	return send_message(ctrl, c, Q931_INFORMATION, information_ies);
@@ -3783,10 +3783,10 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	}
 
 	if (req->called) {
-		c->called_number.valid = 1;
-		c->called_number.plan = req->calledplan;
-		libpri_copy_string(c->called_number.str, req->called,
-			sizeof(c->called_number.str));
+		c->called.number.valid = 1;
+		c->called.number.plan = req->calledplan;
+		libpri_copy_string(c->called.number.str, req->called,
+			sizeof(c->called.number.str));
 		libpri_copy_string(c->overlap_digits, req->called, sizeof(c->overlap_digits));
 	} else
 		return -1;
@@ -4033,7 +4033,7 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->userl3 = -1;
 		c->rateadaption = -1;
 
-		q931_party_number_init(&c->called_number);
+		q931_party_number_init(&c->called.number);
 		q931_party_id_init(&c->local_id);
 		q931_party_id_init(&c->remote_id);
 		q931_party_redirecting_init(&c->redirecting);
@@ -4435,8 +4435,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			c->redirecting.to.number.valid = 1;
 			c->redirecting.to.number.presentation =
 				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
-			c->redirecting.to.number.plan = c->called_number.plan;
-			libpri_copy_string(c->redirecting.to.number.str, c->called_number.str,
+			c->redirecting.to.number.plan = c->called.number.plan;
+			libpri_copy_string(c->redirecting.to.number.str, c->called.number.str,
 				sizeof(c->redirecting.to.number.str));
 		}
 
@@ -4463,8 +4463,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.ring.ani2 = c->ani2;
 
 		/* Called party information */
-		ctrl->ev.ring.calledplan = c->called_number.plan;
-		libpri_copy_string(ctrl->ev.ring.callednum, c->called_number.str, sizeof(ctrl->ev.ring.callednum));
+		ctrl->ev.ring.calledplan = c->called.number.plan;
+		libpri_copy_string(ctrl->ev.ring.callednum, c->called.number.str, sizeof(ctrl->ev.ring.callednum));
 
 		/* Original called party information (For backward compatibility) */
 		libpri_copy_string(ctrl->ev.ring.origcalledname, c->redirecting.orig_called.name.str, sizeof(ctrl->ev.ring.origcalledname));
