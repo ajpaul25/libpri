@@ -143,8 +143,8 @@ struct q931_party_name {
 	/*! \brief TRUE if name data is valid */
 	unsigned char valid;
 	/*!
-	 * \brief Q.931 presentation-indicator encoded field 
-	 * \note Must tollerate the Q.931 screening-indicator field values being present. 
+	 * \brief Q.931 presentation-indicator encoded field
+	 * \note Must tollerate the Q.931 screening-indicator field values being present.
 	 */
 	unsigned char presentation;
 	/*!
@@ -256,8 +256,8 @@ enum Q931_REDIRECTING_STATE {
  * \brief Do not increment above this count.
  * \details
  * It is not our responsibility to enforce the maximum number of redirects.
- * However, we cannot allow an increment past this number without breaking things. 
- * Besides, more than 255 redirects is probably not a good thing. 
+ * However, we cannot allow an increment past this number without breaking things.
+ * Besides, more than 255 redirects is probably not a good thing.
  */
 #define PRI_MAX_REDIRECTS	0xFF
 
