@@ -463,7 +463,7 @@ void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const st
 		pri_number->presentation = q931_number->presentation;
 		pri_number->plan = q931_number->plan;
 		libpri_copy_string(pri_number->str, q931_number->str, sizeof(pri_number->str));
-	} else {									 	
+	} else {
 		pri_number->valid = 0;
 		pri_number->presentation = PRI_PRES_UNAVAILABLE | PRI_PRES_USER_NUMBER_UNSCREENED;
 		pri_number->plan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
@@ -1591,7 +1591,7 @@ static int receive_called_party_number(int full_ie, struct pri *ctrl, q931_call 
 		strncat(called_end, (char *) ie->data + 1, called_len);
 	}
 
- 	q931_get_number((unsigned char *) call->overlap_digits, sizeof(call->overlap_digits),
+	q931_get_number((unsigned char *) call->overlap_digits, sizeof(call->overlap_digits),
 		ie->data + 1, len - 3);
 	return 0;
 }
