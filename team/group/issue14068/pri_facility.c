@@ -468,6 +468,15 @@ static int qsig_name_presentation_for_q931(struct pri *ctrl, int presentation)
 	return value;
 }
 
+/*!
+ * \internal
+ * \brief Convert number presentation to Q.SIG diversion subscription notification.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param presentation Number presentation value.
+ *
+ * \return Q.SIG diversion subscription notification value.
+ */
 static int presentation_to_subscription(struct pri *ctrl, int presentation)
 {
 	/* derive subscription value from presentation value */
