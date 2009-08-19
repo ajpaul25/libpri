@@ -294,10 +294,10 @@ struct pri_sr {
 	int numcomplete;
 	int justsignalling;
 	int nochannelsignalling;
-	int ccbsnr;
 	const char *useruserinfo;
 	int transferable;
 	int reversecharge;
+	int ccbsnr;
 	int ccringout;
 };
 
