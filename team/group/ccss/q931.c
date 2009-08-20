@@ -404,6 +404,24 @@ int q931_party_number_cmp(const struct q931_party_number *left, const struct q93
 }
 
 /*!
+ * \brief Compare the left and right party address.
+ *
+ * \param left Left parameter party address.
+ * \param right Right parameter party address.
+ *
+ * \retval < 0 when left < right.
+ * \retval == 0 when left == right.
+ * \retval > 0 when left > right.
+ */
+int q931_party_address_cmp(const struct q931_party_address *left, const struct q931_party_address *right)
+{
+	int cmp;
+
+	cmp = q931_party_number_cmp(&left->number, &right->number);
+	return cmp;
+}
+
+/*!
  * \brief Compare the left and right party id.
  *
  * \param left Left parameter party id.
@@ -423,6 +441,55 @@ int q931_party_id_cmp(const struct q931_party_id *left, const struct q931_party_
 	}
 	cmp = q931_party_name_cmp(&left->name, &right->name);
 	return cmp;
+}
+
+/*!
+ * \brief Compare the left and right party id addresses.
+ *
+ * \param left Left parameter party id.
+ * \param right Right parameter party id.
+ *
+ * \retval < 0 when left < right.
+ * \retval == 0 when left == right.
+ * \retval > 0 when left > right.
+ */
+int q931_party_id_cmp_address(const struct q931_party_id *left, const struct q931_party_id *right)
+{
+	int cmp;
+
+	cmp = q931_party_number_cmp(&left->number, &right->number);
+	return cmp;
+}
+
+/*!
+ * \brief Compare the party id to the party address.
+ *
+ * \param id Party id.
+ * \param address Party address.
+ *
+ * \retval < 0 when id < address.
+ * \retval == 0 when id == address.
+ * \retval > 0 when id > address.
+ */
+int q931_cmp_party_id_to_address(const struct q931_party_id *id, const struct q931_party_address *address)
+{
+	int cmp;
+
+	cmp = q931_party_number_cmp(&id->number, &address->number);
+	return cmp;
+}
+
+/*!
+ * \brief Copy a party id into a party address.
+ *
+ * \param address Party address.
+ * \param id Party id.
+ *
+ * \return Nothing
+ */
+void q931_party_id_copy_to_address(struct q931_party_address *address, const struct q931_party_id *id)
+{
+	address->number = id->number;
 }
 
 /*!
@@ -469,6 +536,26 @@ void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const st
 		pri_number->plan = (PRI_TON_UNKNOWN << 4) | PRI_NPI_E163_E164;
 		pri_number->str[0] = 0;
 	}
+}
+
+/*!
+ * \brief Copy the Q.931 party address to the PRI party address structure.
+ *
+ * \param pri_address PRI party address structure
+ * \param q931_address Q.931 party address structure
+ *
+ * \return Nothing
+ */
+void q931_party_address_copy_to_pri(struct pri_party_address *pri_address, const struct q931_party_address *q931_address)
+{
+	q931_party_number_copy_to_pri(&pri_address->number, &q931_address->number);
+
+	/* Subaddresses are not supported yet. */
+	pri_address->subaddress.valid = 0;
+	pri_address->subaddress.type = 0;	/* nsap */
+	pri_address->subaddress.odd_even_indicator = 0;
+	pri_address->subaddress.length = 0;
+	pri_address->subaddress.data[0] = '\0';
 }
 
 /*!
@@ -647,13 +734,13 @@ static int receive_channel_id(int full_ie, struct pri *ctrl, q931_call *call, in
 #ifndef NOAUTO_CHANNEL_SELECTION_SUPPORT
 	if (ctrl->bri) {
 		if (!(ie->data[0] & 3))
-			call->justsignalling = 1;
+			call->cis_call = 1;
 		else
 			call->channelno = ie->data[0] & 3;
 	} else {
 		switch (ie->data[0] & 3) {
 			case 0:
-				call->justsignalling = 1;
+				call->cis_call = 1;
 				break;
 			case 1:
 				break;
@@ -717,14 +804,13 @@ static int transmit_channel_id(int full_ie, struct pri *ctrl, q931_call *call, i
 	if (order > 1)
 		return 0;
 
-	if (call->nochannelsignalling) {
-		ie->data[pos++] = 0xac;
-		return pos + 2;
-	}
-	
-	if (call->justsignalling) {
-		ie->data[pos++] = 0xac; /* Read the standards docs to figure this out
-					   ECMA-165 section 7.3 */
+	if (call->cis_call) {
+		/*
+		 * Read the standards docs to figure this out.
+		 * Q.SIG ECMA-165 section 7.3
+		 * ITU Q.931 section 4.5.13
+		 */
+		ie->data[pos++] = ctrl->bri ? 0x8c : 0xac;
 		return pos + 2;
 	}
 		
@@ -1157,7 +1243,6 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
 	if(order > 1)
 		return 0;
 
-	tc = call->transcapability;
 	if (ctrl->subchannel && !ctrl->bri) {
 		/* Bearer capability is *hard coded* in GR-303 */
 		ie->data[0] = 0x88;
@@ -1165,18 +1250,13 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
 		return 4;
 	}
 
-	if (call->nochannelsignalling) {
-		ie->data[0] = 0xa8;
-		ie->data[1] = 0x80;
-		return 4;
-	}
-
-	if (call->justsignalling) {
+	if (call->cis_call) {
 		ie->data[0] = 0xa8;
 		ie->data[1] = 0x80;
 		return 4;
 	}
 	
+	tc = call->transcapability;
 	ie->data[0] = 0x80 | tc;
 	ie->data[1] = call->transmoderate | 0x80;
 
@@ -3772,9 +3852,8 @@ static int setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_F
 
 static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1 };
 
-static int cis_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLED_PARTY_NUMBER, -1 };
-
-static int nochannel_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_SENDING_COMPLETE, -1 };
+/*! Call Independent Signalling SETUP ie's */
+static int cis_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLING_PARTY_NUMBER, Q931_CALLED_PARTY_NUMBER, Q931_SENDING_COMPLETE, -1 };
 
 int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 {
@@ -3800,8 +3879,8 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->slotmap = -1;
 	c->nonisdn = req->nonisdn;
 	c->newcall = 0;
-	c->justsignalling = req->justsignalling;		
-	c->nochannelsignalling = req->nochannelsignalling;		
+	c->cis_call = req->cis_call;
+	c->cis_auto_disconnect = req->cis_auto_disconnect;
 	c->complete = req->numcomplete; 
 	if (req->exclusive) 
 		c->chanflags = FLAG_EXCLUSIVE;
@@ -3847,10 +3926,8 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	if (ctrl->subchannel && !ctrl->bri)
 		res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
-	else if (c->justsignalling)
+	else if (c->cis_call)
 		res = send_message(ctrl, c, Q931_SETUP, cis_setup_ies);
-	else if (c->nochannelsignalling)
-		res = send_message(ctrl, c, Q931_SETUP, nochannel_setup_ies);
 	else
 		res = send_message(ctrl, c, Q931_SETUP, setup_ies);
 	if (!res) {
@@ -3913,16 +3990,28 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	/* If mandatory IE was missing, insist upon that cause code */
 	if (c->cause == PRI_CAUSE_MANDATORY_IE_MISSING)
 		cause = c->cause;
-	if (cause == 34 || cause == 44 || cause == 82 || cause == 1 || cause == 81) {
+	switch (cause) {
+	case PRI_CAUSE_NORMAL_CIRCUIT_CONGESTION:
+	case PRI_CAUSE_REQUESTED_CHAN_UNAVAIL:
+	case PRI_CAUSE_IDENTIFIED_CHANNEL_NOTEXIST:
+	case PRI_CAUSE_UNALLOCATED:
+	case PRI_CAUSE_INVALID_CALL_REFERENCE:
 		/* We'll send RELEASE_COMPLETE with these causes */
 		disconnect = 0;
 		release_compl = 1;
-	}
-	if (cause == 6 || cause == 7 || cause == 26) {
+		break;
+	case PRI_CAUSE_CHANNEL_UNACCEPTABLE:
+	case PRI_CAUSE_CALL_AWARDED_DELIVERED:
+	case 26:
 		/* We'll send RELEASE with these causes */
 		disconnect = 0;
+		break;
+	default:
+		break;
 	}
-	if (c->nochannelsignalling) {
+	if (c->cis_call) {
+		disconnect = 0;
+
 		if (c->ccoperation == PRI_CC_CANCEL) {
 			add_qsigCcInv_facility_ie(ctrl, c, Q931_RELEASE);
 		}
@@ -3931,7 +4020,6 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 			c->cctimer2 = 0;
 			pri_message(ctrl, "NEW_HANGUP DEBUG: stop CC-Timer2\n");
 		}
-		disconnect = 0;
 	}
 
 	/* All other causes we send with DISCONNECT */
@@ -3962,22 +4050,31 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	case Q931_CALL_STATE_OVERLAP_RECEIVING:
 		/* received SETUP_ACKNOWLEDGE */
 		/* send DISCONNECT in general */
-		if (c->peercallstate != Q931_CALL_STATE_NULL && c->peercallstate != Q931_CALL_STATE_DISCONNECT_REQUEST && c->peercallstate != Q931_CALL_STATE_DISCONNECT_INDICATION && c->peercallstate != Q931_CALL_STATE_RELEASE_REQUEST && c->peercallstate != Q931_CALL_STATE_RESTART_REQUEST && c->peercallstate != Q931_CALL_STATE_RESTART) {
+		switch (c->peercallstate) {
+		default:
 			if (disconnect)
 				q931_disconnect(ctrl,c,cause);
 			else if (release_compl)
 				q931_release_complete(ctrl,c,cause);
 			else
 				q931_release(ctrl,c,cause);
-		} else 
+			break;
+		case Q931_CALL_STATE_NULL:
+		case Q931_CALL_STATE_DISCONNECT_REQUEST:
+		case Q931_CALL_STATE_DISCONNECT_INDICATION:
+		case Q931_CALL_STATE_RELEASE_REQUEST:
+		case Q931_CALL_STATE_RESTART_REQUEST:
+		case Q931_CALL_STATE_RESTART:
 			pri_error(ctrl,
 				"Wierd, doing nothing but this shouldn't happen, ourstate %s, peerstate %s\n",
 				q931_call_state_str(c->ourcallstate),
 				q931_call_state_str(c->peercallstate));
+			break;
+		}
 		break;
 	case Q931_CALL_STATE_ACTIVE:
 		/* received CONNECT */
-		if (c->nochannelsignalling) {
+		if (c->cis_call) {
 			q931_release(ctrl,c,cause);
 			break;
 		}
@@ -4615,8 +4712,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		q931_connect_acknowledge(ctrl, c);
 
-		if (c->justsignalling) {  /* Make sure WE release when we initiatie a signalling only connection */
-			q931_release(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
+		if (c->cis_auto_disconnect && c->cis_call) {
+			/* Make sure WE release when we initiate a signalling only connection */
+			q931_hangup(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
 			break;
 		} else {
 			c->incoming_ct_state = INCOMING_CT_STATE_IDLE;
@@ -4628,9 +4726,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 				q931_party_id_copy_to_pri(&subcmd->u.connected_line.id, &c->remote_id);
 			}
 
-			if (c->nochannelsignalling && c->ccrequestresult) {
+			if (c->cis_call && c->ccrequestresult) {
 				pri_message(ctrl, "Q931_CONNECT: start CC-Timer2\n");
-				c->cctimer2 = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_CCBST2], pri_cctimer2_timeout, c);
+				c->cctimer2 = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_QSIG_CCBS_T2], pri_cctimer2_timeout, c);
 			}
 
 			return Q931_RES_HAVEEVENT;

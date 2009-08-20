@@ -40,6 +40,11 @@
 #include <string.h>
 #include <limits.h>
 
+const char *pri_facility_error2str(int facility_error_code)
+{
+	return rose_error2str(facility_error_code);
+}
+
 static short get_invokeid(struct pri *ctrl)
 {
 	return ++ctrl->last_invoke;
@@ -170,6 +175,7 @@ static int redirectingreason_for_q931(struct pri *ctrl, int redirectingreason)
 }
 
 /*!
+ * \internal
  * \brief Convert the Q.931 type-of-number field to facility.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
