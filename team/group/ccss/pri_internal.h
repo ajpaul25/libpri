@@ -47,9 +47,10 @@ struct pri_sched {
 struct q921_frame;
 enum q931_state;
 enum q931_mode;
+struct pri_cc_record;
 
 /*! Maximum number of scheduled events active at the same time. */
-#define MAX_SCHED (128 + 256) /* 256 ccT2 timer events*/
+#define MAX_SCHED	(128 + 256) /* 256 CC supervision timer events */
 
 /*! \brief D channel controller structure */
 struct pri {
@@ -114,6 +115,9 @@ struct pri {
 	q931_call **callpool;
 	q931_call *localpool;
 
+	/*! Active call-completion records */
+	struct pri_cc_record *cc_pool;
+
 	/* do we do overlap dialing */
 	int overlapdial;
 
@@ -131,6 +135,8 @@ struct pri {
 	unsigned int q931_rxcount;
 #endif
 
+	/*! Last CC id allocated. */
+	unsigned short last_cc_id;
 	short last_invoke;	/* Last ROSE invoke ID */
 	unsigned char sendfacility;
 };
@@ -292,8 +298,8 @@ struct pri_sr {
 	struct q931_party_address called;
 	int userl1;
 	int numcomplete;
-	int justsignalling;
-	int nochannelsignalling;
+	int cis_call;
+	int cis_auto_disconnect;
 	const char *useruserinfo;
 	int transferable;
 	int reversecharge;
@@ -370,8 +376,13 @@ struct q931_call {
 	int userl3;
 	int rateadaption;
 
-	int justsignalling;		/* for a signalling-only connection */
-	int nochannelsignalling;
+	/*!
+	 * \brief TRUE if the call is a Call Independent Signalling connection.
+	 * \note The call has no B channel associated with it. (Just signalling)
+	 */
+	int cis_call;
+	/*! \brief TRUE if we will auto disconnect the cis_call we originated. */
+	int cis_auto_disconnect;
 
 	int progcode;			/* Progress coding */
 	int progloc;			/* Progress Location */	
@@ -388,6 +399,7 @@ struct q931_call {
 	int ourcallstate;		/* Our call state */
 	int sugcallstate;		/* Status call state */
 
+/* BUGBUG These CC elements may not be retained. */
 	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
 	int ccrequestresult;
 	int cctimer2;			/* Timer for QSIG-timer2 */
@@ -473,6 +485,46 @@ struct q931_call {
 							0,2-7 - Reserved for future use */
 };
 
+enum CC_STATES {
+	/*! CC is not active. */
+	CC_STATE_IDLE,
+	/*! CC has recorded call information in anticipation of CC availability. */
+	CC_STATE_RECORD_RETENTION,
+	/*! CC is available and waiting on possible CC request. */
+	CC_STATE_AVAILABLE,
+	/*! CC is requested to be activated and waiting on party B to acknowledge. */
+	CC_STATE_REQUESTED,
+	/*! CC is activated and waiting for party B to become available. */
+	CC_STATE_ACTIVATED,
+	/*! CC party B is available and waiting for status of party A. */
+	CC_STATE_B_AVAILABLE,
+	/*! CC is suspended because party A is not available. */
+	CC_STATE_SUSPENDED,
+	/*! CC is waiting for party A to initiate CC callback. */
+	CC_STATE_WAIT_CALLBACK,
+};
+
+/*! \brief Call-completion record */
+struct pri_cc_record {
+	/*! Next call-completion record in the list */
+	struct pri_cc_record *next;
+	/*! Call-completion record id */
+	long record_id;
+	/*! Call-completion state */
+	enum CC_STATES state;
+	/*! Original calling party. */
+	struct q931_party_id party_a;
+	/*! Original called party. */
+	struct q931_party_address party_b;
+
+	/*! TRUE if the remote party is party B. */
+	unsigned char party_b_is_remote;
+	/*! PTMP pre-activation reference id. (0-127) */
+	unsigned char call_linkage_id;
+	/*! PTMP active CCBS reference id. (0-127) */
+	unsigned char ccbs_reference_id;
+};
+
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
 
 extern pri_event *pri_schedule_run(struct pri *pri);
@@ -487,8 +539,9 @@ void pri_error(struct pri *ctrl, char *fmt, ...) __attribute__((format(printf, 2
 void libpri_copy_string(char *dst, const char *src, size_t size);
 
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
-
 void __pri_free_tei(struct pri *p);
+
+void pri_sr_init(struct pri_sr *req);
 
 void q931_party_name_init(struct q931_party_name *name);
 void q931_party_number_init(struct q931_party_number *number);
@@ -498,10 +551,16 @@ void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
 
 int q931_party_name_cmp(const struct q931_party_name *left, const struct q931_party_name *right);
 int q931_party_number_cmp(const struct q931_party_number *left, const struct q931_party_number *right);
+int q931_party_address_cmp(const struct q931_party_address *left, const struct q931_party_address *right);
 int q931_party_id_cmp(const struct q931_party_id *left, const struct q931_party_id *right);
+int q931_party_id_cmp_address(const struct q931_party_id *left, const struct q931_party_id *right);
+
+int q931_cmp_party_id_to_address(const struct q931_party_id *id, const struct q931_party_address *address);
+void q931_party_id_copy_to_address(struct q931_party_address *address, const struct q931_party_id *id);
 
 void q931_party_name_copy_to_pri(struct pri_party_name *pri_name, const struct q931_party_name *q931_name);
 void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const struct q931_party_number *q931_number);
+void q931_party_address_copy_to_pri(struct pri_party_address *pri_address, const struct q931_party_address *q931_address);
 void q931_party_id_copy_to_pri(struct pri_party_id *pri_id, const struct q931_party_id *q931_id);
 void q931_party_redirecting_copy_to_pri(struct pri_party_redirecting *pri_redirecting, const struct q931_party_redirecting *q931_redirecting);
 

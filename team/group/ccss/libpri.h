@@ -346,7 +346,7 @@
 #define PRI_NSF_ATT_MULTIQUEST         0xF0
 #define PRI_NSF_CALL_REDIRECTION_SERVICE       0xF7
 
-/* ECMA 186 */
+/* BUGBUG eliminate these defines ECMA 186 */
 #define PRI_CC_CCNRREQUEST		27
 #define PRI_CC_CANCEL			28
 #define PRI_CC_RINGOUT			31
@@ -437,6 +437,14 @@ struct pri_party_subaddress {
 	char data[32];
 };
 
+/*! \brief Addressing information needed to identify an endpoint in a call. */
+struct pri_party_address {
+	/*! \brief Subscriber phone number */
+	struct pri_party_number number;
+	/*! \brief Subscriber subaddress */
+	struct pri_party_subaddress subaddress;
+};
+
 /*! \brief Information needed to identify an endpoint in a call. */
 struct pri_party_id {
 	/*! \brief Subscriber name */
@@ -474,12 +482,14 @@ struct pri_party_redirecting {
 	int reason;
 };
 
+/* BUGBUG eliminate this struct definition. */
 /* Structures for qsig_cc_facilities */
 struct pri_qsig_cc_extension {
 	int	cc_extension_tag;
 	char extension[256];
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_qsig_cc_optional_arg {
 	char number_A[256];
 	char number_B[256];
@@ -487,6 +497,7 @@ struct pri_qsig_cc_optional_arg {
 	struct pri_qsig_cc_extension cc_extension;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_qsig_cc_request_res {
 	int	no_path_reservation;
 	int	retain_service;
@@ -494,44 +505,168 @@ struct pri_qsig_cc_request_res {
 };
 
 /* Subcommands derived from supplementary services. */
-#define PRI_SUBCMD_REDIRECTING			1
-#define PRI_SUBCMD_CONNECTED_LINE		2
-#define PRI_SUBCMD_CC_CCBSREQUEST_RR	3
-#define PRI_SUBCMD_CC_CCNRREQUEST_RR	4
-#define PRI_SUBCMD_CC_CANCEL_INV		5
-#define PRI_SUBCMD_CC_EXECPOSSIBLE_INV	6
-#define PRI_SUBCMD_CC_RINGOUT_INV		7
-#define PRI_SUBCMD_CC_SUSPEND_INV		8
-#define PRI_SUBCMD_CC_ERROR				9
+#define PRI_SUBCMD_REDIRECTING				1	/*!< Redirecting information update */
+#define PRI_SUBCMD_CONNECTED_LINE			2	/*!< Connected line information update */
+#define PRI_SUBCMD_STATUS_REQ				3	/*!< Determine the status of the given party. */
+#define PRI_SUBCMD_STATUS_REQ_RSP			4	/*!< Status request response */
+#define PRI_SUBCMD_CC_RECORD_RETENTION		5	/*!< Give cc_id to upper layer */
+#define PRI_SUBCMD_CC_AVAILABLE				6	/*!< Indicate that CC is available */
+#define PRI_SUBCMD_CC_REQ					7	/*!< CC activation request */
+#define PRI_SUBCMD_CC_REQ_RSP				8	/*!< CC activation request response */
+#define PRI_SUBCMD_CC_REMOTE_USER_FREE		9	/*!< Indicate that CC party B is available */
+#define PRI_SUBCMD_CC_STATUS_REQ			10	/*!< Request/prod to receive updates of CC party A status */
+#define PRI_SUBCMD_CC_STATUS				11	/*!< Unsolicited update of CC party A status */
+#define PRI_SUBCMD_CC_CALL					12	/*!< Indicate that this call is a CC callback */
+#define PRI_SUBCMD_CC_CANCEL				13	/*!< Unsolicited indication that CC is canceled */
+#define PRI_SUBCMD_CC_DEACTIVATE_REQ		14	/*!< CC deactivation request */
+#define PRI_SUBCMD_CC_DEACTIVATE_RSP		15	/*!< CC deactivation request response */
 
+struct pri_subcmd_status_request {
+	/*!
+	 * \brief Invoke id in case there are multiple outstanding requests.
+	 * \note Used to match any responses with the original invoke in case
+	 * there are several requests active.
+	 */
+	int invoke_id;
+	/*! \brief Party address requesting status about. */
+	struct pri_party_address party;
+};
+
+struct pri_subcmd_status_request_rsp {
+	/*!
+	 * \brief Request id in case there are multiple outstanding requests.
+	 * \note Used to match any responses with the request in case there
+	 * are several requests active.
+	 */
+	int request_id;
+	/*!
+	 * \brief Response status to the status request.
+	 * \details
+	 * free(0),
+	 * busy(1),
+	 * incompatible(2)
+	 * unknown(3),
+	 * timeout(4),
+	 */
+	int status;
+};
+
+struct pri_subcmd_cc_id {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+};
+
+struct pri_subcmd_cc_request {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief Mode of call-completion requested.
+	 * \details
+	 * ccbs(0),
+	 * ccnr(1)
+	 */
+	int mode;
+};
+
+struct pri_subcmd_cc_request_rsp {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief Status of the requested call-completion activation.
+	 * \details
+	 * success(0),
+	 * timeout(1),
+	 * short_term_denial(2),
+	 * long_term_denial(3),
+	 * not_subscribed(4)
+	 */
+	int status;
+	/*!
+	 * \brief Error code that can be converted to a string to further
+	 * explain the non-timeout failure.
+	 * \note Valid when non-zero.
+	 * \note Use pri_facility_error2str() to convert the error_code.
+	 */
+	int error_code;
+};
+
+struct pri_subcmd_cc_status {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief Party A status.
+	 * \details
+	 * free(0),
+	 * busy(1)
+	 */
+	int status;
+};
+
+struct pri_subcmd_cc_deactivate_rsp {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief Status of the requested call-completion deactivation.
+	 * \details
+	 * success(0),
+	 * timeout(1),
+	 * fail(2)
+	 */
+	int status;
+	/*!
+	 * \brief Error code that can be converted to a string to further
+	 * explain the non-timeout failure.
+	 * \note Valid when non-zero.
+	 * \note Use pri_facility_error2str() to convert the error_code.
+	 */
+	int error_code;
+};
+
+/* BUGBUG eliminate the following defines */
+#define PRI_SUBCMD_CC_CCBSREQUEST_RR	93
+#define PRI_SUBCMD_CC_CCNRREQUEST_RR	94
+#define PRI_SUBCMD_CC_CANCEL_INV		95
+#define PRI_SUBCMD_CC_EXECPOSSIBLE_INV	96
+#define PRI_SUBCMD_CC_RINGOUT_INV		97
+#define PRI_SUBCMD_CC_SUSPEND_INV		98
+#define PRI_SUBCMD_CC_ERROR				99
+
+/* BUGBUG eliminate the following defines */
 #define PRI_CCERROR_UNSPECIFIED				1008
 #define PRI_CCERROR_REMOTE_USER_BUSY_AGAIN	1012
 #define PRI_CCERROR_FAILURE_TO_MATCH		1013
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_ccbs_rr {
 	struct pri_qsig_cc_request_res cc_request_res;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_ccnr_rr {
 	struct pri_qsig_cc_request_res cc_request_res;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_cancel_inv {
 	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_execpossible_inv {
 	struct pri_qsig_cc_optional_arg	cc_optional_arg;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_suspend_inv {
 	struct pri_qsig_cc_extension cc_extension;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_ringout_inv {
 	struct pri_qsig_cc_extension cc_extension;
 };
 
+/* BUGBUG eliminate this struct definition. */
 struct pri_subcmd_cc_error {
 	int	error_value;
 };
@@ -544,6 +679,20 @@ struct pri_subcommand {
 		char reserve_space[512];
 		struct pri_party_connected_line connected_line;
 		struct pri_party_redirecting redirecting;
+		struct pri_subcmd_status_request status_request;
+		struct pri_subcmd_status_request_rsp status_request_rsp;
+		struct pri_subcmd_cc_id cc_available;
+		struct pri_subcmd_cc_request cc_request;
+		struct pri_subcmd_cc_request_rsp cc_request_rsp;
+		struct pri_subcmd_cc_id cc_remote_user_free;
+		struct pri_subcmd_cc_id cc_status_req;
+		struct pri_subcmd_cc_status cc_status;
+		struct pri_subcmd_cc_id cc_call;
+		struct pri_subcmd_cc_id cc_cancel;
+		struct pri_subcmd_cc_id cc_deactivate_req;
+		struct pri_subcmd_cc_deactivate_rsp cc_deactivate_rsp;
+
+/* BUGBUG eliminate these struct members. */
 		struct pri_subcmd_cc_ccbs_rr cc_ccbs_rr;
 		struct pri_subcmd_cc_ccnr_rr cc_ccnr_rr;
 		struct pri_subcmd_cc_cancel_inv cc_cancel_inv;
@@ -669,7 +818,7 @@ typedef struct pri_event_hangup {
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
 	struct pri_subcommands *subcmds;
-} pri_event_hangup;	
+} pri_event_hangup;
 
 typedef struct pri_event_restart_ack {
 	int e;
@@ -687,7 +836,7 @@ typedef struct pri_event_proceeding {
 	q931_call *call;
 	struct pri_subcommands *subcmds;
 } pri_event_proceeding;
- 
+
 typedef struct pri_event_setup_ack {
 	int e;
 	int channel;
@@ -751,7 +900,7 @@ typedef int (*pri_io_cb)(struct pri *pri, void *buf, int buflen);
 
 /* Create a D-channel on a given file descriptor.  The file descriptor must be a
    channel operating in HDLC mode with FCS computed by the fd's driver.  Also it
-   must be NON-BLOCKING! Frames received on the fd should include FCS.  Nodetype 
+   must be NON-BLOCKING! Frames received on the fd should include FCS.  Nodetype
    must be one of PRI_NETWORK or PRI_CPE.  switchtype should be PRI_SWITCH_* */
 struct pri *pri_new(int fd, int nodetype, int switchtype);
 struct pri *pri_new_bri(int fd, int ptpmode, int nodetype, int switchtype);
@@ -806,6 +955,15 @@ char *pri_plan2str(int plan);
 
 /* Turn cause into a string */
 char *pri_cause2str(int cause);
+
+/*!
+ * \brief Convert the given facility error code to a descriptive string.
+ *
+ * \param facility_error_code Error code to convert to a string.
+ *
+ * \return Descriptive error string.
+ */
+const char *pri_facility_error2str(int facility_error_code);
 
 /* Acknowledge a call and place it on the given channel.  Set info to non-zero if there
    is in-band data available on the channel */
@@ -868,10 +1026,14 @@ extern int pri_maintenance_service(struct pri *pri, int span, int channel, int c
 
 /* Create a new call */
 q931_call *pri_new_call(struct pri *pri);
+
+/* BUGBUG eliminate this prototype. */
 q931_call *pri_new_nochannel_call(struct pri *pri, int *cr);
 
+/* BUGBUG eliminate this prototype. */
 q931_call *pri_find_call(struct pri *pri, int cr);
 
+/* BUGBUG eliminate this prototype. */
 void pri_call_set_cc_operation(q931_call *call, int cc_operation);
 
 /* Retrieve CRV reference for GR-303 calls.  Returns >0 on success. */
@@ -922,8 +1084,9 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 /*! \note Use pri_sr_set_redirecting_parties() instead to pass more precise redirecting information. */
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
 
-
+/* BUGBUG eliminate this prototype. */
 int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout);
+/* BUGBUG eliminate this prototype. */
 int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr);
 
 #define PRI_USER_USER_TX
@@ -935,10 +1098,16 @@ void pri_call_set_useruser(q931_call *sr, const char *userchars);
 
 int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 
-/* Set a call has a call indpendent signalling connection (i.e. no bchan) */
+/*!
+ * \brief Set a call has a call indpendent signalling connection (i.e. no bchan)
+ * \note Call will automaticlly disconnect after signalling sent.
+ */
 int pri_sr_set_connection_call_independent(struct pri_sr *req);
 
-/* Set a no channel call (i.e. QSIG-CCBS/CCNR) */
+/*!
+ * \brief Set a call has a call indpendent signalling connection (i.e. no bchan)
+ * \note Call will stay connected until explicitly disconnected.
+ */
 int pri_sr_set_no_channel_call(struct pri_sr *req);
 
 /* Send an MWI indication to a remote location.  If activate is non zero, activates, if zero, deactivates */
@@ -1005,6 +1174,20 @@ int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 
 int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
 
+int pri_status_request(struct pri *ctrl, int request_id, const struct pri_sr *req);
+void pri_status_request_response(struct pri *ctrl, int invoke_id, int status);
+
+/* Call-completion function prototypes */
+void pri_cc_available(struct pri *ctrl, q931_call *call);
+int pri_cc_request(struct pri *ctrl, long cc_id, int mode);
+void pri_cc_request_response(struct pri *ctrl, long cc_id, int status);
+void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);
+int pri_cc_status_request(struct pri *ctrl, long cc_id);
+void pri_cc_status(struct pri *ctrl, long cc_id, int status);
+int pri_cc_call(struct pri *ctrl, long cc_id, q931_call *call, int channel, int exclusive);
+void pri_cc_cancel(struct pri *ctrl, long cc_id);
+int pri_cc_deactivate_request(struct pri *ctrl, long cc_id);
+
 /* Get/Set PRI Timers  */
 #define PRI_GETSET_TIMERS
 int pri_set_timer(struct pri *pri, int timer, int value);
@@ -1047,11 +1230,33 @@ enum PRI_TIMERS_AND_COUNTERS {
 	PRI_TIMER_TM20,	/*!< Maximum time awaiting XID response */
 	PRI_TIMER_NM20,	/*!< Number of XID retransmits */
 
-	PRI_TIMER_CCBST2,/*!< maximum time on completion of CC Call */
+	PRI_TIMER_T_STATUS,		/*!< Max time to wait for all replies to check for compatible terminals */
+
+	PRI_TIMER_T_ACTIVATE,	/*!< Request supervision timeout. */
+	PRI_TIMER_T_DEACTIVATE,	/*!< Deactivate supervision timeout. */
+	PRI_TIMER_T_INTERROGATE,/*!< Interrogation supervision timeout. */
+
+	/* ETSI call-completion timers */
+	PRI_TIMER_T_RETENTION,	/*!< Max time to wait for user A to activate call-completion. */
+	PRI_TIMER_T_CCBS1,		/*!< T-STATUS timer equivalent for CC user A status. */
+	PRI_TIMER_T_CCBS2,		/*!< Max time the CCBS service will be active */
+	PRI_TIMER_T_CCBS3,		/*!< Max time to wait for user A to respond to user B availability. */
+	PRI_TIMER_T_CCBS4,		/*!< CC user B guard time before sending CC recall indication. */
+	PRI_TIMER_T_CCBS5,		/*!< Network B CCBS supervision timeout. */
+	PRI_TIMER_T_CCBS6,		/*!< Network A CCBS supervision timeout. */
+	PRI_TIMER_T_CCNR2,		/*!< Max time the CCNR service will be active */
+	PRI_TIMER_T_CCNR5,		/*!< Network B CCNR supervision timeout. */
+	PRI_TIMER_T_CCNR6,		/*!< Network A CCNR supervision timeout. */
+
+	/* Q.SIG call-completion timers */
+	PRI_TIMER_QSIG_CC_T1,	/*!< CC request supervision timeout. */
+	PRI_TIMER_QSIG_CCBS_T2,	/*!< CCBS supervision timeout. */
+	PRI_TIMER_QSIG_CCNR_T2,	/*!< CCNR supervision timeout. */
+	PRI_TIMER_QSIG_CC_T3,	/*!< Max time to wait for user A to respond to user B availability. */
+	PRI_TIMER_QSIG_CC_T4,	/*!< Path reservation supervision timeout. */
 
 	/* Must be last in the enum list */
-	_PRI_MAX_TIMERS,
-	PRI_MAX_TIMERS = (_PRI_MAX_TIMERS < 32) ? 32 : _PRI_MAX_TIMERS
+	PRI_MAX_TIMERS
 };
 
 /* Get PRI version */
