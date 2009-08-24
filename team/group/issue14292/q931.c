@@ -786,49 +786,72 @@ static int transmit_channel_id(int full_ie, struct pri *ctrl, q931_call *call, i
 
 static void dump_channel_id(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
-	int pos=0;
+	int pos;
 	int x;
-	int res = 0;
-	static const char*	msg_chan_sel[] = {
-		"No channel selected", "B1 channel", "B2 channel","Any channel selected",  
-		"No channel selected", "As indicated in following octets", "Reserved","Any channel selected"
+	int res;
+
+	static const char *msg_chan_sel[] = {
+		"No channel selected", "B1 channel", "B2 channel", "Any channel selected",
+		"No channel selected", "As indicated in following octets", "Reserved", "Any channel selected"
 	};
 
-	pri_message(ctrl, "%c Channel ID (len=%2d) [ Ext: %d  IntID: %s  %s  Spare: %d  %s  Dchan: %d\n",
-		prefix, len, (ie->data[0] & 0x80) ? 1 : 0, (ie->data[0] & 0x40) ? "Explicit" : "Implicit",
-		(ie->data[0] & 0x20) ? "PRI" : "Other", (ie->data[0] & 0x10) ? 1 : 0,
-		(ie->data[0] & 0x08) ? "Exclusive" : "Preferred",  (ie->data[0] & 0x04) ? 1 : 0);
+	pri_message(ctrl,
+		"%c Channel ID (len=%2d) [ Ext: %d  IntID: %s  %s  Spare: %d  %s  Dchan: %d\n",
+		prefix, len,
+		(ie->data[0] & 0x80) ? 1 : 0,
+		(ie->data[0] & 0x40) ? "Explicit" : "Implicit",
+		(ie->data[0] & 0x20) ? "Other(PRI)" : "BRI",
+		(ie->data[0] & 0x10) ? 1 : 0,
+		(ie->data[0] & 0x08) ? "Exclusive" : "Preferred",
+		(ie->data[0] & 0x04) ? 1 : 0);
 	pri_message(ctrl, "%c                        ChanSel: %s\n",
-		prefix, msg_chan_sel[(ie->data[0] & 0x3) + ((ie->data[0]>>3) & 0x4)]);
-	pos++;
-	len--;
-	if (ie->data[0] &  0x40) {
+		prefix, msg_chan_sel[(ie->data[0] & 0x03) | ((ie->data[0] >> 3) & 0x04)]);
+	pos = 1;
+	len -= 2;
+	if (ie->data[0] & 0x40) {
 		/* Explicitly defined DS1 */
-		pri_message(ctrl, "%c                       Ext: %d  DS1 Identifier: %d  \n", prefix, (ie->data[pos] & 0x80) >> 7, ie->data[pos] & 0x7f);
-		pos++;
+		do {
+			pri_message(ctrl, "%c                       Ext: %d  DS1 Identifier: %d  \n",
+				prefix, (ie->data[pos] & 0x80) >> 7, ie->data[pos] & 0x7f);
+			++pos;
+		} while (!(ie->data[pos - 1] & 0x80) && pos < len);
 	} else {
 		/* Implicitly defined DS1 */
 	}
-	if (pos+2 < len) {
+	if (pos < len) {
 		/* Still more information here */
-		pri_message(ctrl, "%c                       Ext: %d  Coding: %d  %s Specified  Channel Type: %d\n",
-				prefix, (ie->data[pos] & 0x80) >> 7, (ie->data[pos] & 60) >> 5, 
-				(ie->data[pos] & 0x10) ? "Slot Map" : "Number", ie->data[pos] & 0x0f);
-		if (!(ie->data[pos] & 0x10)) {
+		pri_message(ctrl,
+			"%c                       Ext: %d  Coding: %d  %s Specified  Channel Type: %d\n",
+			prefix, (ie->data[pos] & 0x80) >> 7, (ie->data[pos] & 60) >> 5,
+			(ie->data[pos] & 0x10) ? "Slot Map" : "Number", ie->data[pos] & 0x0f);
+		++pos;
+	}
+	if (pos < len) {
+		if (!(ie->data[pos - 1] & 0x10)) {
 			/* Number specified */
-			pos++;
-			pri_message(ctrl, "%c                       Ext: %d  Channel: %d Type: %s]\n", prefix, (ie->data[pos] & 0x80) >> 7, 
-				(ie->data[pos]) & 0x7f, pritype(ctrl->localtype));
+			do {
+				pri_message(ctrl,
+					"%c                       Ext: %d  Channel: %d Type: %s%c\n",
+					prefix, (ie->data[pos] & 0x80) >> 7,
+					(ie->data[pos]) & 0x7f, pritype(ctrl->localtype),
+					(pos + 1 < len) ? ' ' : ']');
+				++pos;
+			} while (pos < len);
 		} else {
-			pos++;
 			/* Map specified */
-			for (x=0;x<3;x++) {
+			res = 0;
+			x = 0;
+			do {
 				res <<= 8;
 				res |= ie->data[pos++];
-			}
-			pri_message(ctrl, "%c                       Map: %s ]\n", prefix, binary(res, 24));
+				++x;
+			} while (pos < len);
+			pri_message(ctrl, "%c                       Map len: %d  Map: %s ]\n", prefix,
+				x, binary(res, x << 3));
 		}
-	} else pri_message(ctrl, "                         ]\n");				
+	} else {
+		pri_message(ctrl, "                         ]\n");
+	}
 }
 
 static char *ri2str(int ri)
@@ -3307,6 +3330,7 @@ int maintenance_service_ack(struct pri *ctrl, q931_call *c)
 int maintenance_service(struct pri *ctrl, int span, int channel, int changestatus)
 {
 	struct q931_call *c;
+
 	c = q931_getcall(ctrl, 0 | 0x8000);
 	if (!c) {
 		return -1;
@@ -3446,8 +3470,7 @@ int q931_call_progress(struct pri *ctrl, q931_call *c, int channel, int info)
 	if (channel) { 
 		c->ds1no = (channel & 0xff00) >> 8;
 		c->ds1explicit = (channel & 0x10000) >> 16;
-		channel &= 0xff;
-		c->channelno = channel;		
+		c->channelno = channel & 0xff;
 	}
 
 	if (info) {
@@ -3469,8 +3492,7 @@ int q931_call_progress_with_cause(struct pri *ctrl, q931_call *c, int channel, i
 	if (channel) { 
 		c->ds1no = (channel & 0xff00) >> 8;
 		c->ds1explicit = (channel & 0x10000) >> 16;
-		channel &= 0xff;
-		c->channelno = channel;		
+		c->channelno = channel & 0xff;
 	}
 
 	if (info) {
@@ -3502,8 +3524,7 @@ int q931_call_proceeding(struct pri *ctrl, q931_call *c, int channel, int info)
 	if (channel) { 
 		c->ds1no = (channel & 0xff00) >> 8;
 		c->ds1explicit = (channel & 0x10000) >> 16;
-		channel &= 0xff;
-		c->channelno = channel;		
+		c->channelno = channel & 0xff;
 	}
 	c->chanflags &= ~FLAG_PREFERRED;
 	c->chanflags |= FLAG_EXCLUSIVE;
@@ -3560,8 +3581,7 @@ int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 	if (channel) { 
 		c->ds1no = (channel & 0xff00) >> 8;
 		c->ds1explicit = (channel & 0x10000) >> 16;
-		channel &= 0xff;
-		c->channelno = channel;		
+		c->channelno = channel & 0xff;
 	}
 	c->chanflags &= ~FLAG_PREFERRED;
 	c->chanflags |= FLAG_EXCLUSIVE;
@@ -3653,8 +3673,7 @@ int q931_connect(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 	if (channel) { 
 		c->ds1no = (channel & 0xff00) >> 8;
 		c->ds1explicit = (channel & 0x10000) >> 16;
-		channel &= 0xff;
-		c->channelno = channel;		
+		c->channelno = channel & 0xff;
 	}
 	c->chanflags &= ~FLAG_PREFERRED;
 	c->chanflags |= FLAG_EXCLUSIVE;
@@ -3733,6 +3752,7 @@ static int restart_ies[] = { Q931_CHANNEL_IDENT, Q931_RESTART_INDICATOR, -1 };
 int q931_restart(struct pri *ctrl, int channel)
 {
 	struct q931_call *c;
+
 	c = q931_getcall(ctrl, 0 | 0x8000);
 	if (!c)
 		return -1;
@@ -3741,8 +3761,7 @@ int q931_restart(struct pri *ctrl, int channel)
 	c->ri = 0;
 	c->ds1no = (channel & 0xff00) >> 8;
 	c->ds1explicit = (channel & 0x10000) >> 16;
-	channel &= 0xff;
-	c->channelno = channel;		
+	c->channelno = channel & 0xff;
 	c->chanflags &= ~FLAG_PREFERRED;
 	c->chanflags |= FLAG_EXCLUSIVE;
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_RESTART);
@@ -3907,6 +3926,7 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 {
 	int disconnect = 1;
 	int release_compl = 0;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl,
 			"NEW_HANGUP DEBUG: Calling q931_hangup, ourstate %s, peerstate %s\n",
