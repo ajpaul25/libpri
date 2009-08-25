@@ -1803,6 +1803,18 @@ static int receive_display(int full_ie, struct pri *ctrl, q931_call *call, int m
 {
 	unsigned char *data;
 
+	switch (msgtype) {
+	case Q931_SETUP:
+	case Q931_CONNECT:
+		/*
+		 * Only keep the display message on SETUP and CONNECT messages
+		 * as the remote name.
+		 */
+		break;
+	default:
+		return 0;
+	}
+
 	call->remote_id.name.valid = 1;
 
 	data = ie->data;
@@ -3273,6 +3285,21 @@ static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr)
 	return 0;
 }
 
+/*!
+ * \internal
+ * \brief Build and send the requested message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param msgtype Q.931 message type to build.
+ * \param ies List of ie's to put in the message.
+ *
+ * \note The ie's in the ie list must be in numerical order.
+ * See Q.931 section 4.5.1 coding rules.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
 static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[])
 {
 	unsigned char buf[1024];
@@ -3460,7 +3487,7 @@ int q931_notify(struct pri *ctrl, q931_call *c, int channel, int info)
 #ifdef ALERTING_NO_PROGRESS
 static int call_progress_ies[] = { -1 };
 #else
-static int call_progress_with_cause_ies[] = { Q931_PROGRESS_INDICATOR, Q931_CAUSE, -1 };
+static int call_progress_with_cause_ies[] = { Q931_CAUSE, Q931_PROGRESS_INDICATOR, -1 };
 
 static int call_progress_ies[] = { Q931_PROGRESS_INDICATOR, -1 };
 #endif
@@ -3541,7 +3568,7 @@ int q931_call_proceeding(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_CALL_PROCEEDING, call_proceeding_ies);
 }
 #ifndef ALERTING_NO_PROGRESS
-static int alerting_ies[] = { Q931_PROGRESS_INDICATOR, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
+static int alerting_ies[] = { Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_IE_USER_USER, -1 };
 #else
 static int alerting_ies[] = { Q931_IE_FACILITY, -1 };
 #endif
@@ -3574,7 +3601,7 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
-static int connect_ies[] = {  Q931_CHANNEL_IDENT, Q931_PROGRESS_INDICATOR, Q931_IE_CONNECTED_NUM, Q931_IE_FACILITY, -1 };
+static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_IE_CONNECTED_NUM, -1 };
  
 int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 {
@@ -3594,7 +3621,7 @@ int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_OVERLAP_RECEIVING);
 	c->peercallstate = Q931_CALL_STATE_OVERLAP_SENDING;
 	c->alive = 1;
-	return send_message(ctrl, c, Q931_SETUP_ACKNOWLEDGE, connect_ies);
+	return send_message(ctrl, c, Q931_SETUP_ACKNOWLEDGE, setup_ack_ies);
 }
 
 /* T313 expiry, first time */
@@ -3668,6 +3695,8 @@ static void pri_cctimer2_timeout(void *data)
 	q931_hangup(ctrl, c, cause);
 }
 
+static int connect_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_DISPLAY, Q931_IE_CONNECTED_NUM, -1 };
+
 int q931_connect(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 {
 	if (channel) { 
@@ -3721,7 +3750,7 @@ int q931_connect(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 	return send_message(ctrl, c, Q931_CONNECT, connect_ies);
 }
 
-static int release_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
+static int release_ies[] = { Q931_CAUSE, Q931_IE_FACILITY, Q931_IE_USER_USER, -1 };
 
 int q931_release(struct pri *ctrl, q931_call *c, int cause)
 {
@@ -3769,7 +3798,7 @@ int q931_restart(struct pri *ctrl, int channel)
 	return send_message(ctrl, c, Q931_RESTART, restart_ies);
 }
 
-static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
+static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_FACILITY, Q931_IE_USER_USER, -1 };
 
 int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 {
@@ -3887,7 +3916,7 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	
 }
 
-static int release_complete_ies[] = { Q931_IE_USER_USER, Q931_IE_FACILITY, -1 };
+static int release_complete_ies[] = { Q931_IE_FACILITY, Q931_IE_USER_USER, -1 };
 
 static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 {
