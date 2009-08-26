@@ -298,9 +298,13 @@ void __pri_free_tei(struct pri *p);
 static inline struct pri * PRI_MASTER(struct pri *mypri)
 {
 	struct pri *pri = mypri;
+	
+	if (!pri)
+		return NULL;
 
 	while (pri->master)
 		pri = pri->master;
+
 	return pri;
 }
 
