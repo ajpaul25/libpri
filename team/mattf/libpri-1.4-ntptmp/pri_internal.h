@@ -276,6 +276,8 @@ struct q931_call {
 							   -1 - No reverse charging
 							    1 - Reverse charging
 							0,2-7 - Reserved for future use */
+	int t303_timer;
+	int t303_expirycnt;
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
