@@ -3136,6 +3136,55 @@ static int gr303_setup_ies[] =  { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, -1
 
 static int cis_setup_ies[] = { Q931_BEARER_CAPABILITY, Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_CALLED_PARTY_NUMBER, -1 };
 
+static void stop_t303(struct q931_call *call)
+{
+	if (call->t303_timer) {
+		pri_schedule_del(call->pri, call->t303_timer);
+		call->t303_timer = 0;
+	}
+}
+
+static void t303_expiry(void *data);
+
+static void start_t303(struct q931_call *call)
+{
+	if (call->t303_timer) {
+		pri_error(call->pri, "Should not have T303 set when starting again.  Stopping first\n");
+		stop_t303(call);
+	}
+
+	pri_error(call->pri, "T303 should be %d\n", call->pri->timers[PRI_TIMER_T303]);
+	call->t303_timer = pri_schedule_event(call->pri, call->pri->timers[PRI_TIMER_T303], t303_expiry, call);
+}
+
+static void pri_fake_clearing(void *data);
+
+static void t303_expiry(void *data)
+{
+	struct q931_call *c = data;
+	struct pri *ctrl = c->pri;
+	int res;
+
+	c->t303_expirycnt++;
+	c->t303_timer = 0;
+
+	if (c->t303_expirycnt < 2) {
+		if (ctrl->subchannel && !ctrl->bri)
+			res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
+		else if (c->justsignalling)
+			res = send_message(ctrl, c, Q931_SETUP, cis_setup_ies);
+		else
+			res = send_message(ctrl, c, Q931_SETUP, setup_ies);
+
+		if (res) {
+			pri_error(c->pri, "Error resending setup message!\n");
+		}
+		start_t303(c);
+	} else {
+		pri_fake_clearing(c);
+	}
+}
+
 int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 {
 	int res;
@@ -3235,6 +3284,8 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		c->sendhangupack = 1;
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_INITIATED);
 		c->peercallstate = Q931_CALL_STATE_OVERLAP_SENDING;	
+		c->t303_expirycnt = 0;
+		start_t303(c);
 	}
 	return res;
 	
@@ -3840,6 +3891,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.ring.reversecharge = c->reversecharge;
 		return Q931_RES_HAVEEVENT;
 	case Q931_ALERTING:
+		stop_t303(c);
 		if (c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
@@ -3866,6 +3918,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT:
+		stop_t303(c);
 		if (c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
@@ -3917,6 +3970,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.proceeding.cause = c->cause;
 		/* Fall through */
 	case Q931_CALL_PROCEEDING:
+		stop_t303(c);
 		if (c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
@@ -4014,6 +4068,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		break;
 	case Q931_RELEASE_COMPLETE:
+		stop_t303(c);
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
 		ctrl->ev.hangup.channel = c->channelno | (c->ds1no << 8) | (c->ds1explicit << 16);
@@ -4066,6 +4121,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			return Q931_RES_HAVEEVENT;
 		break;
 	case Q931_DISCONNECT:
+		stop_t303(c);
 		if (missingmand) {
 			/* Still let user call release */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
@@ -4135,6 +4191,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_status(ctrl,c, 0);
 		break;
 	case Q931_SETUP_ACKNOWLEDGE:
+		stop_t303(c);
 		if (c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
