@@ -1019,8 +1019,9 @@ int pri_sr_set_connection_call_independent(struct pri_sr *req)
 
 int pri_sr_set_no_channel_call(struct pri_sr *req)
 {
-	if (!req)
+	if (!req) {
 		return -1;
+	}
 
 	req->cis_call = 1;
 	return 0;
