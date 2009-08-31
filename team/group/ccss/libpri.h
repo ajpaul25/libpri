@@ -1099,13 +1099,13 @@ void pri_call_set_useruser(q931_call *sr, const char *userchars);
 int pri_setup(struct pri *pri, q931_call *call, struct pri_sr *req);
 
 /*!
- * \brief Set a call has a call indpendent signalling connection (i.e. no bchan)
+ * \brief Set a call as a call indpendent signalling connection (i.e. no bchan)
  * \note Call will automaticlly disconnect after signalling sent.
  */
 int pri_sr_set_connection_call_independent(struct pri_sr *req);
 
 /*!
- * \brief Set a call has a call indpendent signalling connection (i.e. no bchan)
+ * \brief Set a call as a call indpendent signalling connection (i.e. no bchan)
  * \note Call will stay connected until explicitly disconnected.
  */
 int pri_sr_set_no_channel_call(struct pri_sr *req);

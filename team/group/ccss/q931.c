@@ -1281,7 +1281,7 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
 		ie->data[1] = 0x80;
 		return 4;
 	}
-	
+
 	tc = call->transcapability;
 	ie->data[0] = 0x80 | tc;
 	ie->data[1] = call->transmoderate | 0x80;
@@ -4131,7 +4131,7 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	case Q931_CALL_STATE_ACTIVE:
 		/* received CONNECT */
 		if (c->cis_call) {
-			q931_release(ctrl,c,cause);
+			q931_release(ctrl, c, cause);
 			break;
 		}
 		q931_disconnect(ctrl,c,cause);
