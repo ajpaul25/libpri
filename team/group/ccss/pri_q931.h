@@ -104,6 +104,7 @@ typedef struct q931_ie {
 #define Q931_CONGESTION_CONTROL		0x79
 #define Q931_INFORMATION			0x7b
 #define Q931_FACILITY				0x62
+#define Q931_REGISTER				0x64	/* Q.932 */
 #define Q931_NOTIFY					0x6e
 
 /* Call Management Messages */
@@ -458,6 +459,9 @@ extern int q931_call_setcrv(struct pri *pri, q931_call *call, int crv, int callm
 extern q931_call *q931_new_call(struct pri *pri);
 
 extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);
+
+int q931_register(struct pri *ctrl, q931_call *call);
+
 extern void q931_dump(struct pri *pri, q931_h *h, int len, int txrx);
 
 extern void __q931_destroycall(struct pri *pri, q931_call *c);
