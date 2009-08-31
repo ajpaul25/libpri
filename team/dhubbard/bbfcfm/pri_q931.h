@@ -75,7 +75,7 @@ typedef struct q931_ie {
 
 #define Q931_PROTOCOL_DISCRIMINATOR 0x08
 #define GR303_PROTOCOL_DISCRIMINATOR 0x4f
-/* AT&T Maintenance Protocol Discriminators */
+/* AT&T Maintenance Protocol Discriminator */
 #define MAINTENANCE_PROTOCOL_DISCRIMINATOR_1 0x03
 /* National Maintenance Protocol Discriminator */
 #define MAINTENANCE_PROTOCOL_DISCRIMINATOR_2 0x43
