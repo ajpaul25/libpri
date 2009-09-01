@@ -3442,7 +3442,7 @@ int maintenance_service(struct pri *ctrl, int span, int channel, int changestatu
 	c->ds1explicit = 0;
 	c->changestatus = changestatus;
 
-	if ( ctrl->switchtype == PRI_SWITCH_NI2) {
+	if (ctrl->switchtype == PRI_SWITCH_NI2) {
 		pd = MAINTENANCE_PROTOCOL_DISCRIMINATOR_2;
 		mt = NATIONAL_SERVICE;
 	}
