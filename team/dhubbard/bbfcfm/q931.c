@@ -99,8 +99,8 @@ struct msgtype att_maintenance_msgs[] = {
 };
 
 struct msgtype national_maintenance_msgs[] = {
-	{ NATIONAL_SERVICE, "CONNECT", { Q931_CHANNEL_IDENT } },
-	{ NATIONAL_SERVICE_ACKNOWLEDGE, "CONNECT ACKNOWLEDGE", { Q931_CHANNEL_IDENT } },
+	{ NATIONAL_SERVICE, "SERVICE", { Q931_CHANNEL_IDENT } },
+	{ NATIONAL_SERVICE_ACKNOWLEDGE, "SERVICE ACKNOWLEDGE", { Q931_CHANNEL_IDENT } },
 };
 static int post_handle_maintenance_message(struct pri *ctrl, int protodisc, struct q931_mh *mh, struct q931_call *c);
 
