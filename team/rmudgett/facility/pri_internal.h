@@ -333,6 +333,22 @@ enum INCOMING_CT_STATE {
 	INCOMING_CT_STATE_POST_CONNECTED_LINE
 };
 
+/*! Call hold supplementary states. */
+enum Q931_HOLD_STATE {
+	/*! \brief No call hold activity. */
+	Q931_HOLD_STATE_IDLE,
+	/*! \brief Request made to hold call. */
+	Q931_HOLD_STATE_HOLD_REQ,
+	/*! \brief Request received to hold call. */
+	Q931_HOLD_STATE_HOLD_IND,
+	/*! \brief Call is held. */
+	Q931_HOLD_STATE_CALL_HELD,
+	/*! \brief Request made to retrieve call. */
+	Q931_HOLD_STATE_RETRIEVE_REQ,
+	/*! \brief Request received to retrieve call. */
+	Q931_HOLD_STATE_RETRIEVE_IND,
+};
+
 /* q931_call datastructure */
 struct q931_call {
 	struct pri *pri;	/* PRI */
@@ -448,6 +464,10 @@ struct q931_call {
 
 	/*! \brief Incoming call transfer state. */
 	enum INCOMING_CT_STATE incoming_ct_state;
+	/*! Call hold supplementary state. */
+	enum Q931_HOLD_STATE hold_state;
+	/*! Call hold event timer */
+	int hold_timer;
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];
@@ -505,9 +525,9 @@ void q931_party_redirecting_copy_to_pri(struct pri_party_redirecting *pri_redire
 void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id);
 int q931_party_id_presentation(const struct q931_party_id *id);
 
-const char *q931_call_state_str(int callstate);
+const char *q931_call_state_str(enum Q931_CALL_STATE callstate);
 
-int q931_is_ptmp(struct pri *ctrl);
+int q931_is_ptmp(const struct pri *ctrl);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);

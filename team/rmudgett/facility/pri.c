@@ -86,6 +86,8 @@ static const struct pri_timer_table pri_timer[] = {
 	{ "T320",           PRI_TIMER_T320,             PRI_ALL_SWITCHES },
 	{ "T321",           PRI_TIMER_T321,             PRI_ALL_SWITCHES },
 	{ "T322",           PRI_TIMER_T322,             PRI_ALL_SWITCHES },
+	{ "T-HOLD",         PRI_TIMER_T_HOLD,           PRI_ALL_SWITCHES },
+	{ "T-RETRIEVE",     PRI_TIMER_T_RETRIEVE,       PRI_ALL_SWITCHES },
 /* *INDENT-ON* */
 };
 
@@ -150,6 +152,9 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 	ctrl->timers[PRI_TIMER_T313] = 4 * 1000;	/* Wait for CONNECT acknowledge, CPE side only */
 	ctrl->timers[PRI_TIMER_TM20] = 2500;		/* Max time awaiting XID response - Q.921 Appendix IV */
 	ctrl->timers[PRI_TIMER_NM20] = 3;			/* Number of XID retransmits - Q.921 Appendix IV */
+
+	ctrl->timers[PRI_TIMER_T_HOLD] = 4 * 1000;	/* Wait for HOLD request response. */
+	ctrl->timers[PRI_TIMER_T_RETRIEVE] = 4 * 1000;/* Wait for RETRIEVE request response. */
 
 	/* Set any switch specific override default values */
 	switch (switchtype) {
@@ -1272,6 +1277,54 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 	} else {
 		sr->redirecting.count = PRI_MAX_REDIRECTS;
 	}
+}
+
+int pri_hold(struct pri *ctrl, q931_call *call)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold(ctrl, call);
+}
+
+int pri_hold_ack(struct pri *ctrl, q931_call *call)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold_ack(ctrl, call);
+}
+
+int pri_hold_rej(struct pri *ctrl, q931_call *call, int cause)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold_rej(ctrl, call, cause);
+}
+
+int pri_retrieve(struct pri *ctrl, q931_call *call, int channel)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve(ctrl, call, channel);
+}
+
+int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve_ack(ctrl, call, channel);
+}
+
+int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve_rej(ctrl, call, cause);
 }
 
 void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
