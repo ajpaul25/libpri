@@ -466,4 +466,12 @@ extern void __q931_destroycall(struct pri *pri, q931_call *c);
 
 extern void q931_dl_indication(struct pri *pri, int event);
 
+int q931_send_hold(struct pri *ctrl, q931_call *call);
+int q931_send_hold_ack(struct pri *ctrl, q931_call *call);
+int q931_send_hold_rej(struct pri *ctrl, q931_call *call, int cause);
+
+int q931_send_retrieve(struct pri *ctrl, q931_call *call, int channel);
+int q931_send_retrieve_ack(struct pri *ctrl, q931_call *call, int channel);
+int q931_send_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
+
 #endif
