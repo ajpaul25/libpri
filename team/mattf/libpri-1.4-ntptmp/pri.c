@@ -642,14 +642,23 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	}
 }
 
-int pri_hangup(struct pri *pri, q931_call *call, int cause)
+int __normal_pri_hangup(struct pri *pri, q931_call *call, int cause)
 {
 	if (!pri || !call)
 		return -1;
 	if (cause == -1)
 		/* normal clear cause */
 		cause = 16;
+
 	return q931_hangup(pri, call, cause);
+}
+
+int __debug_pri_hangup(struct pri *pri, q931_call *call, int cause, const char *caller)
+{
+	if (caller)
+		pri_error(pri, "%s:pri_hangup(%p, %p, %d)\n", caller, pri, call, cause);
+
+	return __normal_pri_hangup(pri, call, cause);
 }
 
 int pri_reset(struct pri *pri, int channel)

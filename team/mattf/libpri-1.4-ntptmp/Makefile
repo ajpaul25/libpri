@@ -79,7 +79,8 @@ DYNAMIC_OBJS= \
 	rose_qsig_mwi.lo \
 	rose_qsig_name.lo \
 	version.lo
-CFLAGS=-Wall -Werror -Wstrict-prototypes -Wmissing-prototypes -g -fPIC $(ALERTING) $(LIBPRI_COUNTERS)
+#CFLAGS=-Wall -Werror -Wstrict-prototypes -Wmissing-prototypes -g -fPIC $(ALERTING) $(LIBPRI_COUNTERS)
+CFLAGS=-Wall -Wstrict-prototypes -Wmissing-prototypes -g -fPIC $(ALERTING) $(LIBPRI_COUNTERS)
 INSTALL_PREFIX=$(DESTDIR)
 INSTALL_BASE=/usr
 libdir?=$(INSTALL_BASE)/lib
