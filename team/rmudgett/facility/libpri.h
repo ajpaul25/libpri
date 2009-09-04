@@ -656,6 +656,7 @@ typedef struct pri_event_notify {
 	int channel;
 	int info;
 	struct pri_subcommands *subcmds;
+	q931_call *call;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {

@@ -5507,6 +5507,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.notify.subcmds = &ctrl->subcmds;
 			ctrl->ev.notify.channel = q931_encode_channel(c);
 			ctrl->ev.notify.info = c->notify;
+			ctrl->ev.notify.call = c;
 			res = Q931_RES_HAVEEVENT;
 			break;
 		}
