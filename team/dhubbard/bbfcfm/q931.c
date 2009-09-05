@@ -2925,7 +2925,7 @@ static char *maintenance_msg2str(int msg, int pd)
 	unsigned int x, max;
 	struct msgtype *m = NULL;
 
-	if ( pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1 ) {
+	if (pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) {
 		m = att_maintenance_msgs;
 		max = ARRAY_LEN(att_maintenance_msgs);
 	} else {
@@ -2933,8 +2933,8 @@ static char *maintenance_msg2str(int msg, int pd)
 		max = ARRAY_LEN(national_maintenance_msgs);
 	}
 
-	for ( x = 0; x < max; x++ ) {
-		if ( m[x].msgnum == msg ) {
+	for (x = 0; x < max; x++) {
+		if (m[x].msgnum == msg) {
 			return m[x].name;
 		}
 	}
