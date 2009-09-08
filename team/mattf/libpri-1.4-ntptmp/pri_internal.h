@@ -282,6 +282,7 @@ struct q931_call {
 
 	int hangupinitiated;
 	int outboundbroadcast;
+	int performing_fake_clearing;
 	/* These valid in slave call only */
 	struct q931_call *master_call;
 
