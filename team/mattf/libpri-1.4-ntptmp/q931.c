@@ -3454,6 +3454,7 @@ static void pri_fake_clearing(void *data)
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
 
+	c->performing_fake_clearing = 1;
 	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
 		ctrl->schedev = 1;
 }
@@ -3611,7 +3612,7 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 
 			call->hangupinitiated = 1;
 
-			if (!slaves && (call->master_call->pri_winner < 0)) {
+			if ((!slaves && (call->master_call->pri_winner < 0)) || (call->performing_fake_clearing)) {
 				__q931_hangup(ctrl, call, cause);
 			}
 			pri_error(ctrl, "%s: Slaves %d\n", __FUNCTION__, slaves);
@@ -4042,8 +4043,6 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 			nt_ptmp_handle_q931_message(ctrl, mh, c, &allow_event, &allow_posthandle);
 		}
 
-		//allow_event = allow_posthandle = 1;
-	
 		if (allow_posthandle) {
 			res = post_handle_q931_message(ctrl, mh, c, missingmand);
 
