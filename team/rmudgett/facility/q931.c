@@ -657,6 +657,20 @@ int q931_party_id_presentation(const struct q931_party_id *id)
 	return number_value | number_screening;
 }
 
+static void q931_clr_subcommands(struct pri *ctrl)
+{
+	ctrl->subcmds.counter_subcmd = 0;
+}
+
+struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl)
+{
+	if (ctrl->subcmds.counter_subcmd < PRI_MAX_SUBCOMMANDS) {
+		return &ctrl->subcmds.subcmd[ctrl->subcmds.counter_subcmd++];
+	}
+
+	return NULL;
+}
+
 static char *code2str(int code, struct msgtype *codes, int max)
 {
 	int x;
@@ -3795,6 +3809,7 @@ static void pri_release_finaltimeout(void *data)
 	c->t308_timedout++;
 	c->ourcallstate = Q931_CALL_STATE_NULL;
 	c->peercallstate = Q931_CALL_STATE_NULL;
+	q931_clr_subcommands(ctrl);
 	ctrl->schedev = 1;
 	ctrl->ev.e = PRI_EVENT_HANGUP_ACK;
 	ctrl->ev.hangup.subcmds = &ctrl->subcmds;
@@ -4087,11 +4102,13 @@ static void q931_hold_timeout(void *data)
 
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_IDLE);
 
+	q931_clr_subcommands(ctrl);
 	ctrl->schedev = 1;
 	ctrl->ev.e = PRI_EVENT_HOLD_REJ;
 	ctrl->ev.hold_rej.channel = q931_encode_channel(call);
 	ctrl->ev.hold_rej.call = call;
 	ctrl->ev.hold_rej.cause = PRI_CAUSE_MESSAGE_TYPE_NONEXIST;
+	ctrl->ev.hold_rej.subcmds = &ctrl->subcmds;
 }
 
 /*!
@@ -4279,11 +4296,13 @@ static void q931_retrieve_timeout(void *data)
 	call->ds1explicit = 0;
 	call->chanflags = 0;
 
+	q931_clr_subcommands(ctrl);
 	ctrl->schedev = 1;
 	ctrl->ev.e = PRI_EVENT_RETRIEVE_REJ;
 	ctrl->ev.retrieve_rej.channel = q931_encode_channel(call);
 	ctrl->ev.retrieve_rej.call = call;
 	ctrl->ev.retrieve_rej.cause = PRI_CAUSE_MESSAGE_TYPE_NONEXIST;
+	ctrl->ev.retrieve_rej.subcmds = &ctrl->subcmds;
 }
 
 /*!
@@ -4573,20 +4592,6 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	}
 	/* we did handle hangup properly at this point */
 	return 0;
-}
-
-static void q931_clr_subcommands(struct pri *ctrl)
-{
-	ctrl->subcmds.counter_subcmd = 0;
-}
-
-struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl)
-{
-	if (ctrl->subcmds.counter_subcmd < PRI_MAX_SUBCOMMANDS) {
-		return &ctrl->subcmds.subcmd[ctrl->subcmds.counter_subcmd++];
-	}
-
-	return NULL;
 }
 
 static int prepare_to_handle_maintenance_message(struct pri *ctrl, q931_mh *mh, q931_call *c)
