@@ -5572,6 +5572,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 				ctrl->ev.e = PRI_EVENT_HOLD;
 				ctrl->ev.hold.channel = q931_encode_channel(c);
 				ctrl->ev.hold.call = c;
+				ctrl->ev.hold.subcmds = &ctrl->subcmds;
 				res = Q931_RES_HAVEEVENT;
 
 				UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_HOLD_IND);
@@ -5601,6 +5602,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.e = PRI_EVENT_HOLD_ACK;
 			ctrl->ev.hold_ack.channel = q931_encode_channel(c);
 			ctrl->ev.hold_ack.call = c;
+			ctrl->ev.hold_ack.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 
 			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_CALL_HELD);
@@ -5631,6 +5633,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.hold_rej.channel = q931_encode_channel(c);
 			ctrl->ev.hold_rej.call = c;
 			ctrl->ev.hold_rej.cause = c->cause;
+			ctrl->ev.hold_rej.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 
 			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_IDLE);
@@ -5670,6 +5673,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 				ctrl->ev.retrieve.channel = q931_encode_channel(c);
 				ctrl->ev.retrieve.call = c;
 				ctrl->ev.retrieve.flexible = !(c->chanflags & FLAG_EXCLUSIVE);
+				ctrl->ev.retrieve.subcmds = &ctrl->subcmds;
 				res = Q931_RES_HAVEEVENT;
 
 				UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_RETRIEVE_IND);
@@ -5708,6 +5712,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.e = PRI_EVENT_RETRIEVE_ACK;
 			ctrl->ev.retrieve_ack.channel = q931_encode_channel(c);
 			ctrl->ev.retrieve_ack.call = c;
+			ctrl->ev.retrieve_ack.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 			break;
 		default:
@@ -5738,6 +5743,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.retrieve_rej.channel = q931_encode_channel(c);
 			ctrl->ev.retrieve_rej.call = c;
 			ctrl->ev.retrieve_rej.cause = c->cause;
+			ctrl->ev.retrieve_rej.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 			break;
 		default:

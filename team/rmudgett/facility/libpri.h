@@ -685,12 +685,14 @@ struct pri_event_hold {
 	int e;
 	int channel;
 	q931_call *call;
+	struct pri_subcommands *subcmds;
 };
 
 struct pri_event_hold_ack {
 	int e;
 	int channel;
 	q931_call *call;
+	struct pri_subcommands *subcmds;
 };
 
 struct pri_event_hold_rej {
@@ -698,6 +700,7 @@ struct pri_event_hold_rej {
 	int channel;
 	q931_call *call;
 	int cause;
+	struct pri_subcommands *subcmds;
 };
 
 struct pri_event_retrieve {
@@ -705,12 +708,14 @@ struct pri_event_retrieve {
 	int channel;
 	q931_call *call;
 	int flexible;				/* Are we flexible with our channel selection? */
+	struct pri_subcommands *subcmds;
 };
 
 struct pri_event_retrieve_ack {
 	int e;
 	int channel;
 	q931_call *call;
+	struct pri_subcommands *subcmds;
 };
 
 struct pri_event_retrieve_rej {
@@ -718,6 +723,7 @@ struct pri_event_retrieve_rej {
 	int channel;
 	q931_call *call;
 	int cause;
+	struct pri_subcommands *subcmds;
 };
 
 typedef union {
