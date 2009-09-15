@@ -4471,7 +4471,7 @@ int q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 		break;
 	case PRI_CAUSE_CHANNEL_UNACCEPTABLE:
 	case PRI_CAUSE_CALL_AWARDED_DELIVERED:
-	case 26:
+	case PRI_CAUSE_NONSELECTED_USER_CLEARING:
 		/* We'll send RELEASE with these causes */
 		disconnect = 0;
 		break;
