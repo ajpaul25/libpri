@@ -91,6 +91,12 @@
 #define PRI_EVENT_KEYPAD_DIGIT	18	/* When we receive during ACTIVE state (INFORMATION) */
 #define PRI_EVENT_SERVICE       19	/* SERVICE maintenance message */
 #define PRI_EVENT_SERVICE_ACK   20	/* SERVICE maintenance acknowledgement message */
+#define PRI_EVENT_HOLD			21	/* HOLD request received */
+#define PRI_EVENT_HOLD_ACK		22	/* HOLD_ACKNOWLEDGE received */
+#define PRI_EVENT_HOLD_REJ		23	/* HOLD_REJECT received */
+#define PRI_EVENT_RETRIEVE		24	/* RETRIEVE request received */
+#define PRI_EVENT_RETRIEVE_ACK	25	/* RETRIEVE_ACKNOWLEDGE received */
+#define PRI_EVENT_RETRIEVE_REJ	26	/* RETRIEVE_REJECT received */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -200,6 +206,7 @@
 #define PRI_CAUSE_NO_ANSWER						19
 #define PRI_CAUSE_CALL_REJECTED					21
 #define PRI_CAUSE_NUMBER_CHANGED				22
+#define PRI_CAUSE_NONSELECTED_USER_CLEARING		26
 #define PRI_CAUSE_DESTINATION_OUT_OF_ORDER		27
 #define PRI_CAUSE_INVALID_NUMBER_FORMAT			28
 #define PRI_CAUSE_FACILITY_REJECTED				29	/* !Q.SIG */
@@ -212,6 +219,7 @@
 #define PRI_CAUSE_ACCESS_INFO_DISCARDED			43	/* !Q.SIG */
 #define PRI_CAUSE_REQUESTED_CHAN_UNAVAIL		44
 #define PRI_CAUSE_PRE_EMPTED					45	/* !Q.SIG */
+#define PRI_CAUSE_RESOURCE_UNAVAIL_UNSPECIFIED	47
 #define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50	/* !Q.SIG */
 #define PRI_CAUSE_OUTGOING_CALL_BARRED     		52	/* !Q.SIG */
 #define PRI_CAUSE_INCOMING_CALL_BARRED     		54	/* !Q.SIG */
@@ -497,13 +505,14 @@ struct pri_subcommands {
  * Event channel parameter encoding:
  * 3322 2222 2222 1111 1111 1100 0000 0000
  * 1098 7654 3210 9876 5432 1098 7654 3210
- * xxxx xxxx xxxx xxDC BBBBBBBBB AAAAAAAAA
+ * xxxx xxxx xxxx xEDC BBBBBBBBB AAAAAAAAA
  *
  * Bit field
  * A - B channel
  * B - Span (DS1) (0 - 127)
  * C - DS1 Explicit bit
  * D - D channel (cis_call) bit (status only)
+ * E - Call is held bit (status only)
  *
  * B channel values:
  * 0     - No channel (ISDN uses for call waiting feature)
@@ -649,6 +658,7 @@ typedef struct pri_event_notify {
 	int channel;
 	int info;
 	struct pri_subcommands *subcmds;
+	q931_call *call;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {
@@ -671,6 +681,51 @@ typedef struct pri_event_service_ack {
 	int changestatus;
 } pri_event_service_ack;
 
+struct pri_event_hold {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_hold_ack {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_hold_rej {
+	int e;
+	int channel;
+	q931_call *call;
+	int cause;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve {
+	int e;
+	int channel;
+	q931_call *call;
+	int flexible;				/* Are we flexible with our channel selection? */
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve_ack {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve_rej {
+	int e;
+	int channel;
+	q931_call *call;
+	int cause;
+	struct pri_subcommands *subcmds;
+};
+
 typedef union {
 	int e;
 	pri_event_generic gen;		/* Generic view */
@@ -689,6 +744,12 @@ typedef union {
 	pri_event_service service;				/* service message */
 	pri_event_service_ack service_ack;		/* service acknowledgement message */
 	struct pri_event_facility facility;
+	struct pri_event_hold hold;
+	struct pri_event_hold_ack hold_ack;
+	struct pri_event_hold_rej hold_rej;
+	struct pri_event_retrieve retrieve;
+	struct pri_event_retrieve_ack retrieve_ack;
+	struct pri_event_retrieve_rej retrieve_rej;
 } pri_event;
 
 struct pri;
@@ -968,6 +1029,76 @@ int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 
 int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
 
+/*!
+ * \brief Send the HOLD message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold(struct pri *ctrl, q931_call *call);
+
+/*!
+ * \brief Send the HOLD ACKNOWLEDGE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold_ack(struct pri *ctrl, q931_call *call);
+
+/*!
+ * \brief Send the HOLD REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param cause Q.931 cause code for rejecting the hold request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold_rej(struct pri *ctrl, q931_call *call, int cause);
+
+/*!
+ * \brief Send the RETRIEVE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param channel Encoded channel id to use.  If zero do not send channel id.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve(struct pri *ctrl, q931_call *call, int channel);
+
+/*!
+ * \brief Send the RETRIEVE ACKNOWLEDGE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param channel Encoded channel id to use.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel);
+
+/*!
+ * \brief Send the RETRIEVE REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param cause Q.931 cause code for rejecting the retrieve request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
+
 /* Get/Set PRI Timers  */
 #define PRI_GETSET_TIMERS
 int pri_set_timer(struct pri *pri, int timer, int value);
@@ -1009,6 +1140,9 @@ enum PRI_TIMERS_AND_COUNTERS {
 
 	PRI_TIMER_TM20,	/*!< Maximum time awaiting XID response */
 	PRI_TIMER_NM20,	/*!< Number of XID retransmits */
+
+	PRI_TIMER_T_HOLD,	/*!< Maximum time to wait for HOLD request response. */
+	PRI_TIMER_T_RETRIEVE,	/*!< Maximum time to wait for RETRIEVE request response. */
 
 	/* Must be last in the enum list */
 	_PRI_MAX_TIMERS,
