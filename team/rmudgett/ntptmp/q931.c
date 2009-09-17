@@ -4049,7 +4049,7 @@ static void t303_expiry(void *data)
 		}
 		start_t303(c);
 	} else {
-		c->cause = 18;
+		c->cause = PRI_CAUSE_NO_USER_RESPONSE;
 		pri_fake_clearing(c);
 	}
 }
