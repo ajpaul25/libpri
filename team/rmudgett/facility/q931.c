@@ -5553,6 +5553,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_HOLD:
+		res = 0;
 		switch (c->ourcallstate) {
 		case Q931_CALL_STATE_CALL_RECEIVED:
 		case Q931_CALL_STATE_CONNECT_REQUEST:
@@ -5600,8 +5601,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_send_hold_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 			break;
 		}
-		break;
+		return res;
 	case Q931_HOLD_ACKNOWLEDGE:
+		res = 0;
 		switch (c->hold_state) {
 		case Q931_HOLD_STATE_HOLD_REQ:
 			ctrl->ev.e = PRI_EVENT_HOLD_ACK;
@@ -5626,8 +5628,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore response.  Response is late or spurrious. */
 			break;
 		}
-		break;
+		return res;
 	case Q931_HOLD_REJECT:
+		res = 0;
 		switch (c->hold_state) {
 		case Q931_HOLD_STATE_HOLD_REQ:
 			if (missingmand) {
@@ -5651,8 +5654,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore response.  Response is late or spurrious. */
 			break;
 		}
-		break;
+		return res;
 	case Q931_RETRIEVE:
+		res = 0;
 		switch (c->ourcallstate) {
 		case Q931_CALL_STATE_CALL_RECEIVED:
 		case Q931_CALL_STATE_CONNECT_REQUEST:
@@ -5704,8 +5708,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_send_retrieve_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 			break;
 		}
-		break;
+		return res;
 	case Q931_RETRIEVE_ACKNOWLEDGE:
+		res = 0;
 		switch (c->hold_state) {
 		case Q931_HOLD_STATE_RETRIEVE_REQ:
 			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_IDLE);
@@ -5724,8 +5729,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore response.  Response is late or spurrious. */
 			break;
 		}
-		break;
+		return res;
 	case Q931_RETRIEVE_REJECT:
+		res = 0;
 		switch (c->hold_state) {
 		case Q931_HOLD_STATE_RETRIEVE_REQ:
 			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_CALL_HELD);
@@ -5755,7 +5761,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore response.  Response is late or spurrious. */
 			break;
 		}
-		break;
+		return res;
 	case Q931_USER_INFORMATION:
 	case Q931_SEGMENT:
 	case Q931_CONGESTION_CONTROL:
