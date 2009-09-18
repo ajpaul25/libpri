@@ -5326,7 +5326,7 @@ static void nt_ptmp_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, st
 {
 	struct q931_call *master = c->master_call;
 	struct q931_call *winner = q931_get_subcall_winner(master);
-	int newstate;
+	enum Q931_CALL_STATE newstate;
 
 	/* For broadcast calls, we default to not allowing events to keep events received to a minimum
 	 * and to allow post processing, since that is where hangup and subcall state handling and other processing is done */
@@ -5378,6 +5378,9 @@ process_hangup:
 		}
 		break;
 	default:
+		if (winner && c == winner) {
+			*allow_event = 1;
+		}
 		break;
 	}
 }
