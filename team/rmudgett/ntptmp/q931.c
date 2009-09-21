@@ -3304,7 +3304,7 @@ ultimate_destruction:
 					"NEW_HANGUP DEBUG: Destroying the call, ourstate %s, peerstate %s, hold-state %s\n",
 					q931_call_state_str(cur->ourcallstate),
 					q931_call_state_str(cur->peercallstate),
-					q931_hold_state_str(cur->hold_state));
+					q931_hold_state_str(cur->master_call->hold_state));
 			cleanup_and_free_call(c);
 			return;
 		}
@@ -4763,7 +4763,7 @@ static int __q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 			"NEW_HANGUP DEBUG: Calling q931_hangup, ourstate %s, peerstate %s, hold-state %s\n",
 			q931_call_state_str(c->ourcallstate),
 			q931_call_state_str(c->peercallstate),
-			q931_hold_state_str(c->hold_state));
+			q931_hold_state_str(c->master_call->hold_state));
 	if (!ctrl || !c)
 		return -1;
 	/* If mandatory IE was missing, insist upon that cause code */
