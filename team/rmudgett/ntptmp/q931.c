@@ -239,9 +239,10 @@ static char *msg2str(int msg);
 	do { \
 		if (((ctrl)->debug & PRI_DEBUG_Q931_STATE) && (call)->ourcallstate != (newstate)) { \
 			pri_message((ctrl), \
-				DBGHEAD "Call %d on channel %d enters state %d (%s).  Hold state: %s\n", \
-				DBGINFO, (call)->cr, (call)->channelno, (newstate), \
-				q931_call_state_str(newstate), q931_hold_state_str((call)->hold_state)); \
+				DBGHEAD "%s %d enters state %d (%s).  Hold state: %s\n", \
+				DBGINFO, ((call) == (call)->master_call) ? "Call" : "Subcall", \
+				(call)->cr, (newstate), q931_call_state_str(newstate), \
+				q931_hold_state_str((call)->master_call->hold_state)); \
 		} \
 		(call)->ourcallstate = (newstate); \
 	} while (0)
@@ -252,20 +253,21 @@ static char *msg2str(int msg);
 
 #if 1
 /* Update hold state with transition trace. */
-#define UPDATE_HOLD_STATE(ctrl, call, newstate) \
+#define UPDATE_HOLD_STATE(ctrl, master_call, newstate) \
 	do { \
-		if (((ctrl)->debug & PRI_DEBUG_Q931_STATE) && (call)->hold_state != (newstate)) { \
+		if (((ctrl)->debug & PRI_DEBUG_Q931_STATE) \
+			&& (master_call)->hold_state != (newstate)) { \
 			pri_message((ctrl), \
-				DBGHEAD "Call %d on channel %d in state %d (%s) enters Hold state: %s\n", \
-				DBGINFO, (call)->cr, (call)->channelno, (call)->ourcallstate, \
-				q931_call_state_str((call)->ourcallstate), \
+				DBGHEAD "Call %d in state %d (%s) enters Hold state: %s\n", \
+				DBGINFO, (master_call)->cr, (master_call)->ourcallstate, \
+				q931_call_state_str((master_call)->ourcallstate), \
 				q931_hold_state_str(newstate)); \
 		} \
-		(call)->hold_state = (newstate); \
+		(master_call)->hold_state = (newstate); \
 	} while (0)
 #else
 /* Update hold state with no trace. */
-#define UPDATE_HOLD_STATE(ctrl, call, newstate) (call)->hold_state = (newstate)
+#define UPDATE_HOLD_STATE(ctrl, master_call, newstate) (master_call)->hold_state = (newstate)
 #endif
 
 struct ie {
@@ -294,19 +296,27 @@ struct ie {
 static int q931_encode_channel(const q931_call *call)
 {
 	int held_call;
+	int channelno;
+	int ds1no;
 
-	switch (call->hold_state) {
+	switch (call->master_call->hold_state) {
 	case Q931_HOLD_STATE_CALL_HELD:
 	case Q931_HOLD_STATE_RETRIEVE_REQ:
 	case Q931_HOLD_STATE_RETRIEVE_IND:
 		held_call = 1 << 18;
+
+		/* So a -1 does not wipe out the held_call flag. */
+		channelno = call->channelno & 0xFF;
+		ds1no = call->ds1no & 0xFF;
 		break;
 	default:
 		held_call = 0;
+		channelno = call->channelno;
+		ds1no = call->ds1no;
 		break;
 	}
-	return call->channelno | (call->ds1no << 8) | (call->ds1explicit << 16)
-		| (call->cis_call << 17) | held_call;
+	return channelno | (ds1no << 8) | (call->ds1explicit << 16) | (call->cis_call << 17)
+		| held_call;
 }
 
 /*!
@@ -3721,6 +3731,11 @@ int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const
 
 int q931_notify(struct pri *ctrl, q931_call *c, int channel, int info)
 {
+/*
+ * BUGBUG Need to send the remote hold/retrieval NOTIFY to all NT PTMP subcalls
+ * that have given a positive response.
+ * States Outgoing-call-proceeding(U3/N3), Call-delivered(U4/N4), and Active(U10/N10).
+ */
 	if ((ctrl->switchtype == PRI_SWITCH_EUROISDN_T1) || (ctrl->switchtype != PRI_SWITCH_EUROISDN_E1)) {
 		if ((info > 0x2) || (info < 0x00)) {
 			return 0;
@@ -4237,9 +4252,35 @@ static int q931_connect_acknowledge(struct pri *ctrl, q931_call *c)
 
 /*!
  * \internal
+ * \brief Find the winning subcall if it exists or current call if not outboundbroadcast.
+ *
+ * \param call Starting Q.931 call record of search.
+ *
+ * \retval winning-call or given call if not outboundbroadcast.
+ * \retval NULL if no winning call yet.
+ */
+static struct q931_call *q931_find_winning_call(struct q931_call *call)
+{
+	struct q931_call *master;
+
+	master = call->master_call;
+	if (master->outboundbroadcast) {
+		/* We have potential subcalls.  Now get the winning call if declared yet. */
+		if (master->pri_winner < 0) {
+			/* Winner not declared yet.*/
+			call = NULL;
+		} else {
+			call = master->subcalls[master->pri_winner];
+		}
+	}
+	return call;
+}
+
+/*!
+ * \internal
  * \brief Send HOLD message response wait timeout.
  *
- * \param data Q.931 call leg.
+ * \param data Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \return Nothing
  */
@@ -4262,7 +4303,7 @@ static void q931_hold_timeout(void *data)
 	ctrl->schedev = 1;
 	ctrl->ev.e = PRI_EVENT_HOLD_REJ;
 	ctrl->ev.hold_rej.channel = q931_encode_channel(call);
-	ctrl->ev.hold_rej.call = call->master_call;
+	ctrl->ev.hold_rej.call = call;
 	ctrl->ev.hold_rej.cause = PRI_CAUSE_MESSAGE_TYPE_NONEXIST;
 	ctrl->ev.hold_rej.subcmds = &ctrl->subcmds;
 }
@@ -4272,12 +4313,12 @@ static void q931_hold_timeout(void *data)
  * \brief Determine if a hold request is allowed now.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \retval TRUE if we can send a HOLD request.
  * \retval FALSE if not allowed.
  */
-static int q931_is_hold_allowed(const struct pri *ctrl, const q931_call *call)
+static int q931_is_hold_allowed(const struct pri *ctrl, const struct q931_call *call)
 {
 	int allowed;
 
@@ -4321,20 +4362,23 @@ static int hold_ies[] = {
  * \brief Send the HOLD message.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_hold(struct pri *ctrl, q931_call *call)
+int q931_send_hold(struct pri *ctrl, struct q931_call *call)
 {
-	if (!q931_is_hold_allowed(ctrl, call)) {
+	struct q931_call *winner;
+
+	winner = q931_find_winning_call(call);
+	if (!winner || !q931_is_hold_allowed(ctrl, call)) {
 		return -1;
 	}
 	pri_schedule_del(ctrl, call->hold_timer);
 	call->hold_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T_HOLD],
 		q931_hold_timeout, call);
-	if (send_message(ctrl, call, Q931_HOLD, hold_ies)) {
+	if (send_message(ctrl, winner, Q931_HOLD, hold_ies)) {
 		pri_schedule_del(ctrl, call->hold_timer);
 		call->hold_timer = 0;
 		return -1;
@@ -4351,26 +4395,33 @@ static int hold_ack_ies[] = {
  * \brief Send the HOLD ACKNOWLEDGE message.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_hold_ack(struct pri *ctrl, q931_call *call)
+int q931_send_hold_ack(struct pri *ctrl, struct q931_call *call)
 {
+	struct q931_call *winner;
+
 	/* Stop the upper layer does not implement guard timer. */
 	pri_schedule_del(ctrl, call->hold_timer);
 	call->hold_timer = 0;
 
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_CALL_HELD);
 
-	/* Call is now on hold so forget the channel. */
-	call->channelno = 0;/* No channel */
-	call->ds1no = 0;
-	call->ds1explicit = 0;
-	call->chanflags = 0;
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
 
-	return send_message(ctrl, call, Q931_HOLD_ACKNOWLEDGE, hold_ack_ies);
+	/* Call is now on hold so forget the channel. */
+	winner->channelno = 0;/* No channel */
+	winner->ds1no = 0;
+	winner->ds1explicit = 0;
+	winner->chanflags = 0;
+
+	return send_message(ctrl, winner, Q931_HOLD_ACKNOWLEDGE, hold_ack_ies);
 }
 
 static int hold_reject_ies[] = {
@@ -4379,23 +4430,18 @@ static int hold_reject_ies[] = {
 };
 
 /*!
- * \brief Send the HOLD REJECT message.
+ * \internal
+ * \brief Send the HOLD REJECT message only.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (subcall)
  * \param cause Q.931 cause code for rejecting the hold request.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_hold_rej(struct pri *ctrl, q931_call *call, int cause)
+static int q931_send_hold_rej_msg(struct pri *ctrl, struct q931_call *call, int cause)
 {
-	/* Stop the upper layer does not implement guard timer. */
-	pri_schedule_del(ctrl, call->hold_timer);
-	call->hold_timer = 0;
-
-	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_IDLE);
-
 	call->cause = cause;
 	call->causecode = CODE_CCITT;
 	call->causeloc = LOC_PRIV_NET_LOCAL_USER;
@@ -4403,10 +4449,38 @@ int q931_send_hold_rej(struct pri *ctrl, q931_call *call, int cause)
 }
 
 /*!
+ * \brief Send the HOLD REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
+ * \param cause Q.931 cause code for rejecting the hold request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int q931_send_hold_rej(struct pri *ctrl, struct q931_call *call, int cause)
+{
+	struct q931_call *winner;
+
+	/* Stop the upper layer does not implement guard timer. */
+	pri_schedule_del(ctrl, call->hold_timer);
+	call->hold_timer = 0;
+
+	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_IDLE);
+
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
+
+	return q931_send_hold_rej_msg(ctrl, winner, cause);
+}
+
+/*!
  * \internal
  * \brief Send HOLD message response guard timeout.
  *
- * \param data Q.931 call leg.
+ * \param data Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \return Nothing
  */
@@ -4427,7 +4501,7 @@ static void q931_hold_guard_timeout(void *data)
  * \internal
  * \brief Send RETRIEVE message response wait timeout.
  *
- * \param data Q.931 call leg.
+ * \param data Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \return Nothing
  */
@@ -4435,6 +4509,7 @@ static void q931_retrieve_timeout(void *data)
 {
 	struct q931_call *call = data;
 	struct pri *ctrl = call->pri;
+	struct q931_call *winner;
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 		pri_message(ctrl, "Time-out waiting for RETRIEVE response\n");
@@ -4446,17 +4521,20 @@ static void q931_retrieve_timeout(void *data)
 
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_CALL_HELD);
 
-	/* Call is still on hold so forget the channel. */
-	call->channelno = 0;/* No channel */
-	call->ds1no = 0;
-	call->ds1explicit = 0;
-	call->chanflags = 0;
+	winner = q931_find_winning_call(call);
+	if (winner) {
+		/* Call is still on hold so forget the channel. */
+		winner->channelno = 0;/* No channel */
+		winner->ds1no = 0;
+		winner->ds1explicit = 0;
+		winner->chanflags = 0;
+	}
 
 	q931_clr_subcommands(ctrl);
 	ctrl->schedev = 1;
 	ctrl->ev.e = PRI_EVENT_RETRIEVE_REJ;
 	ctrl->ev.retrieve_rej.channel = q931_encode_channel(call);
-	ctrl->ev.retrieve_rej.call = call->master_call;
+	ctrl->ev.retrieve_rej.call = call;
 	ctrl->ev.retrieve_rej.cause = PRI_CAUSE_MESSAGE_TYPE_NONEXIST;
 	ctrl->ev.retrieve_rej.subcmds = &ctrl->subcmds;
 }
@@ -4466,12 +4544,12 @@ static void q931_retrieve_timeout(void *data)
  * \brief Determine if a retrieve request is allowed now.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  *
  * \retval TRUE if we can send a RETRIEVE request.
  * \retval FALSE if not allowed.
  */
-static int q931_is_retrieve_allowed(const struct pri *ctrl, const q931_call *call)
+static int q931_is_retrieve_allowed(const struct pri *ctrl, const struct q931_call *call)
 {
 	int allowed;
 
@@ -4516,44 +4594,47 @@ static int retrieve_ies[] = {
  * \brief Send the RETRIEVE message.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  * \param channel Encoded channel id to use.  If zero do not send channel id.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_retrieve(struct pri *ctrl, q931_call *call, int channel)
+int q931_send_retrieve(struct pri *ctrl, struct q931_call *call, int channel)
 {
-	if (!q931_is_retrieve_allowed(ctrl, call)) {
+	struct q931_call *winner;
+
+	winner = q931_find_winning_call(call);
+	if (!winner || !q931_is_retrieve_allowed(ctrl, call)) {
 		return -1;
 	}
 
 	if (channel) {
-		call->ds1no = (channel & 0xff00) >> 8;
-		call->ds1explicit = (channel & 0x10000) >> 16;
-		call->channelno = channel & 0xff;
+		winner->ds1no = (channel & 0xff00) >> 8;
+		winner->ds1explicit = (channel & 0x10000) >> 16;
+		winner->channelno = channel & 0xff;
 		if (ctrl->localtype == PRI_NETWORK) {
-			call->chanflags = FLAG_EXCLUSIVE;
+			winner->chanflags = FLAG_EXCLUSIVE;
 		} else {
-			call->chanflags = FLAG_PREFERRED;
+			winner->chanflags = FLAG_PREFERRED;
 		}
 	} else {
 		/* Do not send Q931_CHANNEL_IDENT */
-		call->chanflags = 0;
+		winner->chanflags = 0;
 	}
 
 	pri_schedule_del(ctrl, call->hold_timer);
 	call->hold_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T_RETRIEVE],
 		q931_retrieve_timeout, call);
-	if (send_message(ctrl, call, Q931_RETRIEVE, retrieve_ies)) {
+	if (send_message(ctrl, winner, Q931_RETRIEVE, retrieve_ies)) {
 		pri_schedule_del(ctrl, call->hold_timer);
 		call->hold_timer = 0;
 
 		/* Call is still on hold so forget the channel. */
-		call->channelno = 0;/* No channel */
-		call->ds1no = 0;
-		call->ds1explicit = 0;
-		call->chanflags = 0;
+		winner->channelno = 0;/* No channel */
+		winner->ds1no = 0;
+		winner->ds1explicit = 0;
+		winner->chanflags = 0;
 		return -1;
 	}
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_RETRIEVE_REQ);
@@ -4569,22 +4650,29 @@ static int retrieve_ack_ies[] = {
  * \brief Send the RETRIEVE ACKNOWLEDGE message.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
  * \param channel Encoded channel id to use.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_retrieve_ack(struct pri *ctrl, q931_call *call, int channel)
+int q931_send_retrieve_ack(struct pri *ctrl, struct q931_call *call, int channel)
 {
-	call->ds1no = (channel & 0xff00) >> 8;
-	call->ds1explicit = (channel & 0x10000) >> 16;
-	call->channelno = channel & 0xff;
-	call->chanflags = FLAG_EXCLUSIVE;
+	struct q931_call *winner;
+
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
+
+	winner->ds1no = (channel & 0xff00) >> 8;
+	winner->ds1explicit = (channel & 0x10000) >> 16;
+	winner->channelno = channel & 0xff;
+	winner->chanflags = FLAG_EXCLUSIVE;
 
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_IDLE);
 
-	return send_message(ctrl, call, Q931_RETRIEVE_ACKNOWLEDGE, retrieve_ack_ies);
+	return send_message(ctrl, winner, Q931_RETRIEVE_ACKNOWLEDGE, retrieve_ack_ies);
 }
 
 static int retrieve_reject_ies[] = {
@@ -4593,29 +4681,52 @@ static int retrieve_reject_ies[] = {
 };
 
 /*!
- * \brief Send the RETRIEVE REJECT message.
+ * \internal
+ * \brief Send the RETRIEVE REJECT message only.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg. (subcall)
  * \param cause Q.931 cause code for rejecting the retrieve request.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int q931_send_retrieve_rej(struct pri *ctrl, q931_call *call, int cause)
+static int q931_send_retrieve_rej_msg(struct pri *ctrl, struct q931_call *call, int cause)
 {
-	/* Call is still on hold so forget the channel. */
-	call->channelno = 0;/* No channel */
-	call->ds1no = 0;
-	call->ds1explicit = 0;
-	call->chanflags = 0;
-
-	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_CALL_HELD);
-
 	call->cause = cause;
 	call->causecode = CODE_CCITT;
 	call->causeloc = LOC_PRIV_NET_LOCAL_USER;
 	return send_message(ctrl, call, Q931_RETRIEVE_REJECT, retrieve_reject_ies);
+}
+
+/*!
+ * \brief Send the RETRIEVE REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg. (Master Q.931 subcall structure)
+ * \param cause Q.931 cause code for rejecting the retrieve request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int q931_send_retrieve_rej(struct pri *ctrl, struct q931_call *call, int cause)
+{
+	struct q931_call *winner;
+
+	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_CALL_HELD);
+
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
+
+	/* Call is still on hold so forget the channel. */
+	winner->channelno = 0;/* No channel */
+	winner->ds1no = 0;
+	winner->ds1explicit = 0;
+	winner->chanflags = 0;
+
+	return q931_send_retrieve_rej_msg(ctrl, winner, cause);
 }
 
 static int pri_internal_clear(void *data);
@@ -5429,6 +5540,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 	int res;
 	struct apdu_event *cur = NULL;
 	struct pri_subcommand *subcmd;
+	struct q931_call *master_call;
 
 	switch(mh->msg) {
 	case Q931_RESTART:
@@ -5987,14 +6099,23 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 			if (q931_is_ptmp(ctrl)) {
 				/* HOLD request only allowed in these states if point-to-point mode. */
-				q931_send_hold_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 				break;
 			}
 			/* Fall through */
 		case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
 		case Q931_CALL_STATE_CALL_DELIVERED:
 		case Q931_CALL_STATE_ACTIVE:
-			switch (c->hold_state) {
+			if (!q931_find_winning_call(c)) {
+				/*
+				 * Only the winning call of a broadcast SETUP can do hold since the
+				 * call must be answered first.
+				 */
+				q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				break;
+			}
+			master_call = c->master_call;
+			switch (master_call->hold_state) {
 			case Q931_HOLD_STATE_HOLD_REQ:
 				if (ctrl->localtype == PRI_NETWORK) {
 					/* The network ignores HOLD request on a hold collision. */
@@ -6004,19 +6125,20 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			case Q931_HOLD_STATE_IDLE:
 				ctrl->ev.e = PRI_EVENT_HOLD;
 				ctrl->ev.hold.channel = q931_encode_channel(c);
-				ctrl->ev.hold.call = c->master_call;
+				ctrl->ev.hold.call = master_call;
 				ctrl->ev.hold.subcmds = &ctrl->subcmds;
 				res = Q931_RES_HAVEEVENT;
 
-				UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_HOLD_IND);
+				UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_HOLD_IND);
 
 				/* Start the upper layer does not implement guard timer. */
-				pri_schedule_del(ctrl, c->hold_timer);
-				c->hold_timer = pri_schedule_event(ctrl,
-					ctrl->timers[PRI_TIMER_T_HOLD] / 2, q931_hold_guard_timeout, c);
+				pri_schedule_del(ctrl, master_call->hold_timer);
+				master_call->hold_timer = pri_schedule_event(ctrl,
+					ctrl->timers[PRI_TIMER_T_HOLD] / 2, q931_hold_guard_timeout,
+					master_call);
 				break;
 			default:
-				q931_send_hold_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 				break;
 			}
 			break;
@@ -6025,21 +6147,22 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore HOLD request in these states. */
 			break;
 		default:
-			q931_send_hold_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+			q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 			break;
 		}
 		return res;
 	case Q931_HOLD_ACKNOWLEDGE:
 		res = 0;
-		switch (c->hold_state) {
+		master_call = c->master_call;
+		switch (master_call->hold_state) {
 		case Q931_HOLD_STATE_HOLD_REQ:
 			ctrl->ev.e = PRI_EVENT_HOLD_ACK;
 			ctrl->ev.hold_ack.channel = q931_encode_channel(c);
-			ctrl->ev.hold_ack.call = c->master_call;
+			ctrl->ev.hold_ack.call = master_call;
 			ctrl->ev.hold_ack.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 
-			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_CALL_HELD);
+			UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_CALL_HELD);
 
 			/* Call is now on hold so forget the channel. */
 			c->channelno = 0;/* No channel */
@@ -6048,8 +6171,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			c->chanflags = 0;
 
 			/* Stop T-HOLD timer */
-			pri_schedule_del(ctrl, c->hold_timer);
-			c->hold_timer = 0;
+			pri_schedule_del(ctrl, master_call->hold_timer);
+			master_call->hold_timer = 0;
 			break;
 		default:
 			/* Ignore response.  Response is late or spurrious. */
@@ -6058,7 +6181,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		return res;
 	case Q931_HOLD_REJECT:
 		res = 0;
-		switch (c->hold_state) {
+		master_call = c->master_call;
+		switch (master_call->hold_state) {
 		case Q931_HOLD_STATE_HOLD_REQ:
 			if (missingmand) {
 				/* Still, let hold rejection continue. */
@@ -6066,16 +6190,16 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			}
 			ctrl->ev.e = PRI_EVENT_HOLD_REJ;
 			ctrl->ev.hold_rej.channel = q931_encode_channel(c);
-			ctrl->ev.hold_rej.call = c->master_call;
+			ctrl->ev.hold_rej.call = master_call;
 			ctrl->ev.hold_rej.cause = c->cause;
 			ctrl->ev.hold_rej.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 
-			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_IDLE);
+			UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_IDLE);
 
 			/* Stop T-HOLD timer */
-			pri_schedule_del(ctrl, c->hold_timer);
-			c->hold_timer = 0;
+			pri_schedule_del(ctrl, master_call->hold_timer);
+			master_call->hold_timer = 0;
 			break;
 		default:
 			/* Ignore response.  Response is late or spurrious. */
@@ -6090,14 +6214,23 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 			if (q931_is_ptmp(ctrl)) {
 				/* RETRIEVE request only allowed in these states if point-to-point mode. */
-				q931_send_retrieve_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				q931_send_retrieve_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 				break;
 			}
 			/* Fall through */
 		case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
 		case Q931_CALL_STATE_CALL_DELIVERED:
 		case Q931_CALL_STATE_ACTIVE:
-			switch (c->hold_state) {
+			if (!q931_find_winning_call(c)) {
+				/*
+				 * Only the winning call of a broadcast SETUP can do hold since the
+				 * call must be answered first.
+				 */
+				q931_send_retrieve_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				break;
+			}
+			master_call = c->master_call;
+			switch (master_call->hold_state) {
 			case Q931_HOLD_STATE_RETRIEVE_REQ:
 				if (ctrl->localtype == PRI_NETWORK) {
 					/* The network ignores RETRIEVE request on a retrieve collision. */
@@ -6107,23 +6240,23 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			case Q931_HOLD_STATE_CALL_HELD:
 				ctrl->ev.e = PRI_EVENT_RETRIEVE;
 				ctrl->ev.retrieve.channel = q931_encode_channel(c);
-				ctrl->ev.retrieve.call = c->master_call;
+				ctrl->ev.retrieve.call = master_call;
 				ctrl->ev.retrieve.flexible = !(c->chanflags & FLAG_EXCLUSIVE);
 				ctrl->ev.retrieve.subcmds = &ctrl->subcmds;
 				res = Q931_RES_HAVEEVENT;
 
-				UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_RETRIEVE_IND);
+				UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_RETRIEVE_IND);
 
 				/*
 				 * Stop any T-RETRIEVE timer.
 				 * The upper layer must implement HOLD for a call to even get
 				 * on hold.
 				 */
-				pri_schedule_del(ctrl, c->hold_timer);
-				c->hold_timer = 0;
+				pri_schedule_del(ctrl, master_call->hold_timer);
+				master_call->hold_timer = 0;
 				break;
 			default:
-				q931_send_retrieve_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+				q931_send_retrieve_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 				break;
 			}
 			break;
@@ -6132,23 +6265,24 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Ignore RETRIEVE request in these states. */
 			break;
 		default:
-			q931_send_retrieve_rej(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
+			q931_send_retrieve_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
 			break;
 		}
 		return res;
 	case Q931_RETRIEVE_ACKNOWLEDGE:
 		res = 0;
-		switch (c->hold_state) {
+		master_call = c->master_call;
+		switch (master_call->hold_state) {
 		case Q931_HOLD_STATE_RETRIEVE_REQ:
-			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_IDLE);
+			UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_IDLE);
 
 			/* Stop T-RETRIEVE timer */
-			pri_schedule_del(ctrl, c->hold_timer);
-			c->hold_timer = 0;
+			pri_schedule_del(ctrl, master_call->hold_timer);
+			master_call->hold_timer = 0;
 
 			ctrl->ev.e = PRI_EVENT_RETRIEVE_ACK;
 			ctrl->ev.retrieve_ack.channel = q931_encode_channel(c);
-			ctrl->ev.retrieve_ack.call = c->master_call;
+			ctrl->ev.retrieve_ack.call = master_call;
 			ctrl->ev.retrieve_ack.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
 			break;
@@ -6159,9 +6293,10 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		return res;
 	case Q931_RETRIEVE_REJECT:
 		res = 0;
-		switch (c->hold_state) {
+		master_call = c->master_call;
+		switch (master_call->hold_state) {
 		case Q931_HOLD_STATE_RETRIEVE_REQ:
-			UPDATE_HOLD_STATE(ctrl, c, Q931_HOLD_STATE_CALL_HELD);
+			UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_CALL_HELD);
 
 			/* Call is still on hold so forget the channel. */
 			c->channelno = 0;/* No channel */
@@ -6170,8 +6305,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			c->chanflags = 0;
 
 			/* Stop T-RETRIEVE timer */
-			pri_schedule_del(ctrl, c->hold_timer);
-			c->hold_timer = 0;
+			pri_schedule_del(ctrl, master_call->hold_timer);
+			master_call->hold_timer = 0;
 
 			if (missingmand) {
 				/* Still, let retrive rejection continue. */
@@ -6179,7 +6314,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			}
 			ctrl->ev.e = PRI_EVENT_RETRIEVE_REJ;
 			ctrl->ev.retrieve_rej.channel = q931_encode_channel(c);
-			ctrl->ev.retrieve_rej.call = c->master_call;
+			ctrl->ev.retrieve_rej.call = master_call;
 			ctrl->ev.retrieve_rej.cause = c->cause;
 			ctrl->ev.retrieve_rej.subcmds = &ctrl->subcmds;
 			res = Q931_RES_HAVEEVENT;
