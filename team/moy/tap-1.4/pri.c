@@ -405,6 +405,26 @@ pri_event *pri_check_event(struct pri *pri)
 	return e;
 }
 
+pri_event *pri_read_event(struct pri *pri)
+{
+	char buf[1024];
+	int res;
+	res = pri->read_func ? pri->read_func(pri, buf, sizeof(buf)) : 0;
+	/* this check should be at some routine in q921.c */
+	/* at least 4 bytes of Q921 and at check buf[4] for Q931 Network packet */
+	if (res < 5 || ((int)buf[4] != 8)) {
+		return NULL;	
+	}
+	res = q931_read_event(pri, (q931_h*)(buf + 4), res - 4 - 2 /* remove 4 bytes of Q921 h and 2 of CRC */);
+	if (res == -1) {
+		return NULL;
+	}
+	if (res & Q931_RES_HAVEEVENT) {
+		return &pri->ev;
+	}
+	return NULL;
+}
+
 static int wait_pri(struct pri *pri)
 {	
 	struct timeval *tv, real;
@@ -886,7 +906,15 @@ void pri_dump_event(struct pri *pri, pri_event *e)
 		pri_message(pri, "Called number: %s (%s)\n", e->ring.callednum, pri_plan2str(e->ring.calledplan));
 		pri_message(pri, "Channel: %d (%s) Reference number: %d\n", e->ring.channel, e->ring.flexible ? "Flexible" : "Not Flexible", e->ring.cref);
 		break;
+	case PRI_EVENT_ANSWER:
+		pri_message(pri, "Channel: %d Reference number: %d\n", e->answer.channel, e->answer.cref);
+		break;
+	case PRI_EVENT_PROCEEDING:
+		pri_message(pri, "Channel: %d Reference number: %d\n", e->proceeding.channel, e->proceeding.cref);
 	case PRI_EVENT_HANGUP:
+		pri_message(pri, "Hangup, reference number: %d, reason: %s\n", e->hangup.cref, pri_cause2str(e->hangup.cause));
+		break;
+	case PRI_EVENT_HANGUP_ACK:
 		pri_message(pri, "Hangup, reference number: %d, reason: %s\n", e->hangup.cref, pri_cause2str(e->hangup.cause));
 		break;
 	default:
