@@ -386,6 +386,12 @@ char *pri_event2str(int id)
 		{ PRI_EVENT_KEYPAD_DIGIT,   "Keypad Digit" },
 		{ PRI_EVENT_SERVICE,        "Service" },
 		{ PRI_EVENT_SERVICE_ACK,    "Service ACK" },
+		{ PRI_EVENT_HOLD,           "Hold" },
+		{ PRI_EVENT_HOLD_ACK,       "Hold Ack" },
+		{ PRI_EVENT_HOLD_REJ,       "Hold Rej" },
+		{ PRI_EVENT_RETRIEVE,       "Retrieve" },
+		{ PRI_EVENT_RETRIEVE_ACK,   "Retrieve ACK" },
+		{ PRI_EVENT_RETRIEVE_REJ,   "Retrieve Rej" },
 /* *INDENT-ON* */
 	};
 
