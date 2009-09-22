@@ -73,6 +73,13 @@ struct pri {
 	
 	/* Q.921 State */
 	int q921_state;	
+	int k;
+	int RC;
+	int peer_rx_busy:1;
+	int own_rx_busy:1;
+	int acknowledge_pending:1;
+	int reject_exception:1;
+
 	int window;			/* Max window size */
 	int windowlen;		/* Fullness of window */
 	int v_s;			/* Next N(S) for transmission */
@@ -86,6 +93,7 @@ struct pri {
 	int cref;			/* Next call reference value */
 	
 	int busy;			/* Peer is busy */
+	int l3initiated;
 
 	/* Various timers */
 	int sabme_timer;	/* SABME retransmit */
