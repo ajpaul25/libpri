@@ -91,7 +91,7 @@ static struct msgtype msgs[] = {
 	{ Q931_SUSPEND_ACKNOWLEDGE, "SUSPEND ACKNOWLEDGE" },
 	{ Q931_SUSPEND_REJECT, "SUSPEND REJECT" },
 };
-static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand);
+static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand, int checkstate);
 
 struct msgtype att_maintenance_msgs[] = {
 	{ ATT_SERVICE, "SERVICE", { Q931_CHANNEL_IDENT } },
@@ -171,6 +171,7 @@ static struct msgtype facilities[] = {
        { PRI_NSF_ATT_MULTIQUEST, "AT&T MultiQuest" },
        { PRI_NSF_CALL_REDIRECTION_SERVICE, "Call Redirection Service" }
 };
+static int q931_process_ies(struct pri *ctrl, q931_h *h, int len, q931_mh *mh, q931_call *c, int *missingmand);
 
 #define FLAG_WHOLE_INTERFACE	0x01
 #define FLAG_PREFERRED			0x02
@@ -4313,22 +4314,47 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 	return 0;
 }
 
+/* here we trust receiving q931 only (no maintenance or anything else)*/
+int q931_read_event(struct pri *ctrl, q931_h *h, int len)
+{
+	q931_mh *mh;
+	q931_call *c;
+	int cref;
+	int missingmand;
+
+	//q931_dump(ctrl, h, len, 0);
+	
+	mh = (q931_mh *)(h->contents + h->crlen);
+
+	cref = q931_cr(h);
+
+	/* XXX FIXME: when does the call structure will be freed???? when!? XXX */	
+	c = q931_getcall(ctrl, cref);
+	if (!c) {
+		pri_error(ctrl, "Unable to locate call %d\n", cref);
+		return -1;
+	}
+
+	if (prepare_to_handle_q931_message(ctrl, mh, c)) {
+		return 0;
+	}
+
+	missingmand = 0;
+	if (q931_process_ies(ctrl, h, len, mh, c, &missingmand)) {
+		return -1;
+	}
+
+	return post_handle_q931_message(ctrl, mh, c, missingmand, 0);
+}
+
 int q931_receive(struct pri *ctrl, q931_h *h, int len)
 {
 	q931_mh *mh;
 	q931_call *c;
-	q931_ie *ie;
-	unsigned int x;
-	int y;
-	int res;
-	int r;
-	int mandies[MAX_MAND_IES];
 	int missingmand;
-	int codeset, cur_codeset;
-	int last_ie[8];
+	int res;
 	int cref;
 
-	memset(last_ie, 0, sizeof(last_ie));
 	if (ctrl->debug & PRI_DEBUG_Q931_DUMP)
 		q931_dump(ctrl, h, len, 0);
 #ifdef LIBPRI_COUNTERS
@@ -4362,11 +4388,43 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 	} else {
 		prepare_to_handle_q931_message(ctrl, mh, c);
 	}
+
+	/* Handle IEs */
+	missingmand = 0;
+	if (q931_process_ies(ctrl, h, len, mh, c, &missingmand)) {
+		return -1;
+	}
+
+	/* Post handling */
+	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
+		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
+	} else {
+		res = post_handle_q931_message(ctrl, mh, c, missingmand, 1);
+	}
+	return res;
+}
+
+/*!
+ * \internal
+ * \brief Process all IEs in a Q931 msg
+ */
+static int q931_process_ies(struct pri *ctrl, q931_h *h, int len, q931_mh *mh, q931_call *c, int *missingmand)
+{
+	int mandies[MAX_MAND_IES];
+	unsigned int x;
+	int y;
+	int r;
+	int codeset, cur_codeset;
+	int last_ie[8];
+	q931_ie *ie;
+
+	memset(last_ie, 0, sizeof(last_ie));
+
 	q931_clr_subcommands(ctrl);
 	
 	/* Handle IEs */
 	memset(mandies, 0, sizeof(mandies));
-	missingmand = 0;
+	*missingmand = 0;
 	for (x=0;x<sizeof(msgs) / sizeof(msgs[0]); x++)  {
 		if (msgs[x].msgnum == mh->msg) {
 			memcpy(mandies, msgs[x].mandies, sizeof(mandies));
@@ -4439,25 +4497,18 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		x += r;
 		len -= r;
 	}
-	missingmand = 0;
+	*missingmand = 0;
 	for (x=0;x<MAX_MAND_IES;x++) {
 		if (mandies[x]) {
 			/* check if there is no channel identification when we're configured as network -> that's not an error */
 			if (((ctrl->localtype != PRI_NETWORK) || (mh->msg != Q931_SETUP) || (mandies[x] != Q931_CHANNEL_IDENT)) &&
 			     ((mh->msg != Q931_PROGRESS) || (mandies[x] != Q931_PROGRESS_INDICATOR))) {
 				pri_error(ctrl, "XXX Missing handling for mandatory IE %d (cs%d, %s) XXX\n", Q931_IE_IE(mandies[x]), Q931_IE_CODESET(mandies[x]), ie2str(mandies[x]));
-				missingmand++;
+				(*missingmand)++;
 			}
 		}
 	}
-
-	/* Post handling */
-	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
-		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
-	} else {
-		res = post_handle_q931_message(ctrl, mh, c, missingmand);
-	}
-	return res;
+	return 0;
 }
 
 static int post_handle_maintenance_message(struct pri *ctrl, int protodisc, struct q931_mh *mh, struct q931_call *c)
@@ -4549,12 +4600,13 @@ static void q931_fill_facility_event(struct pri *ctrl, struct q931_call *call)
  * \param mh Q.931 message header.
  * \param c Q.931 call leg.
  * \param missingmand Number of missing mandatory ie's.
+ * \param checkstate Whether or not to check the state of the call
  *
  * \retval 0 if no error or event.
  * \retval Q931_RES_HAVEEVENT if have an event.
  * \retval -1 on error.
  */
-static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand)
+static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand, int checkstate)
 {
 	int res;
 	struct apdu_event *cur = NULL;
@@ -4580,8 +4632,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_release_complete(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
 			break;
 		}
+
 		/* Must be new call */
-		if (!c->newcall) {
+		if (checkstate && !c->newcall) {
 			break;
 		}
 		if (c->progressmask & PRI_PROG_CALLER_NOT_ISDN)
@@ -4620,7 +4673,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			c->redirecting.to.number.presentation =
 				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
 		}
-
 		ctrl->ev.e = PRI_EVENT_RING;
 		ctrl->ev.ring.subcmds = &ctrl->subcmds;
 		ctrl->ev.ring.channel = q931_encode_channel(c);
@@ -4690,10 +4742,12 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		return Q931_RES_HAVEEVENT;
 	case Q931_ALERTING:
-		if (c->newcall) {
+
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
+
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_DELIVERED);
 		c->peercallstate = Q931_CALL_STATE_CALL_RECEIVED;
 		ctrl->ev.e = PRI_EVENT_RINGING;
@@ -4718,14 +4772,16 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT:
-		if (c->newcall) {
+
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
-		if (c->ourcallstate == Q931_CALL_STATE_ACTIVE) {
+		if (checkstate && c->ourcallstate == Q931_CALL_STATE_ACTIVE) {
 			q931_status(ctrl, c, PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
+
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_ACTIVE);
 		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 
@@ -4790,17 +4846,18 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		/* Fall through */
 	case Q931_CALL_PROCEEDING:
 		ctrl->ev.proceeding.subcmds = &ctrl->subcmds;
-		if (c->newcall) {
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
-		if ((c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED) &&
+		if (checkstate && (c->ourcallstate != Q931_CALL_STATE_CALL_INITIATED) &&
 		    (c->ourcallstate != Q931_CALL_STATE_OVERLAP_SENDING) && 
 		    (c->ourcallstate != Q931_CALL_STATE_CALL_DELIVERED) && 
 		    (c->ourcallstate != Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING)) {
 			q931_status(ctrl,c,PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
+
 		ctrl->ev.proceeding.channel = q931_encode_channel(c);
 		if (mh->msg == Q931_CALL_PROCEEDING) {
 			ctrl->ev.e = PRI_EVENT_PROCEEDING;
@@ -4822,18 +4879,21 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT_ACKNOWLEDGE:
-		if (c->newcall) {
+
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
-		if (!(c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) &&
+		if (checkstate && !(c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) &&
 		    !(c->ourcallstate == Q931_CALL_STATE_ACTIVE &&
 		      (ctrl->localtype == PRI_NETWORK || ctrl->switchtype == PRI_SWITCH_QSIG))) {
 			q931_status(ctrl,c,PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
+
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_ACTIVE);
 		c->peercallstate = Q931_CALL_STATE_ACTIVE;
+
 		break;
 	case Q931_STATUS:
 		if (missingmand) {
@@ -4936,7 +4996,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		c->useruserinfo[0] = '\0';
 		/* Don't send release complete if they send us release 
 		   while we sent it, assume a NULL state */
-		if (c->newcall)
+		if (checkstate && c->newcall)
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 		else 
 			return Q931_RES_HAVEEVENT;
@@ -4946,7 +5006,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			/* Still let user call release */
 			c->cause = PRI_CAUSE_MANDATORY_IE_MISSING;
 		}
-		if (c->newcall) {
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
@@ -5012,7 +5072,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_status(ctrl,c, 0);
 		break;
 	case Q931_SETUP_ACKNOWLEDGE:
-		if (c->newcall) {
+		if (checkstate && c->newcall) {
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}

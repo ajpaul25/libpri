@@ -735,6 +735,9 @@ pri_event *pri_dchannel_run(struct pri *pri, int block);
 /* Check for an outstanding event on the PRI */
 pri_event *pri_check_event(struct pri *pri);
 
+/* Check for PRI events */
+pri_event *pri_read_event(struct pri *pri);
+
 /* Give a name to a given event ID */
 char *pri_event2str(int id);
 
