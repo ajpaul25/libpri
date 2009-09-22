@@ -4456,6 +4456,8 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		}
 	}
 
+	missingmand = 0;
+
 	/* Post handling */
 	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
 		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
@@ -4478,11 +4480,11 @@ static int post_handle_maintenance_message(struct pri *ctrl, int protodisc, stru
 			switch (0x0f & c->changestatus) {
 			case SERVICE_CHANGE_STATUS_INSERVICE:
 				ctrl->ev.e = PRI_EVENT_DCHAN_UP;
-				q921_dchannel_up(ctrl);
+				//q921_dchannel_up(ctrl);
 				break;
 			case SERVICE_CHANGE_STATUS_OUTOFSERVICE:
 				ctrl->ev.e = PRI_EVENT_DCHAN_DOWN;
-				q921_dchannel_down(ctrl);
+				//q921_dchannel_down(ctrl);
 				break;
 			default:
 				pri_error(ctrl, "!! Don't know how to handle span service change status '%d'\n", (0x0f & c->changestatus));
@@ -4502,11 +4504,11 @@ static int post_handle_maintenance_message(struct pri *ctrl, int protodisc, stru
 			switch (0x0f & c->changestatus) {
 			case SERVICE_CHANGE_STATUS_INSERVICE:
 				ctrl->ev.e = PRI_EVENT_DCHAN_UP;
-				q921_dchannel_up(ctrl);
+				//q921_dchannel_up(ctrl);
 				break;
 			case SERVICE_CHANGE_STATUS_OUTOFSERVICE:
 				ctrl->ev.e = PRI_EVENT_DCHAN_DOWN;
-				q921_dchannel_down(ctrl);
+				//q921_dchannel_down(ctrl);
 				break;
 			default:
 				pri_error(ctrl, "!! Don't know how to handle span service change status '%d'\n", (0x0f & c->changestatus));
