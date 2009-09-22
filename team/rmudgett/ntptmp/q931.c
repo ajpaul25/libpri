@@ -3574,6 +3574,13 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 	int x;
 	int codeset;
 
+	if (call->outboundbroadcast && call->master_call == call && msgtype != Q931_SETUP) {
+		pri_error(ctrl,
+			"Attempting to use master call record to send %s on BRI PTMP NT %p\n",
+			msg2str(msgtype), ctrl);
+		return -1;
+	}
+
 	memset(buf, 0, sizeof(buf));
 	len = sizeof(buf);
 	init_header(ctrl, call, buf, &h, &mh, &len, (msgtype >> 8));
@@ -3728,6 +3735,29 @@ int q931_facility(struct pri*ctrl, q931_call *c)
 static int notify_ies[] = { Q931_IE_NOTIFY_IND, Q931_IE_REDIRECTION_NUMBER, -1 };
 
 /*!
+ * \internal
+ * \brief Actually send a NOTIFY message with optional redirection number.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param notify Notification indicator
+ * \param number Redirection number to send if not NULL.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int q931_notify_redirection_helper(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number)
+{
+	if (number) {
+		call->redirection_number = *number;
+	} else {
+		q931_party_number_init(&call->redirection_number);
+	}
+	call->notify = notify;
+	return send_message(ctrl, call, Q931_NOTIFY, notify_ies);
+}
+
+/*!
  * \brief Send a NOTIFY message with optional redirection number.
  *
  * \param ctrl D channel controller.
@@ -3740,22 +3770,37 @@ static int notify_ies[] = { Q931_IE_NOTIFY_IND, Q931_IE_REDIRECTION_NUMBER, -1 }
  */
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number)
 {
-	if (number) {
-		call->redirection_number = *number;
+	int status;
+	unsigned idx;
+	struct q931_call *subcall;
+
+	if (call->outboundbroadcast && call->master_call == call) {
+		status = 0;
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				/* Send to all subcalls that have given a positive response. */
+				switch (subcall->ourcallstate) {
+				case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+				case Q931_CALL_STATE_CALL_DELIVERED:
+				case Q931_CALL_STATE_ACTIVE:
+					if (q931_notify_redirection_helper(ctrl, subcall, notify, number)) {
+						status = -1;
+					}
+					break;
+				default:
+					break;
+				}
+			}
+		}
 	} else {
-		q931_party_number_init(&call->redirection_number);
+		status = q931_notify_redirection_helper(ctrl, call, notify, number);
 	}
-	call->notify = notify;
-	return send_message(ctrl, call, Q931_NOTIFY, notify_ies);
+	return status;
 }
 
 int q931_notify(struct pri *ctrl, q931_call *c, int channel, int info)
 {
-/*
- * BUGBUG Need to send the remote hold/retrieval NOTIFY to all NT PTMP subcalls
- * that have given a positive response.
- * States Outgoing-call-proceeding(U3/N3), Call-delivered(U4/N4), and Active(U10/N10).
- */
 	if ((ctrl->switchtype == PRI_SWITCH_EUROISDN_T1) || (ctrl->switchtype != PRI_SWITCH_EUROISDN_E1)) {
 		if ((info > 0x2) || (info < 0x00)) {
 			return 0;

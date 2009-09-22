@@ -646,6 +646,8 @@ static void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struc
 int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pri_party_connected_line *connected)
 {
 	struct q931_party_id party_id;
+	unsigned idx;
+	struct q931_call *subcall;
 
 	if (!ctrl || !call) {
 		return -1;
@@ -658,6 +660,16 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 		return 0;
 	}
 	call->local_id = party_id;
+
+	/* Update all subcalls with new local_id. */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->local_id = party_id;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_CALL_INITIATED:
@@ -700,6 +712,9 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 
 int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_party_redirecting *redirecting)
 {
+	unsigned idx;
+	struct q931_call *subcall;
+
 	if (!ctrl || !call) {
 		return -1;
 	}
@@ -708,6 +723,21 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 	pri_copy_party_id_to_q931(&call->redirecting.to, &redirecting->to);
 	q931_party_id_fixup(ctrl, &call->redirecting.to);
 	call->redirecting.reason = redirecting->reason;
+
+	/*
+	 * Update all subcalls with new redirecting.to information and reason.
+	 * I do not think we will ever have any subcalls when this data is relevant,
+	 * but update it just in case.
+	 */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->redirecting.to = call->redirecting.to;
+				subcall->redirecting.reason = redirecting->reason;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_NULL:
