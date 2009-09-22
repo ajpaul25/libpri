@@ -3108,8 +3108,10 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 			case PRI_SWITCH_GR303_TMC_SWITCHING:
 				break;
 			default:
-				/* PRI is set to whoever called us */
-				cur->pri = ctrl;
+				if (!ctrl->bri) {
+					/* PRI is set to whoever called us */
+					cur->pri = ctrl;
+				}
 				break;
 			}
 			return cur;
@@ -3160,15 +3162,23 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	q931_party_id_init(&cur->remote_id);
 	q931_party_redirecting_init(&cur->redirecting);
 
+	/* PRI is set to whoever called us */
+	if (BRI_TE_PTMP(ctrl)) {
+		/*
+		 * Point to the master to avoid stale pointer problems if
+		 * the TEI is removed later.
+		 */
+		cur->pri = master;
+	} else {
+		cur->pri = ctrl;
+	}
+
 	/* Append to end of list */
 	if (prev) {
 		prev->next = cur;
 	} else {
 		*master->callpool = cur;
 	}
-
-	/* PRI is set to whoever called us */
-	cur->pri = ctrl;
 
 	return cur;
 }
@@ -3203,7 +3213,6 @@ static void cleanup_and_free_call(struct q931_call *cur)
 {
 	stop_t303(cur);
 	pri_schedule_del(cur->pri, cur->retranstimer);
-	pri_schedule_del(cur->pri, cur->hold_timer);
 	pri_call_apdu_queue_cleanup(cur);
 	free(cur);
 }
@@ -3231,10 +3240,10 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 		if ((c && (cur == c)) || (!c && (cur->cr == cr))) {
 			if (slave) {
 				for (i = 0; i < Q931_MAX_TEI; i++) {
-					if (c->subcalls[i] == slave) {
-						pri_error(ctrl, "Destroying subcall %p of call %p at %d\n", slave, c, i);
+					if (cur->subcalls[i] == slave) {
+						pri_error(ctrl, "Destroying subcall %p of call %p at %d\n", slave, cur, i);
 						cleanup_and_free_call(slave);
-						c->subcalls[i] = NULL;
+						cur->subcalls[i] = NULL;
 						slaveidx = i;
 						break;
 					}
@@ -3242,7 +3251,7 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 			}
 
 			for (i = 0; i < Q931_MAX_TEI; i++) {
-				if (c->subcalls[i]) {
+				if (cur->subcalls[i]) {
 					pri_error(ctrl, "Subcall still present at %d\n", i);
 					slavesleft++;
 				}
@@ -3292,18 +3301,17 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 			 */
 
 			if ((slave && !slavesleft) &&
-				((c->pri_winner < 0) || (slave && slaveidx != c->pri_winner))) {
-				pri_create_fake_clearing(c, ctrl);
+				((cur->pri_winner < 0) || (slave && slaveidx != cur->pri_winner))) {
+				pri_create_fake_clearing(cur, ctrl);
 				return;
 			}
 
-			if (!slavesleft)
-				goto ultimate_destruction;
+			if (slavesleft) {
+				return;
+			}
 
-			return;
-
-ultimate_destruction:
-			if ((c->pri_winner > -1) && c->outboundbroadcast) {
+			/* Master call or normal call destruction. */
+			if ((cur->pri_winner > -1) && cur->outboundbroadcast) {
 				pri_error(ctrl, "Since we already had a winner, we should just be able to kill the call anyways\n");
 			}
 			if (prev)
@@ -3315,8 +3323,9 @@ ultimate_destruction:
 					"NEW_HANGUP DEBUG: Destroying the call, ourstate %s, peerstate %s, hold-state %s\n",
 					q931_call_state_str(cur->ourcallstate),
 					q931_call_state_str(cur->peercallstate),
-					q931_hold_state_str(cur->master_call->hold_state));
-			cleanup_and_free_call(c);
+					q931_hold_state_str(cur->hold_state));
+			pri_schedule_del(ctrl, cur->hold_timer);
+			cleanup_and_free_call(cur);
 			return;
 		}
 		prev = cur;
@@ -3586,7 +3595,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 	len = sizeof(buf) - len;
 
 	ctrl = call->pri;
-	if (q931_is_ptmp(ctrl) && (ctrl->localtype == PRI_CPE)) {
+	if (BRI_TE_PTMP(ctrl)) {
 		/*
 		 * Must use the BRI subchannel structure to send with the correct TEI.
 		 * Note: If the subchannel is NULL then there is no TEI assigned and
@@ -3596,7 +3605,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 	}
 	if (ctrl) {
 		pri_message(ctrl, "Sending message for call %p on %p TEI/SAPI %d/%d, call->pri is %p, TEI/SAPI %d/%d\n", call, ctrl, ctrl->tei, ctrl->sapi, call->pri, call->pri->tei, call->pri->sapi);
-		q931_xmit(call->pri, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
+		q931_xmit(ctrl, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
 	}
 	call->acked = 1;
 	return 0;
