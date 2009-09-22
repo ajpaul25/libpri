@@ -3033,7 +3033,19 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	prev = NULL;
 	while (cur) {
 		if (cur->cr == cr) {
-			goto done;
+			/* Found existing call. */
+			switch (ctrl->switchtype) {
+			case PRI_SWITCH_GR303_EOC:
+			case PRI_SWITCH_GR303_EOC_PATH:
+			case PRI_SWITCH_GR303_TMC:
+			case PRI_SWITCH_GR303_TMC_SWITCHING:
+				break;
+			default:
+				/* PRI is set to whoever called us */
+				cur->pri = ctrl;
+				break;
+			}
+			return cur;
 		}
 		prev = cur;
 		cur = cur->next;
@@ -3088,7 +3100,6 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 		*master->callpool = cur;
 	}
 
-done:
 	/* PRI is set to whoever called us */
 	cur->pri = ctrl;
 
