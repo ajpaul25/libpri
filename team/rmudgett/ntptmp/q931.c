@@ -4000,6 +4000,8 @@ static void pri_release_finaltimeout(void *data)
 	ctrl->ev.hangup.cref = c->cr;
 	ctrl->ev.hangup.call = c->master_call;
 	ctrl->ev.hangup.aoc_units = c->aoc_units;
+	ctrl->ev.hangup.call_held = NULL;
+	ctrl->ev.hangup.call_active = NULL;
 	libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 	pri_hangup(ctrl, c, c->cause);
 }
@@ -5527,7 +5529,7 @@ static void nt_ptmp_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, st
 			q931_set_subcall_winner(c);
 			*allow_event = 1;
 		} else {
-			/* Call clearing occurs of non selected calls occurs in
+			/* Call clearing of non selected calls occurs in
 			 * q931_set_subcall_winner() - All we need to do is make sure
 			 * that this connect is not acknowledged */
 			*allow_posthandle = 0;
@@ -5585,6 +5587,101 @@ static void q931_fill_facility_event(struct pri *ctrl, struct q931_call *call)
 		sizeof(ctrl->ev.facility.callingnum));
 	ctrl->ev.facility.callingpres = q931_party_id_presentation(&call->remote_id);
 	ctrl->ev.facility.callingplan = call->remote_id.number.plan;
+}
+
+/*!
+ * \internal
+ * \brief Find the active call given the held call.
+ *
+ * \param ctrl D channel controller.
+ * \param held_call Held call to help locate a compatible active call.
+ *
+ * \retval master-active-call on success.
+ * \retval NULL on error.
+ */
+static struct q931_call *q931_find_held_active_call(struct pri *ctrl, struct q931_call *held_call)
+{
+	struct pri *master;
+	struct q931_call *cur;
+	struct q931_call *winner;
+	struct q931_call *match;
+
+	match = NULL;
+	master = PRI_MASTER(ctrl);
+	for (cur = *master->callpool; cur; cur = cur->next) {
+		if (cur->hold_state == Q931_HOLD_STATE_IDLE) {
+			/* Found an active call. */
+			winner = q931_find_winning_call(cur);
+			if (!winner || (BRI_NT_PTMP(ctrl) && winner->pri != held_call->pri)) {
+				/* There is no winner or the active call does not go to the same TEI. */
+				continue;
+			}
+			switch (winner->ourcallstate) {
+			case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+			case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+			case Q931_CALL_STATE_CALL_DELIVERED:
+			case Q931_CALL_STATE_CALL_RECEIVED:
+			case Q931_CALL_STATE_ACTIVE:
+				break;
+			default:
+				/* Active call not in the right state. */
+				continue;
+			}
+			if (q931_party_number_cmp(&winner->remote_id.number,
+				&held_call->remote_id.number)) {
+				/* The remote party number does not match.  This is a weak match. */
+				match = cur;
+				continue;
+			}
+			/* Found an exact match. */
+			match = cur;
+			break;
+		}
+	}
+
+	return match;
+}
+
+/*!
+ * \internal
+ * \brief Find the held call given the active call.
+ *
+ * \param ctrl D channel controller.
+ * \param active_call Active call to help locate a compatible held call.
+ *
+ * \retval master-held-call on success.
+ * \retval NULL on error.
+ */
+static struct q931_call *q931_find_held_call(struct pri *ctrl, struct q931_call *active_call)
+{
+	struct pri *master;
+	struct q931_call *cur;
+	struct q931_call *winner;
+	struct q931_call *match;
+
+	match = NULL;
+	master = PRI_MASTER(ctrl);
+	for (cur = *master->callpool; cur; cur = cur->next) {
+		if (cur->hold_state == Q931_HOLD_STATE_CALL_HELD) {
+			/* Found a held call. */
+			winner = q931_find_winning_call(cur);
+			if (!winner || (BRI_NT_PTMP(ctrl) && winner->pri != active_call->pri)) {
+				/* There is no winner or the held call does not go to the same TEI. */
+				continue;
+			}
+			if (q931_party_number_cmp(&winner->remote_id.number,
+				&active_call->remote_id.number)) {
+				/* The remote party number does not match.  This is a weak match. */
+				match = cur;
+				continue;
+			}
+			/* Found an exact match. */
+			match = cur;
+			break;
+		}
+	}
+
+	return match;
 }
 
 /*!
@@ -5917,6 +6014,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			ctrl->ev.hangup.cref = c->cr;
 			ctrl->ev.hangup.call = c->master_call;
 			ctrl->ev.hangup.aoc_units = c->aoc_units;
+			ctrl->ev.hangup.call_held = NULL;
+			ctrl->ev.hangup.call_active = NULL;
 			libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 			/* Free resources */
 			UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
@@ -5948,6 +6047,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.hangup.cref = c->cr;
 		ctrl->ev.hangup.call = c->master_call;
 		ctrl->ev.hangup.aoc_units = c->aoc_units;
+		ctrl->ev.hangup.call_held = NULL;
+		ctrl->ev.hangup.call_active = NULL;
 		libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
 		/* Free resources */
@@ -5986,6 +6087,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.hangup.cref = c->cr;
 		ctrl->ev.hangup.call = c->master_call;
 		ctrl->ev.hangup.aoc_units = c->aoc_units;
+		ctrl->ev.hangup.call_held = NULL;
+		ctrl->ev.hangup.call_active = NULL;
 		libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
 		/* Don't send release complete if they send us release 
@@ -6007,6 +6110,52 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
+
+		/*
+		 * Determine if there are any calls that can be proposed for
+		 * a transfer of held call on disconnect.
+		 */
+		if (c->master_call->hold_state == Q931_HOLD_STATE_CALL_HELD) {
+			/* Held call is being hung up first. */
+			ctrl->ev.hangup.call_held = c->master_call;
+			ctrl->ev.hangup.call_active = q931_find_held_active_call(ctrl, c);
+		} else {
+			/* Active call is being hung up first. */
+			ctrl->ev.hangup.call_held = NULL;
+			ctrl->ev.hangup.call_active = NULL;
+			if (q931_find_winning_call(c) == c) {
+				/*
+				 * Only a normal call or the winning call of a broadcast SETUP
+				 * can participate in a transfer of held call on disconnet.
+				 */
+				switch (c->ourcallstate) {
+				case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+				case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+				case Q931_CALL_STATE_CALL_DELIVERED:
+				case Q931_CALL_STATE_CALL_RECEIVED:
+				case Q931_CALL_STATE_ACTIVE:
+					ctrl->ev.hangup.call_active = c->master_call;
+					ctrl->ev.hangup.call_held = q931_find_held_call(ctrl, c);
+					break;
+				default:
+					break;
+				}
+			}
+		}
+		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+			if (ctrl->ev.hangup.call_held) {
+				pri_message(ctrl, "-- Found held call: %p cref:%d\n",
+					ctrl->ev.hangup.call_held, ctrl->ev.hangup.call_held->cr);
+			}
+			if (ctrl->ev.hangup.call_active) {
+				pri_message(ctrl, "-- Found active call: %p cref:%d\n",
+					ctrl->ev.hangup.call_active, ctrl->ev.hangup.call_active->cr);
+			}
+			if (ctrl->ev.hangup.call_held && ctrl->ev.hangup.call_active) {
+				pri_message(ctrl, "-- Transfer held call on disconnect possible.\n");
+			}
+		}
+
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_DISCONNECT_INDICATION);
 		c->peercallstate = Q931_CALL_STATE_DISCONNECT_REQUEST;
 		c->sendhangupack = 1;
@@ -6435,6 +6584,8 @@ static int pri_internal_clear(void *data)
 	ctrl->ev.hangup.cref = c->cr;          		
 	ctrl->ev.hangup.call = c->master_call;
 	ctrl->ev.hangup.aoc_units = c->aoc_units;
+	ctrl->ev.hangup.call_held = NULL;
+	ctrl->ev.hangup.call_active = NULL;
 	libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 
 	pri_error(ctrl, "clearing, alive %d, hangupack %d\n", c->alive, c->sendhangupack);
