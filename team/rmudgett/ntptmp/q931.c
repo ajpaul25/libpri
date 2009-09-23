@@ -5618,13 +5618,14 @@ static struct q931_call *q931_find_held_active_call(struct pri *ctrl, struct q93
 			}
 			switch (winner->ourcallstate) {
 			case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
-			case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 			case Q931_CALL_STATE_CALL_DELIVERED:
 			case Q931_CALL_STATE_CALL_RECEIVED:
+			case Q931_CALL_STATE_CONNECT_REQUEST:
+			case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 			case Q931_CALL_STATE_ACTIVE:
 				break;
 			default:
-				/* Active call not in the right state. */
+				/* Active call not in a good state to transfer. */
 				continue;
 			}
 			if (q931_party_number_cmp(&winner->remote_id.number,
@@ -5667,6 +5668,18 @@ static struct q931_call *q931_find_held_call(struct pri *ctrl, struct q931_call 
 			winner = q931_find_winning_call(cur);
 			if (!winner || (BRI_NT_PTMP(ctrl) && winner->pri != active_call->pri)) {
 				/* There is no winner or the held call does not go to the same TEI. */
+				continue;
+			}
+			switch (winner->ourcallstate) {
+			case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+			case Q931_CALL_STATE_CALL_DELIVERED:
+			case Q931_CALL_STATE_CALL_RECEIVED:
+			case Q931_CALL_STATE_CONNECT_REQUEST:
+			case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+			case Q931_CALL_STATE_ACTIVE:
+				break;
+			default:
+				/* Held call not in a good state to transfer. */
 				continue;
 			}
 			if (q931_party_number_cmp(&winner->remote_id.number,
@@ -6115,32 +6128,33 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		 * Determine if there are any calls that can be proposed for
 		 * a transfer of held call on disconnect.
 		 */
-		if (c->master_call->hold_state == Q931_HOLD_STATE_CALL_HELD) {
-			/* Held call is being hung up first. */
-			ctrl->ev.hangup.call_held = c->master_call;
-			ctrl->ev.hangup.call_active = q931_find_held_active_call(ctrl, c);
-		} else {
-			/* Active call is being hung up first. */
-			ctrl->ev.hangup.call_held = NULL;
-			ctrl->ev.hangup.call_active = NULL;
-			if (q931_find_winning_call(c) == c) {
-				/*
-				 * Only a normal call or the winning call of a broadcast SETUP
-				 * can participate in a transfer of held call on disconnet.
-				 */
-				switch (c->ourcallstate) {
-				case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
-				case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
-				case Q931_CALL_STATE_CALL_DELIVERED:
-				case Q931_CALL_STATE_CALL_RECEIVED:
-				case Q931_CALL_STATE_ACTIVE:
+		ctrl->ev.hangup.call_held = NULL;
+		ctrl->ev.hangup.call_active = NULL;
+		switch (c->ourcallstate) {
+		case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+		case Q931_CALL_STATE_CALL_DELIVERED:
+		case Q931_CALL_STATE_CALL_RECEIVED:
+		case Q931_CALL_STATE_CONNECT_REQUEST:
+		case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+		case Q931_CALL_STATE_ACTIVE:
+			if (c->master_call->hold_state == Q931_HOLD_STATE_CALL_HELD) {
+				/* Held call is being disconnected first. */
+				ctrl->ev.hangup.call_held = c->master_call;
+				ctrl->ev.hangup.call_active = q931_find_held_active_call(ctrl, c);
+			} else {
+				/* Active call is being disconnected first. */
+				if (q931_find_winning_call(c) == c) {
+					/*
+					 * Only a normal call or the winning call of a broadcast SETUP
+					 * can participate in a transfer of held call on disconnet.
+					 */
 					ctrl->ev.hangup.call_active = c->master_call;
 					ctrl->ev.hangup.call_held = q931_find_held_call(ctrl, c);
-					break;
-				default:
-					break;
 				}
 			}
+			break;
+		default:
+			break;
 		}
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 			if (ctrl->ev.hangup.call_held) {
