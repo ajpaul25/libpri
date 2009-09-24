@@ -623,10 +623,22 @@ typedef struct pri_event_hangup {
 	int channel;				/* Channel requested */
 	int cause;
 	int cref;
-	q931_call *call;			/* Opaque call pointer */
+	q931_call *call;			/* Opaque call pointer of call hanging up. */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
 	struct pri_subcommands *subcmds;
+	/*!
+	 * \brief Opaque held call pointer for possible transfer to active call.
+	 * \note The call_held and call_active pointers must not be NULL if
+	 * transfer held call on disconnect is available.
+	 */
+	q931_call *call_held;
+	/*!
+	 * \brief Opaque active call pointer for possible transfer with held call.
+	 * \note The call_held and call_active pointers must not be NULL if
+	 * transfer held call on disconnect is available.
+	 */
+	q931_call *call_active;
 } pri_event_hangup;
 
 typedef struct pri_event_restart_ack {
@@ -863,7 +875,24 @@ int pri_redirecting_update(struct pri *pri, q931_call *call, const struct pri_pa
 
 /* Hangup a call */
 #define PRI_HANGUP
-int pri_hangup(struct pri *pri, q931_call *call, int cause);
+
+#define HANGUP_DEBUG
+
+#ifdef HANGUP_DEBUG
+#define pri_hangup(a, b, c) \
+	__debug_pri_hangup((a), (b), (c), __FUNCTION__)
+
+
+#else
+
+#define pri_hangup(a, b, c) \
+	__debug_pri_hangup((a), (b), (c), __FUNCTION__)
+
+#endif
+
+int __normal_pri_hangup(struct pri *pri, q931_call *call, int cause);
+
+int __debug_pri_hangup(struct pri *pri, q931_call *call, int cause, const char *caller);
 
 #define PRI_DESTROYCALL
 void pri_destroycall(struct pri *pri, q931_call *call);

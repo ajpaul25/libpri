@@ -300,6 +300,7 @@ struct pri_sr {
 /* Internal switch types */
 #define PRI_SWITCH_GR303_EOC_PATH	19
 #define PRI_SWITCH_GR303_TMC_SWITCHING	20
+#define Q931_MAX_TEI	8
 
 struct apdu_event {
 	int message;			/* What message to send the ADPU in */
@@ -488,6 +489,18 @@ struct q931_call {
 							   -1 - No reverse charging
 							    1 - Reverse charging
 							0,2-7 - Reserved for future use */
+	int t303_timer;
+	int t303_expirycnt;
+
+	int hangupinitiated;
+	int outboundbroadcast;
+	int performing_fake_clearing;
+	/* These valid in slave call only */
+	struct q931_call *master_call;
+
+	/* These valid in master call only */
+	struct q931_call *subcalls[Q931_MAX_TEI];
+	int pri_winner;
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
@@ -531,5 +544,36 @@ int q931_is_ptmp(const struct pri *ctrl);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
+
+static inline struct pri * PRI_MASTER(struct pri *mypri)
+{
+	struct pri *pri = mypri;
+	
+	if (!pri)
+		return NULL;
+
+	while (pri->master)
+		pri = pri->master;
+
+	return pri;
+}
+
+static inline int BRI_NT_PTMP(struct pri *mypri)
+{
+	struct pri *pri;
+
+	pri = PRI_MASTER(mypri);
+
+	return pri->bri && (((pri)->localtype == PRI_NETWORK) && ((pri)->tei == Q921_TEI_GROUP));
+}
+
+static inline int BRI_TE_PTMP(struct pri *mypri)
+{
+	struct pri *pri;
+
+	pri = PRI_MASTER(mypri);
+
+	return pri->bri && (((pri)->localtype == PRI_CPE) && ((pri)->tei == Q921_TEI_GROUP));
+}
 
 #endif

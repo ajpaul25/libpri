@@ -152,6 +152,7 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 	ctrl->timers[PRI_TIMER_T313] = 4 * 1000;	/* Wait for CONNECT acknowledge, CPE side only */
 	ctrl->timers[PRI_TIMER_TM20] = 2500;		/* Max time awaiting XID response - Q.921 Appendix IV */
 	ctrl->timers[PRI_TIMER_NM20] = 3;			/* Number of XID retransmits - Q.921 Appendix IV */
+	ctrl->timers[PRI_TIMER_T303] = 4 * 1000;			/* Length between SETUP retransmissions and timeout */
 
 	ctrl->timers[PRI_TIMER_T_HOLD] = 4 * 1000;	/* Wait for HOLD request response. */
 	ctrl->timers[PRI_TIMER_T_RETRIEVE] = 4 * 1000;/* Wait for RETRIEVE request response. */
@@ -228,7 +229,7 @@ static int __pri_write(struct pri *pri, void *buf, int buflen)
 /* Pass in the master for this function */
 void __pri_free_tei(struct pri * p)
 {
-	free (p);
+	free(p);
 }
 
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri)
@@ -645,6 +646,8 @@ static void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struc
 int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pri_party_connected_line *connected)
 {
 	struct q931_party_id party_id;
+	unsigned idx;
+	struct q931_call *subcall;
 
 	if (!ctrl || !call) {
 		return -1;
@@ -657,6 +660,16 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 		return 0;
 	}
 	call->local_id = party_id;
+
+	/* Update all subcalls with new local_id. */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->local_id = party_id;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_CALL_INITIATED:
@@ -699,6 +712,9 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 
 int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_party_redirecting *redirecting)
 {
+	unsigned idx;
+	struct q931_call *subcall;
+
 	if (!ctrl || !call) {
 		return -1;
 	}
@@ -707,6 +723,21 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 	pri_copy_party_id_to_q931(&call->redirecting.to, &redirecting->to);
 	q931_party_id_fixup(ctrl, &call->redirecting.to);
 	call->redirecting.reason = redirecting->reason;
+
+	/*
+	 * Update all subcalls with new redirecting.to information and reason.
+	 * I do not think we will ever have any subcalls when this data is relevant,
+	 * but update it just in case.
+	 */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->redirecting.to = call->redirecting.to;
+				subcall->redirecting.reason = redirecting->reason;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_NULL:
@@ -846,14 +877,23 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	}
 }
 
-int pri_hangup(struct pri *pri, q931_call *call, int cause)
+int __normal_pri_hangup(struct pri *pri, q931_call *call, int cause)
 {
 	if (!pri || !call)
 		return -1;
 	if (cause == -1)
 		/* normal clear cause */
 		cause = 16;
+
 	return q931_hangup(pri, call, cause);
+}
+
+int __debug_pri_hangup(struct pri *pri, q931_call *call, int cause, const char *caller)
+{
+	if (caller)
+		pri_error(pri, "%s:pri_hangup(%p, %p, %d)\n", caller, pri, call, cause);
+
+	return __normal_pri_hangup(pri, call, cause);
 }
 
 int pri_reset(struct pri *pri, int channel)
@@ -1022,7 +1062,7 @@ void pri_message(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_message)
-		__pri_message(pri, tmp);
+		__pri_message(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stdout);
 }
@@ -1035,7 +1075,7 @@ void pri_error(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_error)
-		__pri_error(pri, tmp);
+		__pri_error(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stderr);
 }
