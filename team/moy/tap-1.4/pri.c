@@ -1187,6 +1187,16 @@ int pri_set_crv(struct pri *pri, q931_call *call, int crv, int callmode)
 	return q931_call_setcrv(pri, call, crv, callmode);
 }
 
+int pri_get_layer1(struct pri *pri, q931_call *call)
+{
+	return q931_call_getlayer1(pri, call);
+}
+
+int pri_get_transcap(struct pri *pri, q931_call *call)
+{
+	return q931_call_gettranscap(pri, call);
+}
+
 void pri_enslave(struct pri *master, struct pri *slave)
 {
 	if (master && slave)

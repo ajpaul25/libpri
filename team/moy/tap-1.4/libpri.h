@@ -827,6 +827,12 @@ int pri_get_crv(struct pri *pri, q931_call *call, int *callmode);
 /* Retrieve CRV reference for GR-303 calls.  CRV must be >0, call mode should be 0 */
 int pri_set_crv(struct pri *pri, q931_call *call, int crv, int callmode);
 
+/* Retrieve call current layer 1 information */
+int pri_get_layer1(struct pri *pri, q931_call *call);
+
+/* Retrieve call current trans capability */
+int pri_get_transcap(struct pri *pri, q931_call *call);
+
 /* How long until you need to poll for a new event */
 struct timeval *pri_schedule_next(struct pri *pri);
 

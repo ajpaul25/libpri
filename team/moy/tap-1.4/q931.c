@@ -4328,8 +4328,7 @@ int q931_read_event(struct pri *ctrl, q931_h *h, int len)
 
 	cref = q931_cr(h);
 
-	/* XXX FIXME: when does the call structure will be freed???? when!? XXX */	
-	c = q931_getcall(ctrl, cref);
+	c = q931_getcall(ctrl, cref & 0x7FFF);
 	if (!c) {
 		pri_error(ctrl, "Unable to locate call %d\n", cref);
 		return -1;
@@ -5323,3 +5322,15 @@ int q931_call_setcrv(struct pri *ctrl, q931_call *call, int crv, int callmode)
 	call->cr |= (callmode & 0x7);
 	return 0;
 }
+
+int q931_call_getlayer1(struct pri *ctrl, q931_call *call)
+{
+	return call->userl1;
+}
+
+int q931_call_gettranscap(struct pri *ctrl, q931_call *call)
+{
+	return call->transcapability;
+}
+
+
