@@ -70,33 +70,13 @@ static int pri_open(char *dev)
 
 static void dump_packet(struct pri *pri, char *buf, int len, int txrx)
 {
-	//q921_h *h = (q921_h *)buf;
+	q921_h *h = (q921_h *)buf;
 
-	//q921_dump(pri, h, len, 1, txrx);
+	q921_dump(pri, h, len, 1, txrx);
 	
-	// Check if data is long enough and if this is a Q931 frame
-	if ((len < 5) || ((int)buf[4] != 8)) {
-		return;
-	}
-	q931_dump(pri, (void*)(buf + 4), len - 4 - 2, txrx);
-
-#if 0
-	switch (h->h.data[0] & Q921_FRAMETYPE_MASK) {
-	case 0:
-	case 2:
-		q931_dump(pri, (q931_h *)(h->i.data), len - 4 - 2 /* FCS */, txrx);
-		break;
-	default:
-		break;
-	}
-
-	// serch for 0 in the first 2 bits (which __q921_receive_qualified handles just as 2, frame 3 can also have q931 msg though)
 	if (!((h->h.data[0] & Q921_FRAMETYPE_MASK) & 0x3)) {
-		// case 3 h->h.data[0] & Q921_FRAMETYPE_MASK, res = q931_receive(pri, (q931_h *) h->u.data, len - 3);
 		q931_dump(pri, (q931_h *)(h->i.data), len - 4 - 2 /* FCS */, txrx);
 	}
-#endif
-
 	fflush(stdout);
 	fflush(stderr);
 }
