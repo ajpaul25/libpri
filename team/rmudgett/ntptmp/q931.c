@@ -3221,16 +3221,20 @@ static void cleanup_and_free_call(struct q931_call *cur)
 
 static void pri_create_fake_clearing(struct q931_call *c, struct pri *master);
 
-static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
+void q931_destroycall(struct pri *ctrl, q931_call *c)
 {
-	q931_call *cur, *prev;
-	q931_call *slave = NULL;
-	int i, slavesleft = 0;
-	int slaveidx = -1;
+	q931_call *cur;
+	q931_call *prev;
+	q931_call *slave;
+	int i;
+	int slavesleft;
+	int slaveidx;
 
 	if (c->master_call != c) {
 		slave = c;
 		c = slave->master_call;
+	} else {
+		slave = NULL;
 	}
 
 	/* For destroying, make sure we are using the master span, since it maintains the call pool */
@@ -3238,12 +3242,16 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 
 	prev = NULL;
 	cur = *ctrl->callpool;
-	while(cur) {
-		if ((c && (cur == c)) || (!c && (cur->cr == cr))) {
+	while (cur) {
+		if (cur == c) {
+			slaveidx = -1;
 			if (slave) {
 				for (i = 0; i < Q931_MAX_TEI; i++) {
 					if (cur->subcalls[i] == slave) {
-						pri_error(ctrl, "Destroying subcall %p of call %p at %d\n", slave, cur, i);
+						if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+							pri_message(ctrl, "Destroying subcall %p of call %p at %d\n",
+								slave, cur, i);
+						}
 						cleanup_and_free_call(slave);
 						cur->subcalls[i] = NULL;
 						slaveidx = i;
@@ -3252,9 +3260,12 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 				}
 			}
 
+			slavesleft = 0;
 			for (i = 0; i < Q931_MAX_TEI; i++) {
 				if (cur->subcalls[i]) {
-					pri_error(ctrl, "Subcall still present at %d\n", i);
+					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+						pri_message(ctrl, "Subcall still present at %d\n", i);
+					}
 					slavesleft++;
 				}
 			}
@@ -3278,28 +3289,28 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 			 * 1.) None.
 			 * 2.) None.
 			 * 3.) We hang up a call so quickly that it hangs up before other competing lines finish hangup sequence
-			 * 	Subcalls present still even though we have hung up the winner.
+			 *  Subcalls present still even though we have hung up the winner.
 			 *
-			 * 	So, we could say:
-			 * 	If, when the library user hangs up the master call, and there are more than one subcall up, we fake clear
-			 * 	regardless of whether or not we drop down to one subcall left in the clearing process.
+			 *  So, we could say:
+			 *  If, when the library user hangs up the master call, and there are more than one subcall up, we fake clear
+			 *  regardless of whether or not we drop down to one subcall left in the clearing process.
 			 *
-			 * 	If there are only one call up, we mirror what it does.
+			 *  If there are only one call up, we mirror what it does.
 			 *
-			 * 	OR
+			 *  OR
 			 *
-			 * 	Phase 2. them clearing:
-			 * 	For handling of Phase 2 (indicated by not running and pri_winner not present):
-			 * 	We create a fake hangup sequence after all the subcalls have been destroyed and after
+			 *  Phase 2. them clearing:
+			 *  For handling of Phase 2 (indicated by not running and pri_winner not present):
+			 *  We create a fake hangup sequence after all the subcalls have been destroyed and after
 			 *
-			 * 	"" us clearing:
-			 * 	For we need to start the fake clearing, but it needs to be half of a fake clearing, not a full one (since we already had a hangup).
+			 *  "" us clearing:
+			 *  For we need to start the fake clearing, but it needs to be half of a fake clearing, not a full one (since we already had a hangup).
 			 *
-			 * 	For handling of Phase 3 plus exceptions:
+			 *  For handling of Phase 3 plus exceptions:
 			 *
-			 * 	If pri_winner exists, we mirror him in terms of events (which provides our hangup sequence), and when we have the complete
-			 * 	hangup sequence completed (destroy called on master call), if there still exist non winner subcalls at this time, we declare the master
-			 * 	call as dead and free it when the last subcall clears.
+			 *  If pri_winner exists, we mirror him in terms of events (which provides our hangup sequence), and when we have the complete
+			 *  hangup sequence completed (destroy called on master call), if there still exist non winner subcalls at this time, we declare the master
+			 *  call as dead and free it when the last subcall clears.
 			 */
 
 			if ((slave && !slavesleft) &&
@@ -3314,7 +3325,10 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 
 			/* Master call or normal call destruction. */
 			if ((cur->pri_winner > -1) && cur->outboundbroadcast) {
-				pri_error(ctrl, "Since we already had a winner, we should just be able to kill the call anyways\n");
+				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+					pri_message(ctrl,
+						"Since we already had a winner, we should just be able to kill the call anyways\n");
+				}
 			}
 			if (prev)
 				prev->next = cur->next;
@@ -3333,22 +3347,7 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 		prev = cur;
 		cur = cur->next;
 	}
-	pri_error(ctrl, "Can't destroy call %d!\n", cr);
-}
-
-#if 0
-static void q931_destroycall(struct pri *ctrl, int cr)
-{
-	q931_destroy(ctrl, cr, NULL);
-}
-#endif
-
-
-void __q931_destroycall(struct pri *ctrl, q931_call *call) 
-{
-	if (ctrl && call) {
-		q931_destroy(ctrl, 0, call);
-	}
+	pri_error(ctrl, "Can't destroy call %p cref:%d!\n", c, c->cr);
 }
 
 static int add_ie(struct pri *ctrl, q931_call *call, int msgtype, int ie, q931_ie *iet, int maxlen, int *codeset)
@@ -3613,7 +3612,13 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 		ctrl = ctrl->subchannel;
 	}
 	if (ctrl) {
-		pri_message(ctrl, "Sending message for call %p on %p TEI/SAPI %d/%d, call->pri is %p, TEI/SAPI %d/%d\n", call, ctrl, ctrl->tei, ctrl->sapi, call->pri, call->pri->tei, call->pri->sapi);
+		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+			pri_message(ctrl,
+				"Sending message for call %p on %p TEI/SAPI %d/%d, call->pri is %p, TEI/SAPI %d/%d\n",
+				call,
+				ctrl, ctrl->tei, ctrl->sapi,
+				call->pri, call->pri->tei, call->pri->sapi);
+		}
 		q931_xmit(ctrl, h, len, 1, (msgtype == Q931_SETUP) ? 1 : 0);
 	}
 	call->acked = 1;
@@ -4301,7 +4306,7 @@ static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 		res = send_message(ctrl, c, Q931_RELEASE_COMPLETE, release_complete_ies);
 	c->alive = 0;
 	/* release the structure */
-	res += pri_hangup(ctrl,c,cause);
+	res += pri_hangup(ctrl, c, cause);
 	return res;
 }
 
@@ -4869,20 +4874,22 @@ static int __q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	case Q931_CALL_STATE_NULL:
 		if (c->peercallstate == Q931_CALL_STATE_NULL)
 			/* free the resources if we receive or send REL_COMPL */
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 		else if (c->peercallstate == Q931_CALL_STATE_RELEASE_REQUEST)
 			q931_release_complete(ctrl,c,cause);
 		break;
 	case Q931_CALL_STATE_CALL_INITIATED:
-	if (BRI_NT_PTMP(ctrl) && (c->master_call == c) && c->outboundbroadcast && t303_was_running) {
-		//c->fakeclearing = 1;
-		//c->alive = 0;
-		/* We need to fake a received clearing sequence in this case... */
-		pri_error(ctrl, "Faking clearing\n");
-		pri_create_fake_clearing(c, PRI_MASTER(ctrl));
-		/* This means that we never got a response from a TEI */
-		return 0;
-	}
+		if (c->outboundbroadcast && c->master_call == c && t303_was_running) {
+			//c->fakeclearing = 1;
+			//c->alive = 0;
+			/* We need to fake a received clearing sequence in this case... */
+			if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+				pri_message(ctrl, "Faking clearing\n");
+			}
+			pri_create_fake_clearing(c, PRI_MASTER(ctrl));
+			/* This means that we never got a response from a TEI */
+			return 0;
+		}
 		/* we sent SETUP */
 	case Q931_CALL_STATE_OVERLAP_SENDING:
 		/* received SETUP_ACKNOWLEDGE */
@@ -4972,10 +4979,11 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 {
 	int i;
 
-	/* Master is called with hangup - initiate hangup with slaves */
-	if (BRI_NT_PTMP(ctrl) && call->master_call->outboundbroadcast) {
+	if (call->master_call->outboundbroadcast) {
 		if (call->master_call == call) {
 			int slaves = 0;
+
+			/* Master is called with hangup - initiate hangup with slaves */
 			for (i = 0; i < Q931_MAX_TEI; i++) {
 				if (call->subcalls[i]) {
 					slaves++;
@@ -4984,7 +4992,10 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 					} else {
 						initiate_hangup_if_needed(call->subcalls[i]->pri, call->subcalls[i], cause);
 					}
-					pri_error(ctrl, "%s: Hanging up %d, winner %d\n", __FUNCTION__, i, call->master_call->pri_winner);
+					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+						pri_message(ctrl, "%s: Hanging up %d, winner %d\n", __FUNCTION__,
+							i, call->master_call->pri_winner);
+					}
 				}
 			}
 
@@ -4993,14 +5004,20 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 			if ((!slaves && (call->master_call->pri_winner < 0)) || (call->performing_fake_clearing)) {
 				__q931_hangup(ctrl, call, cause);
 			}
-			pri_error(ctrl, "%s: Slaves %d\n", __FUNCTION__, slaves);
+			if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+				pri_message(ctrl, "%s: Slaves %d\n", __FUNCTION__, slaves);
+			}
 			return 0;
 		} else {
-			pri_error(ctrl, "%s: Slave hangup\n", __FUNCTION__);
+			if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+				pri_message(ctrl, "%s: Slave hangup\n", __FUNCTION__);
+			}
 			return __q931_hangup(ctrl, call, cause);
 		}
 	} else {
-		pri_error(ctrl, "%s: other hangup\n", __FUNCTION__);
+		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+			pri_message(ctrl, "%s: other hangup\n", __FUNCTION__);
+		}
 		return __q931_hangup(ctrl, call, cause);
 	}
 	return 0;
@@ -5173,19 +5190,19 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		pri_error(ctrl, "!! Don't know how to pre-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
 		q931_status(ctrl,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
 		if (c->newcall) 
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 		return -1;
 	}
 	return 0;
 }
 
-static struct q931_call * q931_get_subcall_winner(struct q931_call *call)
+static struct q931_call *q931_get_subcall_winner(struct q931_call *call)
 {
 	if (call->master_call->pri_winner < 0) {
 		return NULL;
-	} else 
+	} else {
 		return call->subcalls[call->pri_winner];
-
+	}
 }
 
 static void initiate_hangup_if_needed(struct pri *pri, q931_call *call, int cause)
@@ -5201,8 +5218,8 @@ static int q931_get_subcall_count(struct q931_call *call)
 {
 	int count = 0;
 	int i;
-	call = call->master_call;
 
+	call = call->master_call;
 	for (i = 0; i < Q931_MAX_TEI; i++) {
 		if (call->subcalls[i])
 			count++;
@@ -5223,9 +5240,8 @@ static void q931_set_subcall_winner(struct q931_call *subcall)
 			realcall->pri_winner = i;
 		}
 	}
-
 	if (realcall->pri_winner < 0) {
-		pri_message(subcall->pri, "We should always find the winner in the list!\n");
+		pri_error(subcall->pri, "We should always find the winner in the list!\n");
 		return;
 	}
 
@@ -5237,42 +5253,54 @@ static void q931_set_subcall_winner(struct q931_call *subcall)
 	}
 }
 
-static struct q931_call * q931_get_subcall(struct q931_call *call, struct pri *ctrl)
+static struct q931_call *q931_get_subcall(struct pri *ctrl, struct q931_call *master_call)
 {
 	int i;
-	struct q931_call *cur = NULL;
+	struct q931_call *cur;
 	int firstfree = -1;
 
 	/* First try to locate our subcall */
 	for (i = 0; i < Q931_MAX_TEI; i++) {
-		if (call->subcalls[i]) {
-			if (call->subcalls[i]->pri == ctrl) {
-				return call->subcalls[i];
+		if (master_call->subcalls[i]) {
+			if (master_call->subcalls[i]->pri == ctrl) {
+				return master_call->subcalls[i];
 			}
-		} else if (firstfree == -1)
+		} else if (firstfree == -1) {
 			firstfree = i;
+		}
 	}
-
 	if (firstfree < 0) {
-		pri_error(ctrl, "Tried to add more than %d TEIs to call and failed\n", Q931_MAX_TEI);
+		pri_error(ctrl, "Tried to add more than %d TEIs to call and failed\n",
+			Q931_MAX_TEI);
 		return NULL;
 	}
 
+	/* Create new subcall. */
 	cur = malloc(sizeof(*cur));
 	if (!cur) {
 		pri_error(ctrl, "Unable to allocate call\n");
 		return NULL;
 	}
-	*cur = *call;
-	call->subcalls[firstfree] = cur;
+	*cur = *master_call;
 	cur->pri = ctrl;
-	cur->master_call = call;
-	/* T303 should only be on on the master call */
-	cur->t303_timer = 0;
-	pri_error(ctrl, "Adding subcall %p for TEI %d to call %p at position %d\n", cur, ctrl->tei, call, firstfree);
+	cur->next = NULL;
+	cur->apdus = NULL;
+	cur->bridged_call = NULL;
+	//cur->master_call = master_call; /* We get this assignment for free. */
+	for (i = 0; i < Q931_MAX_TEI; ++i) {
+		cur->subcalls[i] = NULL;
+	}
+	cur->t303_timer = 0;/* T303 should only be on on the master call */
+	cur->hold_timer = 0;
+	cur->retranstimer = 0;
+	master_call->subcalls[firstfree] = cur;
+
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "Adding subcall %p for TEI %d to call %p at position %d\n",
+			cur, ctrl->tei, master_call, firstfree);
+	}
 	/* Should only get here if the TEI is not found */
 	return cur;
-
 }
 
 int q931_receive(struct pri *ctrl, q931_h *h, int len)
@@ -5312,22 +5340,29 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		q931_xmit(ctrl, h, len, 1, 0);
 		return 0;
 	}
+
 	cref = q931_cr(h);
 	c = q931_getcall(ctrl, cref);
 	if (!c) {
 		pri_error(ctrl, "Unable to locate call %d\n", cref);
 		return -1;
 	}
-
-	if (BRI_NT_PTMP(ctrl) && (ctrl != PRI_MASTER(ctrl)) && !c->newcall && c->outboundbroadcast) {
-		c = q931_get_subcall(c, ctrl);
+	if (c->master_call->outboundbroadcast && ctrl != PRI_MASTER(ctrl)) {
+		c = q931_get_subcall(ctrl, c->master_call);
 		if (!c) {
-			pri_error(ctrl, "Unable to locate subcall %d\n", cref);
+			pri_error(ctrl, "Unable to locate subcall for %d\n", cref);
 			return -1;
 		}
 	}
 
-	pri_message(ctrl, "Received message for call %p on %p TEI/SAPI %d/%d, call->pri is %p TEI/SAPI %d/%d\n", c, ctrl, ctrl->tei, ctrl->sapi, c->pri, c->pri->tei, c->pri->sapi);
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl,
+			"Received message for call %p on %p TEI/SAPI %d/%d, call->pri is %p TEI/SAPI %d/%d\n",
+			c,
+			ctrl, ctrl->tei, ctrl->sapi,
+			c->pri, c->pri->tei, c->pri->sapi);
+	}
+
 	/* Preliminary handling */
 	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
 		prepare_to_handle_maintenance_message(ctrl, mh, c);
@@ -5429,7 +5464,7 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 	} else {
 		int allow_event = 1, allow_posthandle = 1;
 
-		if (BRI_NT_PTMP(ctrl) && c->master_call->outboundbroadcast) {
+		if (c->master_call->outboundbroadcast) {
 			nt_ptmp_handle_q931_message(ctrl, mh, c, &allow_event, &allow_posthandle);
 		}
 
@@ -5723,7 +5758,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 	case Q931_RESTART:
 		if (missingmand) {
 			q931_status(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 			break;
 		}
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_RESTART);
@@ -5943,7 +5978,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 	case Q931_PROGRESS:
 		if (missingmand) {
 			q931_status(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 			break;
 		}
 		ctrl->ev.e = PRI_EVENT_PROGRESS;
@@ -6000,7 +6035,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 	case Q931_STATUS:
 		if (missingmand) {
 			q931_status(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 			break;
 		}
 		if (c->newcall) {
@@ -6569,7 +6604,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		pri_error(ctrl, "!! Don't know how to post-handle message type %s (%d)\n", msg2str(mh->msg), mh->msg);
 		q931_status(ctrl,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
 		if (c->newcall) 
-			__q931_destroycall(ctrl, c);
+			pri_destroycall(ctrl, c);
 		return -1;
 	}
 	return 0;
@@ -6604,7 +6639,9 @@ static int pri_internal_clear(void *data)
 	ctrl->ev.hangup.call_active = NULL;
 	libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 
-	pri_error(ctrl, "clearing, alive %d, hangupack %d\n", c->alive, c->sendhangupack);
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "clearing, alive %d, hangupack %d\n", c->alive, c->sendhangupack);
+	}
 	/* Free resources */
 	if (c->alive) {
 		ctrl->ev.e = PRI_EVENT_HANGUP;
