@@ -875,24 +875,7 @@ int pri_redirecting_update(struct pri *pri, q931_call *call, const struct pri_pa
 
 /* Hangup a call */
 #define PRI_HANGUP
-
-#define HANGUP_DEBUG
-
-#ifdef HANGUP_DEBUG
-#define pri_hangup(a, b, c) \
-	__debug_pri_hangup((a), (b), (c), __FUNCTION__)
-
-
-#else
-
-#define pri_hangup(a, b, c) \
-	__debug_pri_hangup((a), (b), (c), __FUNCTION__)
-
-#endif
-
-int __normal_pri_hangup(struct pri *pri, q931_call *call, int cause);
-
-int __debug_pri_hangup(struct pri *pri, q931_call *call, int cause, const char *caller);
+int pri_hangup(struct pri *pri, q931_call *call, int cause);
 
 #define PRI_DESTROYCALL
 void pri_destroycall(struct pri *pri, q931_call *call);

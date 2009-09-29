@@ -555,7 +555,10 @@ int q921_transmit_iframe(struct pri *pri, void *buf, int len, int cr)
 			pri->txqueue = f;
 		/* Immediately transmit unless we're in a recovery state, or the window
 		   size is too big */
-		pri_message(pri, "TEI/SAPI: %d/%d state %d retran %d busy %d\n", pri->tei, pri->sapi, pri->q921_state, pri->retrans, pri->busy);
+		if (pri->debug & PRI_DEBUG_Q921_DUMP) {
+			pri_message(pri, "TEI/SAPI: %d/%d state %d retran %d busy %d\n",
+				pri->tei, pri->sapi, pri->q921_state, pri->retrans, pri->busy);
+		}
 		if ((pri->q921_state == Q921_LINK_CONNECTION_ESTABLISHED) && (!pri->retrans && !pri->busy)) {
 			if (pri->windowlen < pri->window) {
 				q921_send_queued_iframes(pri);
@@ -599,8 +602,11 @@ static void t203_expire(void *vpri)
 		/* Start timer T200 to resend our RR if we don't get it */
 		pri->t203_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T200], t200_expire, pri);
 	} else {
-		if (pri->debug & PRI_DEBUG_Q921_DUMP)
-			pri_message(pri, "T203 counter expired in weird state %d on pri with sapi %d and tei %d\n", pri->q921_state, pri->sapi, pri->tei);
+		if (pri->debug & PRI_DEBUG_Q921_DUMP) {
+			pri_message(pri,
+				"T203 counter expired in weird state %d on pri with SAPI/TEI of %d/%d\n",
+				pri->q921_state, pri->sapi, pri->tei);
+		}
 		pri->t203_timer = 0;
 	}
 }
@@ -1263,8 +1269,6 @@ static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int le
 {
 	pri = PRI_MASTER(pri);
 
-	pri_error(pri, "Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n", h->h.sapi, h->h.tei);
-
 	if (h->h.tei < 64) {
 		pri_error(pri, "Do not support manual TEI range. Discarding\n");
 		return NULL;
@@ -1275,7 +1279,12 @@ static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int le
 		return NULL;
 	}
 
-	pri_error(pri, "Sending TEI release, in order to re-establish TEI state\n");
+	if (pri->debug & PRI_DEBUG_Q921_DUMP) {
+		pri_message(pri,
+			"Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n",
+			h->h.sapi, h->h.tei);
+		pri_message(pri, "Sending TEI release, in order to re-establish TEI state\n");
+	}
 
 	/* Q.921 says we should send the remove message twice, in case of link corruption */
 	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);

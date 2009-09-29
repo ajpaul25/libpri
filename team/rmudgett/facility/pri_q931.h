@@ -466,7 +466,7 @@ extern q931_call *q931_new_call(struct pri *pri);
 extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);
 extern void q931_dump(struct pri *pri, q931_h *h, int len, int txrx);
 
-extern void __q931_destroycall(struct pri *pri, q931_call *c);
+void q931_destroycall(struct pri *pri, q931_call *c);
 
 extern void q931_dl_indication(struct pri *pri, int event);
 
