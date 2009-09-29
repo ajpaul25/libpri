@@ -300,6 +300,7 @@ struct pri_sr {
 /* Internal switch types */
 #define PRI_SWITCH_GR303_EOC_PATH	19
 #define PRI_SWITCH_GR303_TMC_SWITCHING	20
+
 #define Q931_MAX_TEI	8
 
 struct apdu_event {
@@ -493,9 +494,13 @@ struct q931_call {
 	int t303_expirycnt;
 
 	int hangupinitiated;
+	/*! \brief TRUE if we broadcast this call's SETUP message. */
 	int outboundbroadcast;
 	int performing_fake_clearing;
-	/* These valid in slave call only */
+	/*!
+	 * \brief Master call controlling this call.
+	 * \note Always valid.  Master and normal calls point to self.
+	 */
 	struct q931_call *master_call;
 
 	/* These valid in master call only */
