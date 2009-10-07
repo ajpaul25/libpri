@@ -1313,6 +1313,14 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 	}
 }
 
+void pri_hold_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->hold_support = enable ? 1 : 0;
+	}
+}
+
 int pri_hold(struct pri *ctrl, q931_call *call)
 {
 	if (!ctrl || !call) {

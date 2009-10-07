@@ -4478,10 +4478,6 @@ int q931_send_hold_ack(struct pri *ctrl, struct q931_call *call)
 {
 	struct q931_call *winner;
 
-	/* Stop the upper layer does not implement guard timer. */
-	pri_schedule_del(ctrl, call->hold_timer);
-	call->hold_timer = 0;
-
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_CALL_HELD);
 
 	winner = q931_find_winning_call(call);
@@ -4536,10 +4532,6 @@ int q931_send_hold_rej(struct pri *ctrl, struct q931_call *call, int cause)
 {
 	struct q931_call *winner;
 
-	/* Stop the upper layer does not implement guard timer. */
-	pri_schedule_del(ctrl, call->hold_timer);
-	call->hold_timer = 0;
-
 	UPDATE_HOLD_STATE(ctrl, call, Q931_HOLD_STATE_IDLE);
 
 	winner = q931_find_winning_call(call);
@@ -4548,27 +4540,6 @@ int q931_send_hold_rej(struct pri *ctrl, struct q931_call *call, int cause)
 	}
 
 	return q931_send_hold_rej_msg(ctrl, winner, cause);
-}
-
-/*!
- * \internal
- * \brief Send HOLD message response guard timeout.
- *
- * \param data Q.931 call leg. (Master Q.931 subcall structure)
- *
- * \return Nothing
- */
-static void q931_hold_guard_timeout(void *data)
-{
-	struct q931_call *call = data;
-	struct pri *ctrl = call->pri;
-
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl,
-			"Time-out for upper layer HOLD response (assume not implemented)\n");
-	}
-
-	q931_send_hold_rej(ctrl, call, PRI_CAUSE_FACILITY_NOT_IMPLEMENTED);
 }
 
 /*!
@@ -6358,6 +6329,14 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		return res;
 	case Q931_HOLD:
 		res = 0;
+		if (!PRI_MASTER(ctrl)->hold_support) {
+			/*
+			 * Blocking any calls from getting on HOLD effectively
+			 * disables HOLD/RETRIEVE.
+			 */
+			q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_FACILITY_NOT_IMPLEMENTED);
+			break;
+		}
 		switch (c->ourcallstate) {
 		case Q931_CALL_STATE_CALL_RECEIVED:
 		case Q931_CALL_STATE_CONNECT_REQUEST:
@@ -6396,11 +6375,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 				UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_HOLD_IND);
 
-				/* Start the upper layer does not implement guard timer. */
+				/* Stop any T-HOLD timer from possible hold collision. */
 				pri_schedule_del(ctrl, master_call->hold_timer);
-				master_call->hold_timer = pri_schedule_event(ctrl,
-					ctrl->timers[PRI_TIMER_T_HOLD] / 2, q931_hold_guard_timeout,
-					master_call);
+				master_call->hold_timer = 0;
 				break;
 			default:
 				q931_send_hold_rej_msg(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
@@ -6512,11 +6489,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 				UPDATE_HOLD_STATE(ctrl, master_call, Q931_HOLD_STATE_RETRIEVE_IND);
 
-				/*
-				 * Stop any T-RETRIEVE timer.
-				 * The upper layer must implement HOLD for a call to even get
-				 * on hold.
-				 */
+				/* Stop any T-RETRIEVE timer from possible retrieve collision. */
 				pri_schedule_del(ctrl, master_call->hold_timer);
 				master_call->hold_timer = 0;
 				break;

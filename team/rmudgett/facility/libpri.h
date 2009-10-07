@@ -1025,6 +1025,16 @@ int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
 
 /*!
+ * \brief Set the call hold feature enable flag.
+ *
+ * \param ctrl D channel controller.
+ * \param enable TRUE to enable call hold feature.
+ *
+ * \return Nothing
+ */
+void pri_hold_enable(struct pri *ctrl, int enable);
+
+/*!
  * \brief Send the HOLD message.
  *
  * \param ctrl D channel controller.
