@@ -2106,16 +2106,16 @@ static int receive_facility(int full_ie, struct pri *ctrl, q931_call *call, int 
 	}
 	switch (rose.type) {
 	case ROSE_COMP_TYPE_INVOKE:
-		rose_handle_invoke(ctrl, call, ie, &header, &rose.component.invoke);
+		rose_handle_invoke(ctrl, call, msgtype, ie, &header, &rose.component.invoke);
 		break;
 	case ROSE_COMP_TYPE_RESULT:
-		rose_handle_result(ctrl, call, ie, &header, &rose.component.result);
+		rose_handle_result(ctrl, call, msgtype, ie, &header, &rose.component.result);
 		break;
 	case ROSE_COMP_TYPE_ERROR:
-		rose_handle_error(ctrl, call, ie, &header, &rose.component.error);
+		rose_handle_error(ctrl, call, msgtype, ie, &header, &rose.component.error);
 		break;
 	case ROSE_COMP_TYPE_REJECT:
-		rose_handle_reject(ctrl, call, ie, &header, &rose.component.reject);
+		rose_handle_reject(ctrl, call, msgtype, ie, &header, &rose.component.reject);
 		break;
 	default:
 		return -1;
@@ -2208,6 +2208,7 @@ const char *q931_call_state_str(enum Q931_CALL_STATE callstate)
 		{ Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE, "Call Independent Service" },
 		{ Q931_CALL_STATE_RESTART_REQUEST,          "Restart Request" },
 		{ Q931_CALL_STATE_RESTART,                  "Restart" },
+		{ Q931_CALL_STATE_NOT_SET,                  "Not set. Internal use only." },
 /* *INDENT-ON* */
 	};
 	return code2str(callstate, callstates, ARRAY_LEN(callstates));
@@ -3139,7 +3140,7 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	cur->newcall = 1;
 	cur->ourcallstate = Q931_CALL_STATE_NULL;
 	cur->peercallstate = Q931_CALL_STATE_NULL;
-	cur->sugcallstate = -1;
+	cur->sugcallstate = Q931_CALL_STATE_NOT_SET;
 	cur->ri = -1;
 	cur->transcapability = -1;
 	cur->transmoderate = -1;
@@ -3939,7 +3940,7 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
-static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_IE_CONNECTED_NUM, -1 };
+static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, -1 };
  
 int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 {
@@ -4278,7 +4279,7 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		/* make sure we call PRI_EVENT_HANGUP_ACK once we send/receive RELEASE_COMPLETE */
 		c->sendhangupack = 1;
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_INITIATED);
-		c->peercallstate = Q931_CALL_STATE_OVERLAP_SENDING;	
+		c->peercallstate = Q931_CALL_STATE_CALL_PRESENT;
 		c->t303_expirycnt = 0;
 		if (BRI_NT_PTMP(ctrl)) {
 			c->outboundbroadcast = 1;
@@ -5105,7 +5106,7 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->cause = -1;
 		c->causecode = -1;
 		c->causeloc = -1;
-		c->sugcallstate = -1;
+		c->sugcallstate = Q931_CALL_STATE_NOT_SET;
 		c->aoc_units = -1;
 		break;
 	case Q931_RESTART_ACKNOWLEDGE:
@@ -5167,12 +5168,12 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 	return 0;
 }
 
-static struct q931_call *q931_get_subcall_winner(struct q931_call *call)
+static struct q931_call *q931_get_subcall_winner(struct q931_call *master)
 {
-	if (call->master_call->pri_winner < 0) {
+	if (master->pri_winner < 0) {
 		return NULL;
 	} else {
-		return call->subcalls[call->pri_winner];
+		return master->subcalls[master->pri_winner];
 	}
 }
 
@@ -5219,7 +5220,8 @@ static void q931_set_subcall_winner(struct q931_call *subcall)
 	/* Start tear down of calls that were not chosen */
 	for (i = 0; i < Q931_MAX_TEI; i++) {
 		if (realcall->subcalls[i] && realcall->subcalls[i] != subcall) {
-			initiate_hangup_if_needed(realcall->subcalls[i]->pri, realcall->subcalls[i], 26);
+			initiate_hangup_if_needed(realcall->subcalls[i]->pri, realcall->subcalls[i],
+				PRI_CAUSE_NONSELECTED_USER_CLEARING);
 		}
 	}
 }
@@ -5264,6 +5266,11 @@ static struct q931_call *q931_get_subcall(struct pri *ctrl, struct q931_call *ma
 	cur->t303_timer = 0;/* T303 should only be on on the master call */
 	cur->hold_timer = 0;
 	cur->retranstimer = 0;
+
+	/* Assume we sent a SETUP and this is the first response to it from this peer. */
+	cur->ourcallstate = Q931_CALL_STATE_CALL_INITIATED;
+	cur->peercallstate = Q931_CALL_STATE_CALL_PRESENT;
+
 	master_call->subcalls[firstfree] = cur;
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
@@ -5507,34 +5514,210 @@ static int post_handle_maintenance_message(struct pri *ctrl, int protodisc, stru
 	return -1;
 }
 
-/* This is where we interact the subcalls state with the master_call's state */
-static void nt_ptmp_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int *allow_event, int *allow_posthandle)
+/*!
+ * \internal
+ * \brief Rank the given Q.931 call state for call etablishment.
+ *
+ * \param state Q.931 call state to rank for competing PTMP NT calls.
+ *
+ * \return Call establishment state ranking.
+ */
+static enum Q931_RANKED_CALL_STATE q931_rank_state(enum Q931_CALL_STATE state)
 {
-	struct q931_call *master = c->master_call;
+	enum Q931_RANKED_CALL_STATE rank;
+
+	switch (state) {
+	case Q931_CALL_STATE_CALL_INITIATED:
+	case Q931_CALL_STATE_CALL_PRESENT:
+		rank = Q931_RANKED_CALL_STATE_PRESENT;
+		break;
+	case Q931_CALL_STATE_OVERLAP_SENDING:
+	case Q931_CALL_STATE_OVERLAP_RECEIVING:
+		rank = Q931_RANKED_CALL_STATE_OVERLAP;
+		break;
+	case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+	case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
+		rank = Q931_RANKED_CALL_STATE_PROCEEDING;
+		break;
+	case Q931_CALL_STATE_CALL_DELIVERED:
+	case Q931_CALL_STATE_CALL_RECEIVED:
+	case Q931_CALL_STATE_CONNECT_REQUEST:
+		rank = Q931_RANKED_CALL_STATE_ALERTING;
+		break;
+	case Q931_CALL_STATE_ACTIVE:
+	case Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE:
+		rank = Q931_RANKED_CALL_STATE_CONNECT;
+		break;
+	default:
+		rank = Q931_RANKED_CALL_STATE_OTHER;
+		break;
+	}
+
+	return rank;
+}
+
+/*!
+ * \brief Determine if the master will pass an even to the upper layer.
+ *
+ * \param ctrl D channel controller.
+ * \param subcall Q.931 call leg.
+ * \param msg_type Current message type being processed.
+ *
+ * \note This function must parallel nt_ptmp_handle_q931_message().
+ *
+ * \retval TRUE if the master will pass an event to the upper layer.
+ * \retval FALSE if the event will be blocked.
+ */
+int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_type)
+{
+	struct q931_call *winner;
+	struct q931_call *master;
+	enum Q931_RANKED_CALL_STATE master_rank;
+	enum Q931_RANKED_CALL_STATE subcall_rank;
+	int will_pass;	/*!< TRUE if the master will pass an event to the upper layer. */
+
+	master = subcall->master_call;
+	if (subcall == master) {
+		/* We are the master call so of course the master will pass an event. */
+		return 1;
+	}
+
+	winner = q931_get_subcall_winner(master);
+	if (winner && subcall == winner) {
+		/* We are the winner so of course the master will pass an event. */
+		return 1;
+	}
+
+	master_rank = q931_rank_state(master->ourcallstate);
+	will_pass = 0;
+	switch (msg_type) {
+	case Q931_SETUP_ACKNOWLEDGE:
+#if 0	/* Overlap dialing in PTMP NT mode not supported at the present time. */
+		if (master_rank < Q931_RANKED_CALL_STATE_OVERLAP) {
+			will_pass = 1;
+		}
+#endif	/* Overlap dialing in PTMP NT mode not supported at the present time. */
+		break;
+	case Q931_CALL_PROCEEDING:
+		if (master_rank < Q931_RANKED_CALL_STATE_PROCEEDING) {
+			will_pass = 1;
+		}
+		break;
+	case Q931_PROGRESS:
+		/*
+		 * We will just ignore this message since there could be multiple devices
+		 * competing for this call.  Who has access to the B channel at this time
+		 * to give in-band signals anyway?
+		 */
+		break;
+	case Q931_ALERTING:
+		if (master_rank < Q931_RANKED_CALL_STATE_ALERTING) {
+			will_pass = 1;
+		}
+		break;
+	case Q931_CONNECT:
+		if (master_rank < Q931_RANKED_CALL_STATE_CONNECT) {
+			/* We are expected to be the winner for the next message. */
+			will_pass = 1;
+		}
+		break;
+	case Q931_DISCONNECT:
+	case Q931_RELEASE:
+	case Q931_RELEASE_COMPLETE:
+		/* Only deal with the winner. */
+		break;
+	case Q931_FACILITY:
+	case Q931_NOTIFY:
+		if (!winner) {
+			/* The overlap rank does not count here. */
+			if (master_rank == Q931_RANKED_CALL_STATE_OVERLAP) {
+				master_rank = Q931_RANKED_CALL_STATE_PRESENT;
+			}
+			subcall_rank = q931_rank_state(subcall->ourcallstate);
+			if (subcall_rank == Q931_RANKED_CALL_STATE_OVERLAP) {
+				subcall_rank = Q931_RANKED_CALL_STATE_PRESENT;
+			}
+			if (master_rank == subcall_rank) {
+				/*
+				 * No winner yet but the subcall is as advanced as the master.
+				 * Allow the supplementary service event to pass.
+				 */
+				will_pass = 1;
+			}
+		}
+		break;
+	default:
+		/* Only deal with the winner. */
+		break;
+	}
+
+	return will_pass;
+}
+
+/*!
+ * \internal
+ * \brief Handle outboundbroadcast incoming messages for the master_call's state.
+ *
+ * \param ctrl D channel controller.
+ * \param mh Q.931 message type header.
+ * \param subcall Q.931 call leg.
+ * \param allow_event Where to set the allow event to upper layer flag.
+ * \param allow_posthandle Where to set the allow post handle event flag.
+ *
+ * \details
+ * This is where we interact the subcalls state with the master_call's state.
+ *
+ * \note This function must parallel q931_master_pass_event().
+ *
+ * \return Nothing
+ */
+static void nt_ptmp_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *subcall, int *allow_event, int *allow_posthandle)
+{
+	struct q931_call *master = subcall->master_call;
 	struct q931_call *winner = q931_get_subcall_winner(master);
+	enum Q931_RANKED_CALL_STATE master_rank;
+	enum Q931_RANKED_CALL_STATE subcall_rank;
 	enum Q931_CALL_STATE newstate;
 
 	/* For broadcast calls, we default to not allowing events to keep events received to a minimum
 	 * and to allow post processing, since that is where hangup and subcall state handling and other processing is done */
 	*allow_event = 0;
 	*allow_posthandle = 1;
+
+	master_rank = q931_rank_state(master->ourcallstate);
+
 	switch (mh->msg) {
+	case Q931_SETUP_ACKNOWLEDGE:
+#if 0	/* Overlap dialing in PTMP NT mode not supported at the present time. */
+		if (master_rank < Q931_RANKED_CALL_STATE_OVERLAP) {
+			*allow_event = 1;
+			UPDATE_OURCALLSTATE(ctrl, master, Q931_CALL_STATE_OVERLAP_SENDING);
+		}
+#endif	/* Overlap dialing in PTMP NT mode not supported at the present time. */
+		break;
 	case Q931_CALL_PROCEEDING:
-		if (master->ourcallstate < Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING) {
+		if (master_rank < Q931_RANKED_CALL_STATE_PROCEEDING) {
 			*allow_event = 1;
 			UPDATE_OURCALLSTATE(ctrl, master, Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
 		}
 		break;
+	case Q931_PROGRESS:
+		/*
+		 * We will just ignore this message since there could be multiple devices
+		 * competing for this call.  Who has access to the B channel at this time
+		 * to give in-band signals anyway?
+		 */
+		break;
 	case Q931_ALERTING:
-		if (master->ourcallstate < Q931_CALL_STATE_CALL_DELIVERED) {
+		if (master_rank < Q931_RANKED_CALL_STATE_ALERTING) {
 			*allow_event = 1;
 			UPDATE_OURCALLSTATE(ctrl, master, Q931_CALL_STATE_CALL_DELIVERED);
 		}
 		break;
 	case Q931_CONNECT:
-		if (!winner) {
+		if (master_rank < Q931_RANKED_CALL_STATE_CONNECT) {
 			UPDATE_OURCALLSTATE(ctrl, master, Q931_CALL_STATE_ACTIVE);
-			q931_set_subcall_winner(c);
+			q931_set_subcall_winner(subcall);
 			*allow_event = 1;
 		} else {
 			/* Call clearing of non selected calls occurs in
@@ -5553,18 +5736,44 @@ process_hangup:
 		if (!winner) {
 			/* If there's not a winner, we just take the cause and pass it up to the
 			 * master_call */
-			master->cause = c->cause;
+			master->cause = subcall->cause;
 		} else {
 			/* There *is* a winner */
-			if (c == winner) {
+			if (subcall == winner) {
 				/* .. and we're it: */
 				*allow_event = 1;
 				UPDATE_OURCALLSTATE(ctrl, master, newstate);
 			}
 		}
 		break;
+	case Q931_FACILITY:
+	case Q931_NOTIFY:
+		if (winner) {
+			if (subcall == winner) {
+				/* Only deal with the winner. */
+				*allow_event = 1;
+			}
+		} else {
+			/* The overlap rank does not count here. */
+			if (master_rank == Q931_RANKED_CALL_STATE_OVERLAP) {
+				master_rank = Q931_RANKED_CALL_STATE_PRESENT;
+			}
+			subcall_rank = q931_rank_state(subcall->ourcallstate);
+			if (subcall_rank == Q931_RANKED_CALL_STATE_OVERLAP) {
+				subcall_rank = Q931_RANKED_CALL_STATE_PRESENT;
+			}
+			if (master_rank == subcall_rank) {
+				/*
+				 * No winner yet but the subcall is as advanced as the master.
+				 * Allow the supplementary service event to pass.
+				 */
+				*allow_event = 1;
+			}
+		}
+		break;
 	default:
-		if (winner && c == winner) {
+		if (winner && subcall == winner) {
+			/* Only deal with the winner. */
 			*allow_event = 1;
 		}
 		break;
@@ -5576,7 +5785,7 @@ process_hangup:
  * \brief Fill in the FACILITY event fields.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg.
  *
  * \return Nothing
  */
@@ -5587,6 +5796,7 @@ static void q931_fill_facility_event(struct pri *ctrl, struct q931_call *call)
 	ctrl->ev.facility.channel = q931_encode_channel(call);
 	ctrl->ev.facility.cref = call->cr;
 	ctrl->ev.facility.call = call->master_call;
+	ctrl->ev.facility.subcall = call;
 
 	/* Need to do this for backward compatibility with struct pri_event_facname */
 	libpri_copy_string(ctrl->ev.facility.callingname, call->remote_id.name.str,
@@ -6596,7 +6806,7 @@ static int pri_internal_clear(void *data)
 	//c->cause = -1;
 	c->causecode = -1;
 	c->causeloc = -1;
-	c->sugcallstate = -1;
+	c->sugcallstate = Q931_CALL_STATE_NOT_SET;
 	c->aoc_units = -1;
 
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);

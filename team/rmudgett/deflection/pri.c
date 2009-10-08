@@ -551,15 +551,6 @@ int pri_keypad_facility(struct pri *pri, q931_call *call, const char *digits)
 	return q931_keypad_facility(pri, call, digits);
 }
 
-
-int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason)
-{
-	if (!pri || !call)
-		return -1;
-
-	return qsig_cf_callrerouting(pri, call, dest, original, reason);
-}
-
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
 {
 	if (!pri || !call)
@@ -883,7 +874,7 @@ int pri_hangup(struct pri *pri, q931_call *call, int cause)
 		return -1;
 	if (cause == -1)
 		/* normal clear cause */
-		cause = 16;
+		cause = PRI_CAUSE_NORMAL_CLEARING;
 	return q931_hangup(pri, call, cause);
 }
 
@@ -1367,6 +1358,66 @@ int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause)
 		return -1;
 	}
 	return q931_send_retrieve_rej(ctrl, call, cause);
+}
+
+int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason)
+{
+	if (!pri || !call || !dest)
+		return -1;
+
+	return qsig_cf_callrerouting(pri, call, dest, original, reason);
+}
+
+void pri_reroute_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->deflection_support = enable ? 1 : 0;
+	}
+}
+
+int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_id *caller, const struct pri_party_redirecting *deflection, int subscription_option)
+{
+	const struct q931_party_id *caller_id;
+	struct q931_party_id local_caller;
+	struct q931_party_redirecting reroute;
+
+	if (!ctrl || !call || !deflection) {
+		return -1;
+	}
+
+	if (caller) {
+		/* Convert the caller update information. */
+		pri_copy_party_id_to_q931(&local_caller, caller);
+		q931_party_id_fixup(ctrl, &local_caller);
+		caller_id = &local_caller;
+	} else {
+		caller_id = NULL;
+	}
+
+	/* Convert the deflection information. */
+	q931_party_redirecting_init(&reroute);
+	pri_copy_party_id_to_q931(&reroute.from, &deflection->from);
+	q931_party_id_fixup(ctrl, &reroute.from);
+	pri_copy_party_id_to_q931(&reroute.to, &deflection->to);
+	q931_party_id_fixup(ctrl, &reroute.to);
+	pri_copy_party_id_to_q931(&reroute.orig_called, &deflection->orig_called);
+	q931_party_id_fixup(ctrl, &reroute.orig_called);
+	reroute.reason = deflection->reason;
+	reroute.orig_reason = deflection->orig_reason;
+	if (deflection->count <= 0) {
+		/*
+		 * We are deflecting with an unknown count
+		 * so assume the count is one.
+		 */
+		reroute.count = 1;
+	} else if (deflection->count < PRI_MAX_REDIRECTS) {
+		reroute.count = deflection->count;
+	} else {
+		reroute.count = PRI_MAX_REDIRECTS;
+	}
+
+	return send_reroute_request(ctrl, call, caller_id, &reroute, subscription_option);
 }
 
 void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
