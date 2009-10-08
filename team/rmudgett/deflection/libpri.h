@@ -1092,13 +1092,27 @@ void pri_reroute_enable(struct pri *ctrl, int enable);
 int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_id *caller, const struct pri_party_redirecting *deflection, int subscription_option);
 
 enum PRI_REROUTING_RSP_CODE {
-	PRI_REROUTING_RSP_OK,
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "clear call on invocation".
+	 */
+	PRI_REROUTING_RSP_OK_CLEAR,
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "retain call until alerting begins at the deflected-to user".
+	 */
+	PRI_REROUTING_RSP_OK_RETAIN,
 	PRI_REROUTING_RSP_NOT_SUBSCRIBED,
 	PRI_REROUTING_RSP_NOT_AVAILABLE,
-	PRI_REROUTING_RSP_NOT_ALLOWED,/* Supplementary service interaction not allowed. */
+	/*! Supplementary service interaction not allowed. */
+	PRI_REROUTING_RSP_NOT_ALLOWED,
 	PRI_REROUTING_RSP_INVALID_NUMBER,
-	PRI_REROUTING_RSP_SPECIAL_SERVICE_NUMBER,/* Deflection to prohibited number (e.g., operator, police, emergency). */
-	PRI_REROUTING_RSP_DIVERSION_TO_SELF,/* Deflection to served user number. */
+	/*! Deflection to prohibited number (e.g., operator, police, emergency). */
+	PRI_REROUTING_RSP_SPECIAL_SERVICE_NUMBER,
+	/*! Deflection to served user number. */
+	PRI_REROUTING_RSP_DIVERSION_TO_SELF,
 	PRI_REROUTING_RSP_MAX_DIVERSIONS_EXCEEDED,
 	PRI_REROUTING_RSP_RESOURCE_UNAVAILABLE,
 };

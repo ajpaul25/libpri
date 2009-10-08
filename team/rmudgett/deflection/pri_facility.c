@@ -2930,16 +2930,17 @@ static unsigned char *enc_qsig_result_ok(struct pri *ctrl, unsigned char *pos,
 
 /*!
  * \internal
- * \brief Encode and queue a plain facility result ok.
+ * \brief Encode and queue a plain ROSE result ok.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode result ok message response.
+ * \param msgtype Q.931 message type to put facility ie in.
  * \param invoke_id Invoke id to put in result ok message response.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int rose_facility_result_ok_encode(struct pri *ctrl, q931_call *call, int invoke_id)
+static int rose_result_ok_encode(struct pri *ctrl, q931_call *call, int msgtype, int invoke_id)
 {
 	unsigned char buffer[256];
 	unsigned char *end;
@@ -2961,11 +2962,11 @@ static int rose_facility_result_ok_encode(struct pri *ctrl, q931_call *call, int
 		return -1;
 	}
 
-	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL, NULL);
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL, NULL);
 }
 
 /*!
- * \brief Encode and send a plain facility result ok.
+ * \brief Encode and send a FACILITY message with a plain ROSE result ok.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode result ok message response.
@@ -2976,7 +2977,7 @@ static int rose_facility_result_ok_encode(struct pri *ctrl, q931_call *call, int
  */
 static int send_facility_result_ok(struct pri *ctrl, q931_call *call, int invoke_id)
 {
-	if (rose_facility_result_ok_encode(ctrl, call, invoke_id)
+	if (rose_result_ok_encode(ctrl, call, Q931_FACILITY, invoke_id)
 		|| q931_facility(ctrl, call)) {
 		pri_message(ctrl,
 			"Could not schedule facility message for result OK message.\n");
@@ -2997,7 +2998,9 @@ int pri_rerouting_rsp(struct pri *ctrl, q931_call *call, int invoke_id, enum PRI
 	/* Convert the public rerouting response code to an error code or result ok. */
 	rose_err = ROSE_ERROR_Gen_ResourceUnavailable;
 	switch (code) {
-	case PRI_REROUTING_RSP_OK:
+	case PRI_REROUTING_RSP_OK_CLEAR:
+		return rose_result_ok_encode(ctrl, call, Q931_DISCONNECT, invoke_id);
+	case PRI_REROUTING_RSP_OK_RETAIN:
 		return send_facility_result_ok(ctrl, call, invoke_id);
 	case PRI_REROUTING_RSP_NOT_SUBSCRIBED:
 		rose_err = ROSE_ERROR_Gen_NotSubscribed;
