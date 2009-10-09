@@ -4126,7 +4126,7 @@ int q931_restart(struct pri *ctrl, int channel)
 	return send_message(ctrl, c, Q931_RESTART, restart_ies);
 }
 
-static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_USER_USER, -1 };
+static int disconnect_ies[] = { Q931_CAUSE, Q931_IE_FACILITY, Q931_IE_USER_USER, -1 };
 
 int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 {
