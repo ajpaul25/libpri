@@ -3734,9 +3734,11 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			deflection.orig_called = call->redirecting.orig_called;
 			deflection.orig_reason = call->redirecting.orig_reason;
 		}
-		rose_copy_presented_number_unscreened_to_q931(ctrl,
-			&deflection.orig_called.number,
-			&invoke->args.qsig.CallRerouting.original_called);
+		if (invoke->args.qsig.CallRerouting.original_called_present) {
+			rose_copy_presented_number_unscreened_to_q931(ctrl,
+				&deflection.orig_called.number,
+				&invoke->args.qsig.CallRerouting.original_called);
+		}
 		if (invoke->args.qsig.CallRerouting.original_called_name_present) {
 			rose_copy_name_to_q931(ctrl, &deflection.orig_called.name,
 				&invoke->args.qsig.CallRerouting.original_called_name);
