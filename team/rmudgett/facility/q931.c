@@ -2208,6 +2208,7 @@ const char *q931_call_state_str(enum Q931_CALL_STATE callstate)
 		{ Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE, "Call Independent Service" },
 		{ Q931_CALL_STATE_RESTART_REQUEST,          "Restart Request" },
 		{ Q931_CALL_STATE_RESTART,                  "Restart" },
+		{ Q931_CALL_STATE_NOT_SET,                  "Not set. Internal use only." },
 /* *INDENT-ON* */
 	};
 	return code2str(callstate, callstates, ARRAY_LEN(callstates));
@@ -3145,7 +3146,7 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	cur->newcall = 1;
 	cur->ourcallstate = Q931_CALL_STATE_NULL;
 	cur->peercallstate = Q931_CALL_STATE_NULL;
-	cur->sugcallstate = -1;
+	cur->sugcallstate = Q931_CALL_STATE_NOT_SET;
 	cur->ri = -1;
 	cur->transcapability = -1;
 	cur->transmoderate = -1;
@@ -3945,7 +3946,7 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
-static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_IE_CONNECTED_NUM, -1 };
+static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, -1 };
  
 int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 {
@@ -5111,7 +5112,7 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->cause = -1;
 		c->causecode = -1;
 		c->causeloc = -1;
-		c->sugcallstate = -1;
+		c->sugcallstate = Q931_CALL_STATE_NOT_SET;
 		c->aoc_units = -1;
 		break;
 	case Q931_RESTART_ACKNOWLEDGE:
@@ -5582,7 +5583,7 @@ process_hangup:
  * \brief Fill in the FACILITY event fields.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg
+ * \param call Q.931 call leg.
  *
  * \return Nothing
  */
@@ -6602,7 +6603,7 @@ static int pri_internal_clear(void *data)
 	//c->cause = -1;
 	c->causecode = -1;
 	c->causeloc = -1;
-	c->sugcallstate = -1;
+	c->sugcallstate = Q931_CALL_STATE_NOT_SET;
 	c->aoc_units = -1;
 
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
