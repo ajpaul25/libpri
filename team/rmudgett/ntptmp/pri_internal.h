@@ -71,7 +71,8 @@ struct pri {
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
 	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
-	
+	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
+
 	/* Q.921 State */
 	int q921_state;	
 	int window;			/* Max window size */
@@ -472,6 +473,8 @@ struct q931_call {
 	/*! Call hold event timer */
 	int hold_timer;
 
+	int deflection_in_progress;	/*!< CallDeflection for NT PTMP in progress. */
+
 	int useruserprotocoldisc;
 	char useruserinfo[256];
 	char callingsubaddr[PRI_MAX_SUBADDRESS_LEN];	/* Calling party subaddress */
@@ -528,6 +531,11 @@ void __pri_free_tei(struct pri *p);
 
 void q931_party_name_init(struct q931_party_name *name);
 void q931_party_number_init(struct q931_party_number *number);
+#define q931_party_address_to_id(q931_id, q931_address)			\
+	do {														\
+		(q931_id)->number = (q931_address)->number;				\
+		/*(q931_id)->subaddress = (q931_address)->subaddress;*/	\
+	} while (0)
 void q931_party_address_init(struct q931_party_address *address);
 void q931_party_id_init(struct q931_party_id *id);
 void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
@@ -547,6 +555,7 @@ int q931_party_id_presentation(const struct q931_party_id *id);
 const char *q931_call_state_str(enum Q931_CALL_STATE callstate);
 
 int q931_is_ptmp(const struct pri *ctrl);
+int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_type);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);

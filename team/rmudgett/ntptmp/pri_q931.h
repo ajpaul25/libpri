@@ -423,6 +423,22 @@ enum Q931_CALL_STATE {
 	Q931_CALL_STATE_NOT_SET = 0xFF,
 };
 
+/*! Q.931 call establishment state ranking for competing calls in PTMP NT mode. */
+enum Q931_RANKED_CALL_STATE {
+	/*! Call is present but has no response yet. */
+	Q931_RANKED_CALL_STATE_PRESENT,
+	/*! Call is collecting digits. */
+	Q931_RANKED_CALL_STATE_OVERLAP,
+	/*! Call routing is happening. */
+	Q931_RANKED_CALL_STATE_PROCEEDING,
+	/*! Called party is being alerted of the call. */
+	Q931_RANKED_CALL_STATE_ALERTING,
+	/*! Call is connected.  A winner has been declared. */
+	Q931_RANKED_CALL_STATE_CONNECT,
+	/*! Call is in some non-call establishment state (likely disconnecting). */
+	Q931_RANKED_CALL_STATE_OTHER,
+};
+
 /* EuroISDN  */
 #define Q931_SENDING_COMPLETE		0xa1
 

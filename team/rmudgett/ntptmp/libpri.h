@@ -476,9 +476,37 @@ struct pri_party_redirecting {
 	int reason;
 };
 
+/*!
+ * \brief Information for rerouting/deflecting the call.
+ */
+struct pri_rerouting_data {
+	/*!
+	 * \brief Updated caller-id information.
+	 * \note The information may have been altered by procedure in the private network.
+	 */
+	struct pri_party_id caller;
+	/*!
+	 * \note
+	 * deflection.to is the new called number and must always be present.
+	 */
+	struct pri_party_redirecting deflection;
+	/*!
+	 * \brief Diverting user subscription option to specify if caller is notified.
+	 * \details
+	 * noNotification(0),
+	 * notificationWithoutDivertedToNr(1),
+	 * notificationWithDivertedToNr(2),
+	 * notApplicable(3) (Status only.)
+	 */
+	int subscription_option;
+	/*! Invocation ID to use when sending a reply to the call rerouting/deflection request. */
+	int invoke_id;
+};
+
 /* Subcommands derived from supplementary services. */
 #define PRI_SUBCMD_REDIRECTING		1
 #define PRI_SUBCMD_CONNECTED_LINE	2
+#define PRI_SUBCMD_REROUTING		3
 
 
 struct pri_subcommand {
@@ -489,6 +517,7 @@ struct pri_subcommand {
 		char reserve_space[512];
 		struct pri_party_connected_line connected_line;
 		struct pri_party_redirecting redirecting;
+		struct pri_rerouting_data rerouting;
 	} u;
 };
 
@@ -576,10 +605,16 @@ struct pri_event_facility {
 	char callingnum[256];		/*!< Deprecated, preserved for struct pri_event_facname compatibility */
 	int channel;
 	int cref;
+	/*!
+	 * \brief Master call or normal call.
+	 * \note Call pointer known about by upper layer.
+	 * \note NULL if dummy call reference.
+	 */
 	q931_call *call;
 	int callingpres;			/*!< Presentation of Calling CallerID (Deprecated, preserved for struct pri_event_facname compatibility) */
 	int callingplan;			/*!< Dialing plan of Calling entity (Deprecated, preserved for struct pri_event_facname compatibility) */
 	struct pri_subcommands *subcmds;
+	q931_call *subcall;			/*!< Subcall to send any reply toward. */
 };
 
 #define PRI_CALLINGPLANANI
@@ -1023,6 +1058,77 @@ void pri_enslave(struct pri *master, struct pri *slave);
 int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 
 int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
+
+/*!
+ * \brief Set the call deflection/rerouting feature enable flag.
+ *
+ * \param ctrl D channel controller.
+ * \param enable TRUE to enable call deflection/rerouting feature.
+ *
+ * \return Nothing
+ */
+void pri_reroute_enable(struct pri *ctrl, int enable);
+
+/*!
+ * \brief Send the CallRerouting/CallDeflection message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param caller Call rerouting/deflecting updated caller data. (NULL if data not updated.)
+ * \param deflection Call rerouting/deflecting redirection data.
+ * \param subscription_option Diverting user subscription option to specify if caller is notified.
+ *
+ * \note
+ * deflection->to is the new called number and must always be present.
+ * \note
+ * subscription option:
+ * noNotification(0),
+ * notificationWithoutDivertedToNr(1),
+ * notificationWithDivertedToNr(2)
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_id *caller, const struct pri_party_redirecting *deflection, int subscription_option);
+
+enum PRI_REROUTING_RSP_CODE {
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "clear call on invocation".
+	 */
+	PRI_REROUTING_RSP_OK_CLEAR,
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "retain call until alerting begins at the deflected-to user".
+	 */
+	PRI_REROUTING_RSP_OK_RETAIN,
+	PRI_REROUTING_RSP_NOT_SUBSCRIBED,
+	PRI_REROUTING_RSP_NOT_AVAILABLE,
+	/*! Supplementary service interaction not allowed. */
+	PRI_REROUTING_RSP_NOT_ALLOWED,
+	PRI_REROUTING_RSP_INVALID_NUMBER,
+	/*! Deflection to prohibited number (e.g., operator, police, emergency). */
+	PRI_REROUTING_RSP_SPECIAL_SERVICE_NUMBER,
+	/*! Deflection to served user number. */
+	PRI_REROUTING_RSP_DIVERSION_TO_SELF,
+	PRI_REROUTING_RSP_MAX_DIVERSIONS_EXCEEDED,
+	PRI_REROUTING_RSP_RESOURCE_UNAVAILABLE,
+};
+
+/*!
+ * \brief Send the CallRerouteing/CallDeflection response message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param invoke_id Value given by the initiating request.
+ * \param code The result to send.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_rerouting_rsp(struct pri *ctrl, q931_call *call, int invoke_id, enum PRI_REROUTING_RSP_CODE code);
 
 /*!
  * \brief Set the call hold feature enable flag.
