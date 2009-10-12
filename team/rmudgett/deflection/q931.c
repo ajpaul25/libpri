@@ -5563,7 +5563,7 @@ static enum Q931_RANKED_CALL_STATE q931_rank_state(enum Q931_CALL_STATE state)
 }
 
 /*!
- * \brief Determine if the master will pass an even to the upper layer.
+ * \brief Determine if the master will pass an event to the upper layer.
  *
  * \param ctrl D channel controller.
  * \param subcall Q.931 call leg.
