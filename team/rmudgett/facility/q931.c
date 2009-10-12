@@ -5174,12 +5174,12 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 	return 0;
 }
 
-static struct q931_call *q931_get_subcall_winner(struct q931_call *call)
+static struct q931_call *q931_get_subcall_winner(struct q931_call *master)
 {
-	if (call->master_call->pri_winner < 0) {
+	if (master->pri_winner < 0) {
 		return NULL;
 	} else {
-		return call->subcalls[call->pri_winner];
+		return master->subcalls[master->pri_winner];
 	}
 }
 
@@ -5226,7 +5226,8 @@ static void q931_set_subcall_winner(struct q931_call *subcall)
 	/* Start tear down of calls that were not chosen */
 	for (i = 0; i < Q931_MAX_TEI; i++) {
 		if (realcall->subcalls[i] && realcall->subcalls[i] != subcall) {
-			initiate_hangup_if_needed(realcall->subcalls[i]->pri, realcall->subcalls[i], 26);
+			initiate_hangup_if_needed(realcall->subcalls[i]->pri, realcall->subcalls[i],
+				PRI_CAUSE_NONSELECTED_USER_CLEARING);
 		}
 	}
 }
