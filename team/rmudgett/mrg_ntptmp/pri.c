@@ -842,7 +842,7 @@ int __normal_pri_hangup(struct pri *pri, q931_call *call, int cause)
 		return -1;
 	if (cause == -1)
 		/* normal clear cause */
-		cause = 16;
+		cause = PRI_CAUSE_NORMAL_CLEARING;
 
 	return q931_hangup(pri, call, cause);
 }
