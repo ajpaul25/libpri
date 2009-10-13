@@ -4158,6 +4158,7 @@ static int setup_ies[] = {
 	Q931_PROGRESS_INDICATOR,
 	Q931_NETWORK_SPEC_FAC,
 	Q931_DISPLAY,
+	Q931_IE_KEYPAD_FACILITY,
 	Q931_REVERSE_CHARGE_INDIC,
 	Q931_CALLING_PARTY_NUMBER,
 	Q931_CALLED_PARTY_NUMBER,
@@ -4180,6 +4181,7 @@ static int cis_setup_ies[] = {
 	Q931_BEARER_CAPABILITY,
 	Q931_CHANNEL_IDENT,
 	Q931_IE_FACILITY,
+	Q931_IE_KEYPAD_FACILITY,
 	Q931_CALLING_PARTY_NUMBER,
 	Q931_CALLED_PARTY_NUMBER,
 	Q931_SENDING_COMPLETE,
@@ -4238,8 +4240,22 @@ static void t303_expiry(void *data)
 int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 {
 	int res;
-	
-	
+
+	if (!req->called.number.valid && (!req->keypad_digits || !req->keypad_digits[0])) {
+		/* No called number or keypad digits to send. */
+		return -1;
+	}
+
+	c->called = req->called;
+	libpri_copy_string(c->overlap_digits, req->called.number.str, sizeof(c->overlap_digits));
+
+	if (req->keypad_digits) {
+		libpri_copy_string(c->keypad_digits, req->keypad_digits,
+			sizeof(c->keypad_digits));
+	} else {
+		c->keypad_digits[0] = '\0';
+	}
+
 	c->transcapability = req->transmode;
 	c->transmoderate = TRANS_MODE_64_CIRCUIT;
 	if (!req->userl1)
@@ -4279,12 +4295,6 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		q931_party_id_fixup(ctrl, &c->redirecting.to);
 		q931_party_id_fixup(ctrl, &c->redirecting.orig_called);
 	}
-
-	if (req->called.number.valid) {
-		c->called = req->called;
-		libpri_copy_string(c->overlap_digits, req->called.number.str, sizeof(c->overlap_digits));
-	} else
-		return -1;
 
 	if (req->useruserinfo)
 		libpri_copy_string(c->useruserinfo, req->useruserinfo, sizeof(c->useruserinfo));
@@ -5097,6 +5107,13 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		q931_party_id_init(&c->local_id);
 		q931_party_id_init(&c->remote_id);
 		q931_party_redirecting_init(&c->redirecting);
+
+		/*
+		 * Make sure that keypad and overlap digit buffers are empty in
+		 * case they are not in the message.
+		 */
+		c->keypad_digits[0] = '\0';
+		c->overlap_digits[0] = '\0';
 
 		c->useruserprotocoldisc = -1; 
 		c->useruserinfo[0] = '\0';
@@ -6074,6 +6091,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		libpri_copy_string(ctrl->ev.ring.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.ring.useruserinfo));
 		c->useruserinfo[0] = '\0';
+
+		libpri_copy_string(ctrl->ev.ring.keypad_digits, c->keypad_digits,
+			sizeof(ctrl->ev.ring.keypad_digits));
 
 		ctrl->ev.ring.flexible = ! (c->chanflags & FLAG_EXCLUSIVE);
 		ctrl->ev.ring.cref = c->cr;

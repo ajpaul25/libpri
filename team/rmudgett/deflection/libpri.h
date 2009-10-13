@@ -651,6 +651,7 @@ typedef struct pri_event_ring {
 	int origredirectingreason;
 	int reversecharge;
 	struct pri_subcommands *subcmds;
+	char keypad_digits[64];		/* Keypad digits in the SETUP message. */
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -973,6 +974,16 @@ int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int cal
 void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_redirecting *redirecting);
 /*! \note Use pri_sr_set_redirecting_parties() instead to pass more precise redirecting information. */
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
+
+/*!
+ * \brief Set the keypad digits in the call SETUP record.
+ *
+ * \param sr New call SETUP record.
+ * \param keypad_digits Keypad digits to send.
+ *
+ * \return Nothing
+ */
+void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits);
 
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */
