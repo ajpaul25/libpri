@@ -1304,6 +1304,11 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 	}
 }
 
+void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
+{
+	sr->reversecharge = requested;
+}
+
 void pri_hold_enable(struct pri *ctrl, int enable)
 {
 	ctrl = PRI_MASTER(ctrl);
@@ -1418,9 +1423,4 @@ int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_i
 	}
 
 	return send_reroute_request(ctrl, call, caller_id, &reroute, subscription_option);
-}
-
-void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
-{
-	sr->reversecharge = requested;
 }
