@@ -1309,6 +1309,11 @@ void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
 	sr->reversecharge = requested;
 }
 
+void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits)
+{
+	sr->keypad_digits = keypad_digits;
+}
+
 void pri_hold_enable(struct pri *ctrl, int enable)
 {
 	ctrl = PRI_MASTER(ctrl);
