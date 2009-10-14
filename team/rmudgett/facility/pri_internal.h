@@ -295,6 +295,7 @@ struct pri_sr {
 	int cis_call;
 	int cis_auto_disconnect;
 	const char *useruserinfo;
+	const char *keypad_digits;
 	int transferable;
 	int reversecharge;
 };
