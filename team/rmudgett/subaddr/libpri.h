@@ -857,18 +857,23 @@ void pri_sr_set_caller_party(struct pri_sr *sr, const struct pri_party_id *calle
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres);
 
 /*!
- * \brief Set the calling/called subaddress information in the call SETUP record.
+ * \brief Set the calling subaddress information in the call SETUP record.
  *
  * \param sr New call SETUP record.
- * \param Subaddress information to set.
+ * \param subaddress information to set.
  *
  * \return Nothing
  */
-
-#define HAVE_PRI_SUBADDR
-/* XXX TODO XXX remove the above HAVE_PRI_SUBADDR line and put a test for the feature in configure.ac when it is committed
- */
 void pri_sr_set_caller_subaddress(struct pri_sr *sr, const struct pri_party_subaddress *subaddress);
+
+/*!
+ * \brief Set the called subaddress information in the call SETUP record.
+ *
+ * \param sr New call SETUP record.
+ * \param subaddress information to set.
+ *
+ * \return Nothing
+ */
 void pri_sr_set_called_subaddress(struct pri_sr *sr, const struct pri_party_subaddress *subaddress);
 
 /*!
