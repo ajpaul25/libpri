@@ -321,6 +321,22 @@ void q931_party_number_init(struct q931_party_number *number)
 }
 
 /*!
+ * \brief Initialize the given struct q931_party_subaddress
+ *
+ * \param subaddress Structure to initialize
+ *
+ * \return Nothing
+ */
+void q931_party_subaddress_init(struct q931_party_subaddress *subaddress)
+{
+	subaddress->valid = 0;
+	subaddress->type = 0;
+	subaddress->odd_even_indicator = 0;
+	subaddress->length = 0;
+	subaddress->data[0] = '\0';
+}
+
+/*!
  * \brief Initialize the given struct q931_party_address
  *
  * \param address Structure to initialize
@@ -330,6 +346,7 @@ void q931_party_number_init(struct q931_party_number *number)
 void q931_party_address_init(struct q931_party_address *address)
 {
 	q931_party_number_init(&address->number);
+	q931_party_subaddress_init(&address->subaddress);
 }
 
 /*!
@@ -343,6 +360,7 @@ void q931_party_id_init(struct q931_party_id *id)
 {
 	q931_party_name_init(&id->name);
 	q931_party_number_init(&id->number);
+	q931_party_subaddress_init(&id->subaddress);
 }
 
 /*!
@@ -432,6 +450,45 @@ int q931_party_number_cmp(const struct q931_party_number *left, const struct q93
 }
 
 /*!
+ * \brief Compare the left and right party subaddress.
+ *
+ * \param left Left parameter party subaddress.
+ * \param right Right parameter party subaddress.
+ *
+ * \retval < 0 when left < right.
+ * \retval == 0 when left == right.
+ * \retval > 0 when left > right.
+ */
+int q931_party_subaddress_cmp(const struct q931_party_subaddress *left, const struct q931_party_subaddress *right)
+{
+	int cmp;
+
+	if (!left->valid) {
+		if (!right->valid) {
+			return 0;
+		}
+		return -1;
+	} else if (!right->valid) {
+		return 1;
+	}
+	cmp = left->type - right->type;
+	if (cmp) {
+		return cmp;
+	}
+	cmp = memcmp(left->data, right->data,
+		(left->length < right->length) ? left->length : right->length);
+	if (cmp) {
+		return cmp;
+	}
+	cmp = left->length - right->length;
+	if (cmp) {
+		return cmp;
+	}
+	cmp = left->odd_even_indicator - right->odd_even_indicator;
+	return cmp;
+}
+
+/*!
  * \brief Compare the left and right party address.
  *
  * \param left Left parameter party address.
@@ -446,6 +503,10 @@ int q931_party_address_cmp(const struct q931_party_address *left, const struct q
 	int cmp;
 
 	cmp = q931_party_number_cmp(&left->number, &right->number);
+	if (cmp) {
+		return cmp;
+	}
+	cmp = q931_party_subaddress_cmp(&left->subaddress, &right->subaddress);
 	return cmp;
 }
 
@@ -464,6 +525,10 @@ int q931_party_id_cmp(const struct q931_party_id *left, const struct q931_party_
 	int cmp;
 
 	cmp = q931_party_number_cmp(&left->number, &right->number);
+	if (cmp) {
+		return cmp;
+	}
+	cmp = q931_party_subaddress_cmp(&left->subaddress, &right->subaddress);
 	if (cmp) {
 		return cmp;
 	}
@@ -486,6 +551,10 @@ int q931_party_id_cmp_address(const struct q931_party_id *left, const struct q93
 	int cmp;
 
 	cmp = q931_party_number_cmp(&left->number, &right->number);
+	if (cmp) {
+		return cmp;
+	}
+	cmp = q931_party_subaddress_cmp(&left->subaddress, &right->subaddress);
 	return cmp;
 }
 
@@ -504,6 +573,10 @@ int q931_cmp_party_id_to_address(const struct q931_party_id *id, const struct q9
 	int cmp;
 
 	cmp = q931_party_number_cmp(&id->number, &address->number);
+	if (cmp) {
+		return cmp;
+	}
+	cmp = q931_party_subaddress_cmp(&id->subaddress, &address->subaddress);
 	return cmp;
 }
 
@@ -518,6 +591,7 @@ int q931_cmp_party_id_to_address(const struct q931_party_id *id, const struct q9
 void q931_party_id_copy_to_address(struct q931_party_address *address, const struct q931_party_id *id)
 {
 	address->number = id->number;
+	address->subaddress = id->subaddress;
 }
 
 /*!
@@ -567,6 +641,42 @@ void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const st
 }
 
 /*!
+ * \brief Copy the Q.931 party subaddress to the PRI party subaddress structure.
+ *
+ * \param pri_subaddress PRI party subaddress structure
+ * \param q931_subaddress Q.931 party subaddress structure
+ *
+ * \return Nothing
+ */
+void q931_party_subaddress_copy_to_pri(struct pri_party_subaddress *pri_subaddress, const struct q931_party_subaddress *q931_subaddress)
+{
+	int length;
+
+	/*
+	 * The size of pri_subaddress->data[] is not the same as the size of
+	 * q931_subaddress->data[].
+	 */
+
+	if (!q931_subaddress->valid) {
+		pri_subaddress->valid = 0;
+		pri_subaddress->type = 0;
+		pri_subaddress->odd_even_indicator = 0;
+		pri_subaddress->length = 0;
+		pri_subaddress->data[0] = '\0';
+		return;
+	}
+
+	pri_subaddress->valid = 1;
+	pri_subaddress->type = q931_subaddress->type;
+	pri_subaddress->odd_even_indicator = q931_subaddress->odd_even_indicator;
+
+	length = q931_subaddress->length;
+	pri_subaddress->length = length;
+	memcpy(pri_subaddress->data, q931_subaddress->data, length);
+	pri_subaddress->data[length] = '\0';
+}
+
+/*!
  * \brief Copy the Q.931 party address to the PRI party address structure.
  *
  * \param pri_address PRI party address structure
@@ -577,13 +687,7 @@ void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const st
 void q931_party_address_copy_to_pri(struct pri_party_address *pri_address, const struct q931_party_address *q931_address)
 {
 	q931_party_number_copy_to_pri(&pri_address->number, &q931_address->number);
-
-	/* Subaddresses are not supported yet. */
-	pri_address->subaddress.valid = 0;
-	pri_address->subaddress.type = 0;	/* nsap */
-	pri_address->subaddress.odd_even_indicator = 0;
-	pri_address->subaddress.length = 0;
-	pri_address->subaddress.data[0] = '\0';
+	q931_party_subaddress_copy_to_pri(&pri_address->subaddress, &q931_address->subaddress);
 }
 
 /*!
@@ -598,6 +702,7 @@ void q931_party_id_copy_to_pri(struct pri_party_id *pri_id, const struct q931_pa
 {
 	q931_party_name_copy_to_pri(&pri_id->name, &q931_id->name);
 	q931_party_number_copy_to_pri(&pri_id->number, &q931_id->number);
+	q931_party_subaddress_copy_to_pri(&pri_id->subaddress, &q931_id->subaddress);
 }
 
 /*!
@@ -1478,6 +1583,93 @@ static void q931_get_number(unsigned char *num, int maxlen, unsigned char *src, 
 	num[len] = 0;
 }
 
+static void q931_get_subaddr_specific(unsigned char *num, int maxlen, unsigned char *src, int len, char oddflag)
+{
+	/* User Specified */
+	int x;
+	char *ptr = (char *) num;
+
+	if (len <= 0) {
+		num[0] = '\0';
+		return;
+	}
+
+	if (((len * 2) + 1) > maxlen) {
+		len = (maxlen / 2) - 1;
+	}
+
+	for (x = 0; x < (len - 1); ++x) {
+		ptr += sprintf(ptr, "%02x", src[x]);
+	}
+
+	if (oddflag) {
+		/* ODD */
+		sprintf(ptr, "%01x", (src[len - 1]) >> 4);
+	} else {
+		/* EVEN */
+		sprintf(ptr, "%02x", src[len - 1]);
+	}
+}
+
+static int transmit_subaddr_helper(int full_ie, struct pri *ctrl, struct q931_party_subaddress *q931_subaddress, int msgtype, q931_ie *ie, int offset, int len, int order)
+{
+	size_t datalen;
+
+	if (!q931_subaddress->valid) {
+		return 0;
+	}
+
+	datalen = q931_subaddress->length;
+	if (!q931_subaddress->type) {
+		/* 0 = NSAP */
+		/* 0 = Odd/Even indicator */
+		ie->data[0] = 0x80;
+	} else {
+		/* 2 = User Specified */
+		ie->data[0] = q931_subaddress->odd_even_indicator ? 0xA8 : 0xA0;
+	}
+	memcpy(ie->data + offset, q931_subaddress->data, datalen);
+
+	return datalen + (offset + 2);
+}
+
+static int receive_subaddr_helper(int full_ie, struct pri *ctrl, struct q931_party_subaddress *q931_subaddress, int msgtype, q931_ie *ie, int offset, int len)
+{
+	if (len <= 0) {
+		return -1;
+	}
+
+	q931_subaddress->valid = 1;
+	q931_subaddress->length = len;
+	/* type: 0 = NSAP, 2 = User Specified */
+	q931_subaddress->type = ((ie->data[0] & 0x70) >> 4);
+	q931_subaddress->odd_even_indicator = (ie->data[0] & 0x08) ? 1 : 0;
+	q931_get_number(q931_subaddress->data, sizeof(q931_subaddress->data),
+		ie->data + offset, len);
+
+	return 0;
+}
+
+static void dump_subaddr_helper(int full_ie, struct pri *ctrl, q931_ie *ie, int offset, int len, int datalen, char prefix, const char *named)
+{
+	unsigned char cnum[256];
+
+	if (!(ie->data[0] & 0x70)) {
+		/* NSAP */
+		q931_get_number(cnum, sizeof(cnum), ie->data + offset, datalen);
+	} else {
+		/* User Specified */
+		q931_get_subaddr_specific(cnum, sizeof(cnum), ie->data + offset, datalen,
+			ie->data[0] & 0x08);
+	}
+
+	pri_message(ctrl,
+		"%c %s Sub-Address (len=%2d) [ Ext: %d  Type: %s (%d)  O: %d  '%s' ]\n",
+		prefix, named, len, ie->data[0] >> 7,
+		subaddrtype2str((ie->data[0] & 0x70) >> 4), (ie->data[0] & 0x70) >> 4,
+		(ie->data[0] & 0x08) >> 3, cnum);
+}
+
 static void dump_called_party_number(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
 	unsigned char cnum[256];
@@ -1489,12 +1681,7 @@ static void dump_called_party_number(int full_ie, struct pri *ctrl, q931_ie *ie,
 
 static void dump_called_party_subaddr(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
-	unsigned char cnum[256];
-	q931_get_number(cnum, sizeof(cnum), ie->data + 1, len - 3);
-	pri_message(ctrl, "%c Called Sub-Address (len=%2d) [ Ext: %d  Type: %s (%d)  O: %d  '%s' ]\n",
-		prefix, len, ie->data[0] >> 7,
-		subaddrtype2str((ie->data[0] & 0x70) >> 4), (ie->data[0] & 0x70) >> 4,
-		(ie->data[0] & 0x08) >> 3, cnum);
+	dump_subaddr_helper(full_ie, ctrl, ie, 1 , len, len - 3, prefix, "Called");
 }
 
 static void dump_calling_party_number(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
@@ -1513,12 +1700,7 @@ static void dump_calling_party_number(int full_ie, struct pri *ctrl, q931_ie *ie
 
 static void dump_calling_party_subaddr(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
-	unsigned char cnum[256];
-	q931_get_number(cnum, sizeof(cnum), ie->data + 1, len - 3);
-	pri_message(ctrl, "%c Calling Sub-Address (len=%2d) [ Ext: %d  Type: %s (%d)  O: %d  '%s' ]\n",
-		prefix, len, ie->data[0] >> 7,
-		subaddrtype2str((ie->data[0] & 0x70) >> 4), (ie->data[0] & 0x70) >> 4,
-		(ie->data[0] & 0x08) >> 3, cnum);
+	dump_subaddr_helper(full_ie, ctrl, ie, 1 , len, len - 3, prefix, "Calling");
 }
 
 static void dump_redirecting_number(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
@@ -1635,6 +1817,26 @@ static void dump_connected_number(int full_ie, struct pri *ctrl, q931_ie *ie, in
 	pri_message(ctrl, "  '%s' ]\n", cnum);
 }
 
+static int receive_connected_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
+{
+	if (len < 3) {
+		return -1;
+	}
+
+	return receive_subaddr_helper(full_ie, ctrl, &call->remote_id.subaddress, msgtype, ie,
+		1, len - 3);
+}
+
+static int transmit_connected_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
+{
+	return transmit_subaddr_helper(full_ie, ctrl, &call->local_id.subaddress, msgtype, ie,
+		1, len, order);
+}
+
+static void dump_connected_subaddr(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
+{
+	dump_subaddr_helper(full_ie, ctrl, ie, 1 , len, len - 3, prefix, "Connected");
+}
 
 static int receive_redirecting_number(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
 {
@@ -1691,12 +1893,7 @@ static int transmit_redirecting_number(int full_ie, struct pri *ctrl, q931_call 
 
 static void dump_redirecting_subaddr(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
-	unsigned char cnum[256];
-	q931_get_number(cnum, sizeof(cnum), ie->data + 2, len - 4);
-	pri_message(ctrl, "%c Redirecting Sub-Address (len=%2d) [ Ext: %d  Type: %s (%d)  O: %d  '%s' ]\n",
-		prefix, len, ie->data[0] >> 7,
-		subaddrtype2str((ie->data[0] & 0x70) >> 4), (ie->data[0] & 0x70) >> 4,
-		(ie->data[0] & 0x08) >> 3, cnum);
+	dump_subaddr_helper(full_ie, ctrl, ie, 2, len, len - 4, prefix, "Redirecting");
 }
 
 static int receive_redirection_number(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
@@ -1744,9 +1941,33 @@ static int transmit_redirection_number(int full_ie, struct pri *ctrl, q931_call 
 
 static int receive_calling_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
 {
-	/* copy digits to call->callingsubaddr */
- 	q931_get_number((unsigned char *) call->callingsubaddr, sizeof(call->callingsubaddr), ie->data + 1, len - 3);
-	return 0;
+	if (len < 3) {
+		return -1;
+	}
+
+	return receive_subaddr_helper(full_ie, ctrl, &call->remote_id.subaddress, msgtype, ie,
+		1, len - 3);
+}
+
+static int transmit_calling_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
+{
+	return transmit_subaddr_helper(full_ie, ctrl, &call->local_id.subaddress, msgtype, ie,
+		1, len, order);
+}
+
+static int receive_called_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
+{
+	if (len < 3) {
+		return -1;
+	}
+	return receive_subaddr_helper(full_ie, ctrl, &call->called.subaddress, msgtype, ie, 1,
+		len - 3);
+}
+
+static int transmit_called_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
+{
+	return transmit_subaddr_helper(full_ie, ctrl, &call->called.subaddress, msgtype, ie,
+		1, len, order);
 }
 
 static int receive_called_party_number(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
@@ -2942,9 +3163,9 @@ static struct ie ies[] = {
 	{ 1, Q931_CLOSED_USER_GROUP, "Closed User Group" },
 	{ 1, Q931_REVERSE_CHARGE_INDIC, "Reverse Charging Indication", dump_reverse_charging_indication, receive_reverse_charging_indication, transmit_reverse_charging_indication },
 	{ 1, Q931_CALLING_PARTY_NUMBER, "Calling Party Number", dump_calling_party_number, receive_calling_party_number, transmit_calling_party_number },
-	{ 1, Q931_CALLING_PARTY_SUBADDR, "Calling Party Subaddress", dump_calling_party_subaddr, receive_calling_party_subaddr },
+	{ 1, Q931_CALLING_PARTY_SUBADDR, "Calling Party Subaddress", dump_calling_party_subaddr, receive_calling_party_subaddr, transmit_calling_party_subaddr },
 	{ 1, Q931_CALLED_PARTY_NUMBER, "Called Party Number", dump_called_party_number, receive_called_party_number, transmit_called_party_number },
-	{ 1, Q931_CALLED_PARTY_SUBADDR, "Called Party Subaddress", dump_called_party_subaddr },
+	{ 1, Q931_CALLED_PARTY_SUBADDR, "Called Party Subaddress", dump_called_party_subaddr, receive_called_party_subaddr, transmit_called_party_subaddr },
 	{ 0, Q931_REDIRECTING_NUMBER, "Redirecting Number", dump_redirecting_number, receive_redirecting_number, transmit_redirecting_number },
 	{ 1, Q931_REDIRECTING_SUBADDR, "Redirecting Subaddress", dump_redirecting_subaddr },
 	{ 0, Q931_TRANSIT_NET_SELECT, "Transit Network Selection" },
@@ -2973,6 +3194,7 @@ static struct ie ies[] = {
 	{ 1, Q931_IE_CHANGE_STATUS, "Change Status", dump_change_status, receive_change_status, transmit_change_status },
 	{ 1, Q931_IE_CONNECTED_ADDR, "Connected Number", dump_connected_number },
 	{ 1, Q931_IE_CONNECTED_NUM, "Connected Number", dump_connected_number, receive_connected_number, transmit_connected_number },
+	{ 1, Q931_IE_CONNECTED_SUBADDR, "Connected Subaddress", dump_connected_subaddr, receive_connected_subaddr, transmit_connected_subaddr },
 	{ 1, Q931_IE_ORIGINAL_CALLED_NUMBER, "Original Called Number", dump_redirecting_number, receive_redirecting_number, transmit_redirecting_number },
 	{ 1, Q931_IE_USER_USER_FACILITY, "User-User Facility" },
 	{ 1, Q931_IE_UPDATE, "Update" },
@@ -3942,7 +4164,15 @@ static void pri_cctimer2_timeout(void *data)
 	q931_hangup(ctrl, c, cause);
 }
 
-static int connect_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, Q931_DISPLAY, Q931_IE_CONNECTED_NUM, -1 };
+static int connect_ies[] = {
+	Q931_CHANNEL_IDENT,
+	Q931_IE_FACILITY,
+	Q931_PROGRESS_INDICATOR,
+	Q931_DISPLAY,
+	Q931_IE_CONNECTED_NUM,
+	Q931_IE_CONNECTED_SUBADDR,
+	-1
+};
 
 int q931_connect(struct pri *ctrl, q931_call *c, int channel, int nonisdn)
 {
@@ -4075,7 +4305,9 @@ static int setup_ies[] = {
 	Q931_DISPLAY,
 	Q931_REVERSE_CHARGE_INDIC,
 	Q931_CALLING_PARTY_NUMBER,
+	Q931_CALLING_PARTY_SUBADDR,
 	Q931_CALLED_PARTY_NUMBER,
+	Q931_CALLED_PARTY_SUBADDR,
 	Q931_REDIRECTING_NUMBER,
 	Q931_IE_USER_USER,
 	Q931_SENDING_COMPLETE,
@@ -4096,7 +4328,9 @@ static int cis_setup_ies[] = {
 	Q931_CHANNEL_IDENT,
 	Q931_IE_FACILITY,
 	Q931_CALLING_PARTY_NUMBER,
+	Q931_CALLING_PARTY_SUBADDR,
 	Q931_CALLED_PARTY_NUMBER,
+	Q931_CALLED_PARTY_SUBADDR,
 	Q931_SENDING_COMPLETE,
 	-1
 };
@@ -4827,8 +5061,16 @@ static void q931_fill_ring_event(struct pri *ctrl, struct q931_call *call)
 		sizeof(ctrl->ev.ring.callingnum));
 	libpri_copy_string(ctrl->ev.ring.callingname, call->remote_id.name.str,
 		sizeof(ctrl->ev.ring.callingname));
-	libpri_copy_string(ctrl->ev.ring.callingsubaddr, call->callingsubaddr,
-		sizeof(ctrl->ev.ring.callingsubaddr));
+	q931_party_id_copy_to_pri(&ctrl->ev.ring.calling, &call->remote_id);
+	/* for backwards compatibility, still need ctrl->ev.ring.callingsubaddr */
+	if (!call->remote_id.subaddress.type) {
+		/* NSAP: Type = 0 */
+		libpri_copy_string(ctrl->ev.ring.callingsubaddr,
+			(char *) call->remote_id.subaddress.data,
+			sizeof(ctrl->ev.ring.callingsubaddr));
+	} else {
+		ctrl->ev.ring.callingsubaddr[0] = '\0';
+	}
 
 	ctrl->ev.ring.ani2 = call->ani2;
 
@@ -4836,6 +5078,8 @@ static void q931_fill_ring_event(struct pri *ctrl, struct q931_call *call)
 	ctrl->ev.ring.calledplan = call->called.number.plan;
 	libpri_copy_string(ctrl->ev.ring.callednum, call->called.number.str,
 		sizeof(ctrl->ev.ring.callednum));
+	q931_party_subaddress_copy_to_pri(&ctrl->ev.ring.called_subaddress,
+		&call->called.subaddress);
 
 	/* Original called party information (For backward compatibility) */
 	libpri_copy_string(ctrl->ev.ring.origcalledname,
@@ -5304,8 +5548,16 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.ring.call = c;
 		ctrl->ev.ring.channel = q931_encode_channel(c);
 		libpri_copy_string(ctrl->ev.ring.callednum, c->overlap_digits, sizeof(ctrl->ev.ring.callednum));
-		libpri_copy_string(ctrl->ev.ring.callingsubaddr, c->callingsubaddr, sizeof(ctrl->ev.ring.callingsubaddr));
-		ctrl->ev.ring.complete = c->complete; 	/* this covers IE 33 (Sending Complete) */
+
+		q931_party_id_copy_to_pri(&ctrl->ev.ring.calling, &c->remote_id);
+		/* for backwards compatibility, still need ctrl->ev.ring.callingsubaddr */
+		if (!c->remote_id.subaddress.type) {	/* NSAP: Type = 0 */
+			libpri_copy_string(ctrl->ev.ring.callingsubaddr, (char *) c->remote_id.subaddress.data, sizeof(ctrl->ev.ring.callingsubaddr));
+		} else {
+			ctrl->ev.ring.callingsubaddr[0] = '\0';
+		}
+
+		ctrl->ev.ring.complete = c->complete;	/* this covers IE 33 (Sending Complete) */
 		return Q931_RES_HAVEEVENT;
 	case Q931_STATUS_ENQUIRY:
 		if (c->newcall) {
