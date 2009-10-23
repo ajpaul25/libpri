@@ -91,6 +91,12 @@
 #define PRI_EVENT_KEYPAD_DIGIT	18	/* When we receive during ACTIVE state (INFORMATION) */
 #define PRI_EVENT_SERVICE       19	/* SERVICE maintenance message */
 #define PRI_EVENT_SERVICE_ACK   20	/* SERVICE maintenance acknowledgement message */
+#define PRI_EVENT_HOLD			21	/* HOLD request received */
+#define PRI_EVENT_HOLD_ACK		22	/* HOLD_ACKNOWLEDGE received */
+#define PRI_EVENT_HOLD_REJ		23	/* HOLD_REJECT received */
+#define PRI_EVENT_RETRIEVE		24	/* RETRIEVE request received */
+#define PRI_EVENT_RETRIEVE_ACK	25	/* RETRIEVE_ACKNOWLEDGE received */
+#define PRI_EVENT_RETRIEVE_REJ	26	/* RETRIEVE_REJECT received */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -200,6 +206,7 @@
 #define PRI_CAUSE_NO_ANSWER						19
 #define PRI_CAUSE_CALL_REJECTED					21
 #define PRI_CAUSE_NUMBER_CHANGED				22
+#define PRI_CAUSE_NONSELECTED_USER_CLEARING		26
 #define PRI_CAUSE_DESTINATION_OUT_OF_ORDER		27
 #define PRI_CAUSE_INVALID_NUMBER_FORMAT			28
 #define PRI_CAUSE_FACILITY_REJECTED				29	/* !Q.SIG */
@@ -212,6 +219,7 @@
 #define PRI_CAUSE_ACCESS_INFO_DISCARDED			43	/* !Q.SIG */
 #define PRI_CAUSE_REQUESTED_CHAN_UNAVAIL		44
 #define PRI_CAUSE_PRE_EMPTED					45	/* !Q.SIG */
+#define PRI_CAUSE_RESOURCE_UNAVAIL_UNSPECIFIED	47
 #define PRI_CAUSE_FACILITY_NOT_SUBSCRIBED  		50	/* !Q.SIG */
 #define PRI_CAUSE_OUTGOING_CALL_BARRED     		52	/* !Q.SIG */
 #define PRI_CAUSE_INCOMING_CALL_BARRED     		54	/* !Q.SIG */
@@ -482,6 +490,33 @@ struct pri_party_redirecting {
 	int reason;
 };
 
+/*!
+ * \brief Information for rerouting/deflecting the call.
+ */
+struct pri_rerouting_data {
+	/*!
+	 * \brief Updated caller-id information.
+	 * \note The information may have been altered by procedure in the private network.
+	 */
+	struct pri_party_id caller;
+	/*!
+	 * \note
+	 * deflection.to is the new called number and must always be present.
+	 */
+	struct pri_party_redirecting deflection;
+	/*!
+	 * \brief Diverting user subscription option to specify if caller is notified.
+	 * \details
+	 * noNotification(0),
+	 * notificationWithoutDivertedToNr(1),
+	 * notificationWithDivertedToNr(2),
+	 * notApplicable(3) (Status only.)
+	 */
+	int subscription_option;
+	/*! Invocation ID to use when sending a reply to the call rerouting/deflection request. */
+	int invoke_id;
+};
+
 /* BUGBUG eliminate this struct definition. */
 /* Structures for qsig_cc_facilities */
 struct pri_qsig_cc_extension {
@@ -507,19 +542,20 @@ struct pri_qsig_cc_request_res {
 /* Subcommands derived from supplementary services. */
 #define PRI_SUBCMD_REDIRECTING				1	/*!< Redirecting information update */
 #define PRI_SUBCMD_CONNECTED_LINE			2	/*!< Connected line information update */
-#define PRI_SUBCMD_STATUS_REQ				3	/*!< Determine the status of the given party. */
-#define PRI_SUBCMD_STATUS_REQ_RSP			4	/*!< Status request response */
-#define PRI_SUBCMD_CC_RECORD_RETENTION		5	/*!< Give cc_id to upper layer */
-#define PRI_SUBCMD_CC_AVAILABLE				6	/*!< Indicate that CC is available */
-#define PRI_SUBCMD_CC_REQ					7	/*!< CC activation request */
-#define PRI_SUBCMD_CC_REQ_RSP				8	/*!< CC activation request response */
-#define PRI_SUBCMD_CC_REMOTE_USER_FREE		9	/*!< Indicate that CC party B is available */
-#define PRI_SUBCMD_CC_STATUS_REQ			10	/*!< Request/prod to receive updates of CC party A status */
-#define PRI_SUBCMD_CC_STATUS				11	/*!< Unsolicited update of CC party A status */
-#define PRI_SUBCMD_CC_CALL					12	/*!< Indicate that this call is a CC callback */
-#define PRI_SUBCMD_CC_CANCEL				13	/*!< Unsolicited indication that CC is canceled */
-#define PRI_SUBCMD_CC_DEACTIVATE_REQ		14	/*!< CC deactivation request */
-#define PRI_SUBCMD_CC_DEACTIVATE_RSP		15	/*!< CC deactivation request response */
+#define PRI_SUBCMD_REROUTING				3	/*!< CallRerouting/CallDeflection received. */
+#define PRI_SUBCMD_STATUS_REQ				4	/*!< Determine the status of the given party. */
+#define PRI_SUBCMD_STATUS_REQ_RSP			5	/*!< Status request response */
+#define PRI_SUBCMD_CC_RECORD_RETENTION		6	/*!< Give cc_id to upper layer */
+#define PRI_SUBCMD_CC_AVAILABLE				7	/*!< Indicate that CC is available */
+#define PRI_SUBCMD_CC_REQ					8	/*!< CC activation request */
+#define PRI_SUBCMD_CC_REQ_RSP				9	/*!< CC activation request response */
+#define PRI_SUBCMD_CC_REMOTE_USER_FREE		10	/*!< Indicate that CC party B is available */
+#define PRI_SUBCMD_CC_STATUS_REQ			11	/*!< Request/prod to receive updates of CC party A status */
+#define PRI_SUBCMD_CC_STATUS				12	/*!< Unsolicited update of CC party A status */
+#define PRI_SUBCMD_CC_CALL					13	/*!< Indicate that this call is a CC callback */
+#define PRI_SUBCMD_CC_CANCEL				14	/*!< Unsolicited indication that CC is canceled */
+#define PRI_SUBCMD_CC_DEACTIVATE_REQ		15	/*!< CC deactivation request */
+#define PRI_SUBCMD_CC_DEACTIVATE_RSP		16	/*!< CC deactivation request response */
 
 struct pri_subcmd_status_request {
 	/*!
@@ -679,6 +715,7 @@ struct pri_subcommand {
 		char reserve_space[512];
 		struct pri_party_connected_line connected_line;
 		struct pri_party_redirecting redirecting;
+		struct pri_rerouting_data rerouting;
 		struct pri_subcmd_status_request status_request;
 		struct pri_subcmd_status_request_rsp status_request_rsp;
 		struct pri_subcmd_cc_id cc_available;
@@ -716,13 +753,14 @@ struct pri_subcommands {
  * Event channel parameter encoding:
  * 3322 2222 2222 1111 1111 1100 0000 0000
  * 1098 7654 3210 9876 5432 1098 7654 3210
- * xxxx xxxx xxxx xxDC BBBBBBBBB AAAAAAAAA
+ * xxxx xxxx xxxx xEDC BBBBBBBBB AAAAAAAAA
  *
  * Bit field
  * A - B channel
  * B - Span (DS1) (0 - 127)
  * C - DS1 Explicit bit
  * D - D channel (cis_call) bit (status only)
+ * E - Call is held bit (status only)
  *
  * B channel values:
  * 0     - No channel (ISDN uses for call waiting feature)
@@ -786,10 +824,16 @@ struct pri_event_facility {
 	char callingnum[256];		/*!< Deprecated, preserved for struct pri_event_facname compatibility */
 	int channel;
 	int cref;
+	/*!
+	 * \brief Master call or normal call.
+	 * \note Call pointer known about by upper layer.
+	 * \note NULL if dummy call reference.
+	 */
 	q931_call *call;
 	int callingpres;			/*!< Presentation of Calling CallerID (Deprecated, preserved for struct pri_event_facname compatibility) */
 	int callingplan;			/*!< Dialing plan of Calling entity (Deprecated, preserved for struct pri_event_facname compatibility) */
 	struct pri_subcommands *subcmds;
+	q931_call *subcall;			/*!< Subcall to send any reply toward. */
 };
 
 #define PRI_CALLINGPLANANI
@@ -828,6 +872,7 @@ typedef struct pri_event_ring {
 	struct pri_subcommands *subcmds;
 	struct pri_party_id calling;			/* Calling Party's info, initially subaddress' */
 	struct pri_party_subaddress called_subaddress;	/* Called party's subaddress */
+	char keypad_digits[64];		/* Keypad digits in the SETUP message. */
 } pri_event_ring;
 
 typedef struct pri_event_hangup {
@@ -835,10 +880,22 @@ typedef struct pri_event_hangup {
 	int channel;				/* Channel requested */
 	int cause;
 	int cref;
-	q931_call *call;			/* Opaque call pointer */
+	q931_call *call;			/* Opaque call pointer of call hanging up. */
 	long aoc_units;				/* Advise of Charge number of charged units */
 	char useruserinfo[260];		/* User->User info */
 	struct pri_subcommands *subcmds;
+	/*!
+	 * \brief Opaque held call pointer for possible transfer to active call.
+	 * \note The call_held and call_active pointers must not be NULL if
+	 * transfer held call on disconnect is available.
+	 */
+	q931_call *call_held;
+	/*!
+	 * \brief Opaque active call pointer for possible transfer with held call.
+	 * \note The call_held and call_active pointers must not be NULL if
+	 * transfer held call on disconnect is available.
+	 */
+	q931_call *call_active;
 } pri_event_hangup;
 
 typedef struct pri_event_restart_ack {
@@ -870,6 +927,7 @@ typedef struct pri_event_notify {
 	int channel;
 	int info;
 	struct pri_subcommands *subcmds;
+	q931_call *call;
 } pri_event_notify;
 
 typedef struct pri_event_keypad_digit {
@@ -892,6 +950,51 @@ typedef struct pri_event_service_ack {
 	int changestatus;
 } pri_event_service_ack;
 
+struct pri_event_hold {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_hold_ack {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_hold_rej {
+	int e;
+	int channel;
+	q931_call *call;
+	int cause;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve {
+	int e;
+	int channel;
+	q931_call *call;
+	int flexible;				/* Are we flexible with our channel selection? */
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve_ack {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
+struct pri_event_retrieve_rej {
+	int e;
+	int channel;
+	q931_call *call;
+	int cause;
+	struct pri_subcommands *subcmds;
+};
+
 typedef union {
 	int e;
 	pri_event_generic gen;		/* Generic view */
@@ -910,6 +1013,12 @@ typedef union {
 	pri_event_service service;				/* service message */
 	pri_event_service_ack service_ack;		/* service acknowledgement message */
 	struct pri_event_facility facility;
+	struct pri_event_hold hold;
+	struct pri_event_hold_ack hold_ack;
+	struct pri_event_hold_rej hold_rej;
+	struct pri_event_retrieve retrieve;
+	struct pri_event_retrieve_ack retrieve_ack;
+	struct pri_event_retrieve_rej retrieve_rej;
 } pri_event;
 
 struct pri;
@@ -1125,6 +1234,16 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 /*! \note Use pri_sr_set_redirecting_parties() instead to pass more precise redirecting information. */
 int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int reason);
 
+/*!
+ * \brief Set the keypad digits in the call SETUP record.
+ *
+ * \param sr New call SETUP record.
+ * \param keypad_digits Keypad digits to send.
+ *
+ * \return Nothing
+ */
+void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits);
+
 /* BUGBUG eliminate this prototype. */
 int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout);
 /* BUGBUG eliminate this prototype. */
@@ -1215,6 +1334,157 @@ int pri_notify(struct pri *pri, q931_call *c, int channel, int info);
 
 int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason);
 
+/*!
+ * \brief Set the call deflection/rerouting feature enable flag.
+ *
+ * \param ctrl D channel controller.
+ * \param enable TRUE to enable call deflection/rerouting feature.
+ *
+ * \return Nothing
+ */
+void pri_reroute_enable(struct pri *ctrl, int enable);
+
+/*!
+ * \brief Send the CallRerouting/CallDeflection message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param caller Call rerouting/deflecting updated caller data. (NULL if data not updated.)
+ * \param deflection Call rerouting/deflecting redirection data.
+ * \param subscription_option Diverting user subscription option to specify if caller is notified.
+ *
+ * \note
+ * deflection->to is the new called number and must always be present.
+ * \note
+ * subscription option:
+ * noNotification(0),
+ * notificationWithoutDivertedToNr(1),
+ * notificationWithDivertedToNr(2)
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_id *caller, const struct pri_party_redirecting *deflection, int subscription_option);
+
+enum PRI_REROUTING_RSP_CODE {
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "clear call on invocation".
+	 */
+	PRI_REROUTING_RSP_OK_CLEAR,
+	/*!
+	 * Rerouting invocation accepted and the network provider option
+	 * "served user call retention on invocation of diversion"
+	 * is "retain call until alerting begins at the deflected-to user".
+	 */
+	PRI_REROUTING_RSP_OK_RETAIN,
+	PRI_REROUTING_RSP_NOT_SUBSCRIBED,
+	PRI_REROUTING_RSP_NOT_AVAILABLE,
+	/*! Supplementary service interaction not allowed. */
+	PRI_REROUTING_RSP_NOT_ALLOWED,
+	PRI_REROUTING_RSP_INVALID_NUMBER,
+	/*! Deflection to prohibited number (e.g., operator, police, emergency). */
+	PRI_REROUTING_RSP_SPECIAL_SERVICE_NUMBER,
+	/*! Deflection to served user number. */
+	PRI_REROUTING_RSP_DIVERSION_TO_SELF,
+	PRI_REROUTING_RSP_MAX_DIVERSIONS_EXCEEDED,
+	PRI_REROUTING_RSP_RESOURCE_UNAVAILABLE,
+};
+
+/*!
+ * \brief Send the CallRerouteing/CallDeflection response message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param invoke_id Value given by the initiating request.
+ * \param code The result to send.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_rerouting_rsp(struct pri *ctrl, q931_call *call, int invoke_id, enum PRI_REROUTING_RSP_CODE code);
+
+/*!
+ * \brief Set the call hold feature enable flag.
+ *
+ * \param ctrl D channel controller.
+ * \param enable TRUE to enable call hold feature.
+ *
+ * \return Nothing
+ */
+void pri_hold_enable(struct pri *ctrl, int enable);
+
+/*!
+ * \brief Send the HOLD message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold(struct pri *ctrl, q931_call *call);
+
+/*!
+ * \brief Send the HOLD ACKNOWLEDGE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold_ack(struct pri *ctrl, q931_call *call);
+
+/*!
+ * \brief Send the HOLD REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param cause Q.931 cause code for rejecting the hold request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_hold_rej(struct pri *ctrl, q931_call *call, int cause);
+
+/*!
+ * \brief Send the RETRIEVE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param channel Encoded channel id to use.  If zero do not send channel id.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve(struct pri *ctrl, q931_call *call, int channel);
+
+/*!
+ * \brief Send the RETRIEVE ACKNOWLEDGE message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param channel Encoded channel id to use.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel);
+
+/*!
+ * \brief Send the RETRIEVE REJECT message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param cause Q.931 cause code for rejecting the retrieve request.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
+
 int pri_status_request(struct pri *ctrl, int request_id, const struct pri_sr *req);
 void pri_status_request_response(struct pri *ctrl, int invoke_id, int status);
 
@@ -1270,6 +1540,9 @@ enum PRI_TIMERS_AND_COUNTERS {
 
 	PRI_TIMER_TM20,	/*!< Maximum time awaiting XID response */
 	PRI_TIMER_NM20,	/*!< Number of XID retransmits */
+
+	PRI_TIMER_T_HOLD,	/*!< Maximum time to wait for HOLD request response. */
+	PRI_TIMER_T_RETRIEVE,	/*!< Maximum time to wait for RETRIEVE request response. */
 
 	PRI_TIMER_T_STATUS,		/*!< Max time to wait for all replies to check for compatible terminals */
 
