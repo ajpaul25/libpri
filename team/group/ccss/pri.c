@@ -905,9 +905,9 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int pri_status_request(struct pri *ctrl, int request_id, const struct pri_sr *req)
+int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req)
 {
-	/*! \todo BUGBUG pri_status_request() not written */
+	/*! \todo BUGBUG pri_status_req() not written */
 	return -1;
 }
 
@@ -926,9 +926,9 @@ int pri_status_request(struct pri *ctrl, int request_id, const struct pri_sr *re
  *
  * \return Nothing
  */
-void pri_status_request_response(struct pri *ctrl, int invoke_id, int status)
+void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status)
 {
-	/*! \todo BUGBUG pri_status_request_response() not written */
+	/*! \todo BUGBUG pri_status_req_rsp() not written */
 }
 
 #if 0

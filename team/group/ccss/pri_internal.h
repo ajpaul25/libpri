@@ -544,7 +544,7 @@ enum CC_STATES {
 struct pri_cc_record {
 	/*! Next call-completion record in the list */
 	struct pri_cc_record *next;
-	/*! Call-completion record id */
+	/*! Call-completion record id (0 - 65535) */
 	long record_id;
 	/*! Call-completion state */
 	enum CC_STATES state;
