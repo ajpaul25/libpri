@@ -545,12 +545,12 @@ struct pri_qsig_cc_request_res {
 #define PRI_SUBCMD_REROUTING				3	/*!< CallRerouting/CallDeflection received. */
 #define PRI_SUBCMD_STATUS_REQ				4	/*!< Determine the status of the given party. */
 #define PRI_SUBCMD_STATUS_REQ_RSP			5	/*!< Status request response */
-#define PRI_SUBCMD_CC_RECORD_RETENTION		6	/*!< Give cc_id to upper layer */
-#define PRI_SUBCMD_CC_AVAILABLE				7	/*!< Indicate that CC is available */
-#define PRI_SUBCMD_CC_REQ					8	/*!< CC activation request */
-#define PRI_SUBCMD_CC_REQ_RSP				9	/*!< CC activation request response */
-#define PRI_SUBCMD_CC_REMOTE_USER_FREE		10	/*!< Indicate that CC party B is available */
-#define PRI_SUBCMD_CC_STATUS_REQ			11	/*!< Request/prod to receive updates of CC party A status */
+#define PRI_SUBCMD_CC_AVAILABLE				6	/*!< Indicate that CC is available */
+#define PRI_SUBCMD_CC_REQ					7	/*!< CC activation request */
+#define PRI_SUBCMD_CC_REQ_RSP				8	/*!< CC activation request response */
+#define PRI_SUBCMD_CC_REMOTE_USER_FREE		9	/*!< Indicate that CC party B is available */
+#define PRI_SUBCMD_CC_STATUS_REQ			10	/*!< Request/prod to receive updates of CC party A status */
+#define PRI_SUBCMD_CC_STATUS_REQ_RSP		11	/*!< Requested update of CC party A status */
 #define PRI_SUBCMD_CC_STATUS				12	/*!< Unsolicited update of CC party A status */
 #define PRI_SUBCMD_CC_CALL					13	/*!< Indicate that this call is a CC callback */
 #define PRI_SUBCMD_CC_CANCEL				14	/*!< Unsolicited indication that CC is canceled */
@@ -723,6 +723,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_request_rsp cc_request_rsp;
 		struct pri_subcmd_cc_id cc_remote_user_free;
 		struct pri_subcmd_cc_id cc_status_req;
+		struct pri_subcmd_cc_status cc_status_req_rsp;
 		struct pri_subcmd_cc_status cc_status;
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_id cc_cancel;
@@ -1485,19 +1486,20 @@ int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel);
  */
 int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
 
-int pri_status_request(struct pri *ctrl, int request_id, const struct pri_sr *req);
-void pri_status_request_response(struct pri *ctrl, int invoke_id, int status);
+int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req);
+void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status);
 
 /* Call-completion function prototypes */
 void pri_cc_available(struct pri *ctrl, q931_call *call);
-int pri_cc_request(struct pri *ctrl, long cc_id, int mode);
-void pri_cc_request_response(struct pri *ctrl, long cc_id, int status);
+int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
+void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);
-int pri_cc_status_request(struct pri *ctrl, long cc_id);
+int pri_cc_status_req(struct pri *ctrl, long cc_id);
+void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_status(struct pri *ctrl, long cc_id, int status);
 int pri_cc_call(struct pri *ctrl, long cc_id, q931_call *call, int channel, int exclusive);
 void pri_cc_cancel(struct pri *ctrl, long cc_id);
-int pri_cc_deactivate_request(struct pri *ctrl, long cc_id);
+int pri_cc_deactivate_req(struct pri *ctrl, long cc_id);
 
 /* Get/Set PRI Timers  */
 #define PRI_GETSET_TIMERS

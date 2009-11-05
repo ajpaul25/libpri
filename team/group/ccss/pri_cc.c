@@ -300,7 +300,7 @@ void pri_cc_available(struct pri *ctrl, q931_call *call)
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int pri_cc_request(struct pri *ctrl, long cc_id, int mode)
+int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 {
 	struct pri_sr req;
 	q931_call *call;
@@ -350,7 +350,7 @@ int pri_cc_request(struct pri *ctrl, long cc_id, int mode)
 
 	return 0;
 
-	/*! \todo BUGBUG pri_cc_request() not written */
+	/*! \todo BUGBUG pri_cc_req() not written */
 }
 
 /*!
@@ -363,7 +363,7 @@ int pri_cc_request(struct pri *ctrl, long cc_id, int mode)
  *
  * \return Nothing
  */
-void pri_cc_request_response(struct pri *ctrl, long cc_id, int status)
+void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status)
 {
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
@@ -378,7 +378,7 @@ void pri_cc_request_response(struct pri *ctrl, long cc_id, int status)
 		break;
 	}
 
-	/*! \todo BUGBUG pri_cc_request_response() not written */
+	/*! \todo BUGBUG pri_cc_req_rsp() not written */
 }
 
 /*!
@@ -414,8 +414,8 @@ void pri_cc_remote_user_free(struct pri *ctrl, long cc_id)
  * \param cc_id CC record ID to activate.
  *
  * \note
- * There could be zero, one, or more PRI_SUBCMD_CC_STATUS responses to the
- * status request depending upon how many endpoints respond to the request.
+ * There could be zero, one, or more PRI_SUBCMD_CC_STATUS_REQ_RSP responses to
+ * the status request depending upon how many endpoints respond to the request.
  * \note
  * This is expected to be called only if there are two PTMP links between
  * party A and the network.  (e.g., A --> * --> PSTN)
@@ -423,7 +423,7 @@ void pri_cc_remote_user_free(struct pri *ctrl, long cc_id)
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int pri_cc_status_request(struct pri *ctrl, long cc_id)
+int pri_cc_status_req(struct pri *ctrl, long cc_id)
 {
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
@@ -438,8 +438,39 @@ int pri_cc_status_request(struct pri *ctrl, long cc_id)
 		break;
 	}
 
-	/*! \todo BUGBUG pri_cc_status_request() not written */
+	/*! \todo BUGBUG pri_cc_status_req() not written */
 	return -1;
+}
+
+/*!
+ * \brief Update the busy status of CC party A.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_id CC record ID to activate.
+ * \param status Updated party A status free(0)/busy(1)
+ *
+ * \note
+ * This is expected to be called only if there are two PTMP links between
+ * party A and the network.  (e.g., A --> * --> PSTN)
+ *
+ * \return Nothing
+ */
+void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status)
+{
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		break;
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		if (q931_is_ptmp(ctrl)) {
+		} else {
+		}
+		break;
+	default:
+		break;
+	}
+
+	/*! \todo BUGBUG pri_cc_status_req() not written */
 }
 
 /*!
@@ -543,7 +574,7 @@ void pri_cc_cancel(struct pri *ctrl, long cc_id)
  * \retval 0 on success.
  * \retval -1 on error.
  */
-int pri_cc_deactivate_request(struct pri *ctrl, long cc_id)
+int pri_cc_deactivate_req(struct pri *ctrl, long cc_id)
 {
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
@@ -558,7 +589,7 @@ int pri_cc_deactivate_request(struct pri *ctrl, long cc_id)
 		break;
 	}
 
-	/*! \todo BUGBUG pri_cc_deactivate_request() not written */
+	/*! \todo BUGBUG pri_cc_deactivate_req() not written */
 	return -1;
 }
 
