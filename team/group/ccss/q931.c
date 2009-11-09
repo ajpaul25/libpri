@@ -4328,6 +4328,17 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 		break;
 	}
 
+	if (c->cc.record) {
+		switch (c->cc.record->state) {
+		case CC_STATE_PENDING_AVAILABLE:
+			c->cc.record->state = CC_STATE_AVAILABLE;
+			rose_cc_available_encode(ctrl, c, Q931_ALERTING);
+			break;
+		default:
+			break;
+		}
+	}
+
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
@@ -4557,6 +4568,18 @@ int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 		c->causecode = CODE_CCITT;
 		c->causeloc = LOC_PRIV_NET_LOCAL_USER;
 		c->sendhangupack = 1;
+
+		if (c->cc.record) {
+			switch (c->cc.record->state) {
+			case CC_STATE_PENDING_AVAILABLE:
+				c->cc.record->state = CC_STATE_AVAILABLE;
+				rose_cc_available_encode(ctrl, c, Q931_DISCONNECT);
+				break;
+			default:
+				break;
+			}
+		}
+
 		pri_schedule_del(ctrl, c->retranstimer);
 		c->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T305], pri_disconnect_timeout, c);
 		return send_message(ctrl, c, Q931_DISCONNECT, disconnect_ies);
@@ -4734,6 +4757,11 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		c->ccoperation = req->ccbsnr;
 
 	pri_call_add_standard_apdus(ctrl, c);
+
+	/* Save the initial cc-parties. */
+	c->cc.party_a = c->local_id;
+	c->cc.party_b = c->called;
+	c->cc.party_b_is_remote = 1;
 
 	if (ctrl->subchannel && !ctrl->bri)
 		res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
@@ -6640,6 +6668,11 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_release_complete(ctrl, c, PRI_CAUSE_BEARERCAPABILITY_NOTIMPL);
 			break;
 		}
+
+		/* Save the initial cc-parties. (Incoming SETUP can only be a master call.) */
+		c->cc.party_a = c->remote_id;
+		c->cc.party_b = c->called;
+		c->cc.party_b_is_remote = 0;
 
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;
