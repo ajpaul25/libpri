@@ -1490,7 +1490,7 @@ int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req);
 void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status);
 
 /* Call-completion function prototypes */
-void pri_cc_available(struct pri *ctrl, q931_call *call);
+long pri_cc_available(struct pri *ctrl, q931_call *call);
 int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
 void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);

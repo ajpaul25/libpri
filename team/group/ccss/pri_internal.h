@@ -116,9 +116,6 @@ struct pri {
 	q931_call **callpool;
 	q931_call *localpool;
 
-	/*! Active call-completion records */
-	struct pri_cc_record *cc_pool;
-
 	/* do we do overlap dialing */
 	int overlapdial;
 
@@ -136,10 +133,20 @@ struct pri {
 	unsigned int q931_rxcount;
 #endif
 
-	/*! Last CC id allocated. */
-	unsigned short last_cc_id;
 	short last_invoke;	/* Last ROSE invoke ID */
 	unsigned char sendfacility;
+
+	/*! Call completion */
+	struct {
+		/*! Active CC records */
+		struct pri_cc_record *pool;
+		/*! Last CC record id allocated. */
+		unsigned short last_record_id;
+		/*! Last CC PTMP reference id allocated. (0-127) */
+		unsigned char last_reference_id;
+		/*! Last CC PTMP linkage id allocated. (0-127) */
+		unsigned char last_linkage_id;
+	} cc;
 };
 
 /*! \brief Maximum name length plus null terminator (From ECMA-164) */
@@ -413,11 +420,6 @@ struct q931_call {
 	enum Q931_CALL_STATE ourcallstate;	/* Our call state */
 	enum Q931_CALL_STATE sugcallstate;	/* Status call state */
 
-/* BUGBUG These CC elements may not be retained. */
-	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
-	int ccrequestresult;
-	int cctimer2;			/* Timer for QSIG-timer2 */
-
 	int ani2;               /* ANI II */
 
 	/*! Buffer for digits that come in KEYPAD_FACILITY */
@@ -518,6 +520,24 @@ struct q931_call {
 	/* These valid in master call only */
 	struct q931_call *subcalls[Q931_MAX_TEI];
 	int pri_winner;
+
+/* BUGBUG These CC elements will not be retained. (At least in this form) */
+	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
+	int ccrequestresult;
+	int cctimer2;			/* Timer for QSIG-timer2 */
+
+	/* Call completion */
+	struct {
+		/*! CC record associated with this call. */
+		struct pri_cc_record *record;
+		/*! Original calling party. */
+		struct q931_party_id party_a;
+		/*! Original called party. */
+		struct q931_party_address party_b;
+		/*! TRUE if the remote party is party B. */
+		unsigned char party_b_is_remote;
+/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
+	} cc;
 };
 
 enum CC_STATES {
@@ -525,6 +545,8 @@ enum CC_STATES {
 	CC_STATE_IDLE,
 	/*! CC has recorded call information in anticipation of CC availability. */
 	CC_STATE_RECORD_RETENTION,
+	/*! CC is available and waiting on ALERTING or DISCONNECT to go out. */
+	CC_STATE_PENDING_AVAILABLE,
 	/*! CC is available and waiting on possible CC request. */
 	CC_STATE_AVAILABLE,
 	/*! CC is requested to be activated and waiting on party B to acknowledge. */
@@ -539,6 +561,9 @@ enum CC_STATES {
 	CC_STATE_WAIT_CALLBACK,
 };
 
+/* Invalid PTMP call completion reference and linkage id value. */
+#define CC_PTMP_INVALID_ID  0xFF
+
 /*! \brief Call-completion record */
 struct pri_cc_record {
 	/*! Next call-completion record in the list */
@@ -551,6 +576,7 @@ struct pri_cc_record {
 	struct q931_party_id party_a;
 	/*! Original called party. */
 	struct q931_party_address party_b;
+/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 
 	/*! TRUE if the remote party is party B. */
 	unsigned char party_b_is_remote;

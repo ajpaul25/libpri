@@ -58,7 +58,7 @@ static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned
 {
 	struct pri_cc_record *cc_record;
 
-	for (cc_record = ctrl->cc_pool; cc_record; cc_record = cc_record->next) {
+	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->ccbs_reference_id == reference_id) {
 			/* Found the record */
 			break;
@@ -69,7 +69,6 @@ static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned
 }
 #endif
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
  * \internal
  * \brief Find a cc_record by the PTMP linkage_id.
@@ -84,7 +83,7 @@ static struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned l
 {
 	struct pri_cc_record *cc_record;
 
-	for (cc_record = ctrl->cc_pool; cc_record; cc_record = cc_record->next) {
+	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->call_linkage_id == linkage_id) {
 			/* Found the record */
 			break;
@@ -93,7 +92,6 @@ static struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned l
 
 	return cc_record;
 }
-#endif
 
 /*!
  * \internal
@@ -109,7 +107,7 @@ static struct pri_cc_record *pri_cc_find_by_id(struct pri *ctrl, long cc_id)
 {
 	struct pri_cc_record *cc_record;
 
-	for (cc_record = ctrl->cc_pool; cc_record; cc_record = cc_record->next) {
+	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->record_id == cc_id) {
 			/* Found the record */
 			break;
@@ -135,7 +133,7 @@ static struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const s
 {
 	struct pri_cc_record *cc_record;
 
-	for (cc_record = ctrl->cc_pool; cc_record; cc_record = cc_record->next) {
+	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (!q931_cmp_party_id_to_address(&cc_record->party_a, party_a)
 			&& !q931_party_address_cmp(&cc_record->party_b, party_b)) {
 			/* Found the record */
@@ -152,6 +150,69 @@ static struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const s
 #if defined(BUGBUG_NOT_USED_YET)
 /*!
  * \internal
+ * \brief Allocate a new cc_record reference id.
+ *
+ * \param ctrl D channel controller.
+ *
+ * \retval reference_id on success.
+ * \retval -1 on error.
+ */
+static int pri_cc_new_reference_id(struct pri *ctrl)
+{
+	long reference_id;
+	long first_id;
+
+	ctrl->cc.last_reference_id = (ctrl->cc.last_reference_id + 1) & 0x7F;
+	reference_id = ctrl->cc.last_reference_id;
+	first_id = reference_id;
+	while (pri_cc_find_by_reference(ctrl, reference_id)) {
+		ctrl->cc.last_reference_id = (ctrl->cc.last_reference_id + 1) & 0x7F;
+		reference_id = ctrl->cc.last_reference_id;
+		if (reference_id == first_id) {
+			/* We probably have a resource leak. */
+			pri_error(ctrl, "PTMP call completion reference id exhaustion!\n");
+			reference_id = -1;
+			break;
+		}
+	}
+
+	return reference_id;
+}
+#endif
+
+/*!
+ * \internal
+ * \brief Allocate a new cc_record linkage id.
+ *
+ * \param ctrl D channel controller.
+ *
+ * \retval linkage_id on success.
+ * \retval -1 on error.
+ */
+static int pri_cc_new_linkage_id(struct pri *ctrl)
+{
+	long linkage_id;
+	long first_id;
+
+	ctrl->cc.last_linkage_id = (ctrl->cc.last_linkage_id + 1) & 0x7F;
+	linkage_id = ctrl->cc.last_linkage_id;
+	first_id = linkage_id;
+	while (pri_cc_find_by_linkage(ctrl, linkage_id)) {
+		ctrl->cc.last_linkage_id = (ctrl->cc.last_linkage_id + 1) & 0x7F;
+		linkage_id = ctrl->cc.last_linkage_id;
+		if (linkage_id == first_id) {
+			/* We probably have a resource leak. */
+			pri_error(ctrl, "PTMP call completion linkage id exhaustion!\n");
+			linkage_id = -1;
+			break;
+		}
+	}
+
+	return linkage_id;
+}
+
+/*!
+ * \internal
  * \brief Allocate a new cc_record id.
  *
  * \param ctrl D channel controller.
@@ -164,16 +225,16 @@ static long pri_cc_new_id(struct pri *ctrl)
 	long record_id;
 	long first_id;
 
-	record_id = ++ctrl->last_cc_id;
+	record_id = ++ctrl->cc.last_record_id;
 	first_id = record_id;
 	while (pri_cc_find_by_id(ctrl, record_id)) {
-		record_id = ++ctrl->last_cc_id;
+		record_id = ++ctrl->cc.last_record_id;
 		if (record_id == first_id) {
 			/*
 			 * We have a resource leak.
 			 * We should never need to allocate 64k records on a D channel.
 			 */
-			pri_error(ctrl, "ERROR Too many call completion records!\n");
+			pri_error(ctrl, "Too many call completion records!\n");
 			record_id = -1;
 			break;
 		}
@@ -181,7 +242,6 @@ static long pri_cc_new_id(struct pri *ctrl)
 
 	return record_id;
 }
-#endif
 
 #if defined(BUGBUG_NOT_USED_YET)
 /*!
@@ -198,7 +258,7 @@ static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 	struct pri_cc_record **prev;
 	struct pri_cc_record *current;
 
-	for (prev = &ctrl->cc_pool, current = ctrl->cc_pool; current;
+	for (prev = &ctrl->cc.pool, current = ctrl->cc.pool; current;
 		prev = &current->next, current = current->next) {
 		if (current == doomed) {
 			*prev = current->next;
@@ -211,46 +271,46 @@ static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 }
 #endif
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
  * \internal
  * \brief Allocate a new cc_record.
  *
  * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
  *
- * \retval cc_id on success.
- * \retval -1 on error.
+ * \retval pointer to new call completion record
+ * \retval NULL if failed
  */
-static long pri_cc_new_record(struct pri *ctrl)
+static struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 {
 	struct pri_cc_record *cc_record;
 	long record_id;
 
-	cc_record = calloc(1, sizeof(*cc_record));
-	if (!cc_record) {
-		return -1;
-	}
 	record_id = pri_cc_new_id(ctrl);
 	if (record_id < 0) {
-		free(cc_record);
-		return -1;
+		return NULL;
+	}
+	cc_record = calloc(1, sizeof(*cc_record));
+	if (!cc_record) {
+		return NULL;
 	}
 
 	/* Initialize the new record */
 	cc_record->record_id = record_id;
-	cc_record->call_linkage_id = 0xFF;/* Invalid so it will never be found this way */
-	cc_record->ccbs_reference_id = 0xFF;/* Invalid so it will never be found this way */
-	q931_party_id_init(&cc_record->party_a);
-	q931_party_address_init(&cc_record->party_b);
+	cc_record->call_linkage_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
+	cc_record->ccbs_reference_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
+	cc_record->party_a = call->cc.party_a;
+	cc_record->party_b = call->cc.party_b;
+	cc_record->party_b_is_remote = call->cc.party_b_is_remote;
+/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 /*! \todo BUGBUG need more initialization?? */
 
 	/* Insert the new record into the database */
-	cc_record->next = ctrl->cc_pool;
-	ctrl->cc_pool = cc_record;
+	cc_record->next = ctrl->cc.pool;
+	ctrl->cc.pool = cc_record;
 
-	return record_id;
+	return cc_record;
 }
-#endif
 
 /*!
  * \brief Indicate to the far end that CCBS/CCNR is available.
@@ -262,28 +322,68 @@ static long pri_cc_new_record(struct pri *ctrl)
  * The CC available indication will go out with the next
  * DISCONNECT(busy/congested)/ALERTING message.
  *
- * \return Nothing
+ * \retval cc_id on success for subsequent reference.
+ * \retval -1 on error.
  */
-void pri_cc_available(struct pri *ctrl, q931_call *call)
+long pri_cc_available(struct pri *ctrl, q931_call *call)
 {
+	struct pri_cc_record *cc_record;
+	long cc_id;
+
+	if (call->cc.record) {
+		/* This call is already associated with call completion. */
+		return -1;
+	}
+
+	cc_record = NULL;
+
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
+		cc_record = pri_cc_new_record(ctrl, call);
+		if (!cc_record) {
+			break;
+		}
+
 		/*
 		 * Q.SIG has no message to send when CC is available.
 		 * Q.SIG assumes CC is always available and is denied when
 		 * requested if CC is not possible or allowed.
 		 */
+		cc_record->state = CC_STATE_AVAILABLE;
 		break;
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
 		if (q931_is_ptmp(ctrl)) {
+			int linkage_id;
+
+			linkage_id = pri_cc_new_linkage_id(ctrl);
+			if (linkage_id < 0) {
+				break;
+			}
+			cc_record = pri_cc_new_record(ctrl, call);
+			if (!cc_record) {
+				break;
+			}
+			cc_record->call_linkage_id = linkage_id;
 		} else {
+			cc_record = pri_cc_new_record(ctrl, call);
+			if (!cc_record) {
+				break;
+			}
 		}
-		/*! \todo BUGBUG pri_cc_available() not written */
+		cc_record->state = CC_STATE_PENDING_AVAILABLE;
 		break;
 	default:
 		break;
 	}
+
+	call->cc.record = cc_record;
+	if (cc_record) {
+		cc_id = cc_record->record_id;
+	} else {
+		cc_id = -1;
+	}
+	return cc_id;
 }
 
 /*!
@@ -309,10 +409,6 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 	cc_record = pri_cc_find_by_id(ctrl, cc_id);
 	if (!cc_record) {
 		return -1;
-	}
-
-	if (cc_record->state == CC_STATE_IDLE) {
-		cc_record->party_b_is_remote = 1;
 	}
 
 	switch (ctrl->switchtype) {

@@ -3339,6 +3339,111 @@ int pri_rerouting_rsp(struct pri *ctrl, q931_call *call, int invoke_id, enum PRI
 }
 
 /*!
+ * \internal
+ * \brief Encode ETSI PTP call completion event operation message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode message.
+ * \param operation PTP call completion event operation to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptp_cc_operation(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call, enum rose_operation operation)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = operation;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI PTMP call completion available message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode message.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptmp_cc_available(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = ROSE_ETSI_CallInfoRetain;
+
+	msg.args.etsi.CallInfoRetain.call_linkage_id = call->cc.record->call_linkage_id;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Encode and queue a cc-available message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode call completion available.
+ * \param msgtype Q.931 message type to put facility ie in.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rose_cc_available_encode(struct pri *ctrl, q931_call *call, int msgtype)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		if (q931_is_ptmp(ctrl)) {
+			end =
+				enc_etsi_ptmp_cc_available(ctrl, buffer, buffer + sizeof(buffer), call);
+		} else {
+			end =
+				enc_etsi_ptp_cc_operation(ctrl, buffer, buffer + sizeof(buffer), call,
+					ROSE_ETSI_CCBS_T_Available);
+		}
+		break;
+	case PRI_SWITCH_QSIG:
+		/* Q.SIG does not have a cc-available type message. */
+		return 0;
+	default:
+		return -1;
+	}
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL, NULL);
+}
+
+/*!
  * \brief Handle the ROSE reject message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
