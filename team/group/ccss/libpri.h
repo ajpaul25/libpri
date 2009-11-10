@@ -1167,6 +1167,14 @@ q931_call *pri_find_call(struct pri *pri, int cr);
 /* BUGBUG eliminate this prototype. */
 void pri_call_set_cc_operation(q931_call *call, int cc_operation);
 
+/*!
+ * \brief Deterimine if the given call control pointer is a dummy call.
+ *
+ * \retval TRUE if given call is a dummy call.
+ * \retval FALSE otherwise.
+ */
+int pri_is_dummy_call(q931_call *call);
+
 /* Retrieve CRV reference for GR-303 calls.  Returns >0 on success. */
 int pri_get_crv(struct pri *pri, q931_call *call, int *callmode);
 
