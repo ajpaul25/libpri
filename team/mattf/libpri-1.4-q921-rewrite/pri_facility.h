@@ -74,6 +74,7 @@ int eect_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 int rlt_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
 
 int qsig_cf_callrerouting(struct pri *pri, q931_call *c, const char* dest, const char* original, const char* reason);
+int send_reroute_request(struct pri *ctrl, q931_call *call, const struct q931_party_id *caller, const struct q931_party_redirecting *deflection, int subscription_option);
 
 /* starts a QSIG Path Replacement */
 int anfpr_initiate_transfer(struct pri *pri, q931_call *c1, q931_call *c2);
@@ -86,10 +87,7 @@ int rose_diverting_leg_information3_encode(struct pri *pri, q931_call *call, int
 int rose_connected_name_encode(struct pri *pri, q931_call *call, int messagetype);
 int rose_called_name_encode(struct pri *pri, q931_call *call, int messagetype);
 
-/* Use this function to queue a facility-IE born APDU onto a call
- * call is the call to use, messagetype is any one of the Q931 messages,
- * apdu is the apdu data, apdu_len is the length of the apdu data  */
-int pri_call_apdu_queue(q931_call *call, int messagetype, void *apdu, int apdu_len, void (*function)(void *data), void *data);
+int pri_call_apdu_queue(q931_call *call, int messagetype, const unsigned char *apdu, int apdu_len);
 
 /* Used by q931.c to cleanup the apdu queue upon destruction of a call */
 int pri_call_apdu_queue_cleanup(q931_call *call);
@@ -106,9 +104,9 @@ struct rose_msg_result;
 struct rose_msg_error;
 struct rose_msg_reject;
 
-void rose_handle_invoke(struct pri *ctrl, q931_call *call, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_invoke *invoke);
-void rose_handle_result(struct pri *ctrl, q931_call *call, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_result *result);
-void rose_handle_error(struct pri *ctrl, q931_call *call, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_error *error);
-void rose_handle_reject(struct pri *ctrl, q931_call *call, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_reject *reject);
+void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_invoke *invoke);
+void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_result *result);
+void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_error *error);
+void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_reject *reject);
 
 #endif /* _PRI_FACILITY_H */
