@@ -2160,7 +2160,7 @@ void q921_start(struct pri *pri, int isCPE)
 	//q921_reset(pri, 1);
 	if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
 #ifndef NO_OLD_CODE
-		pri->q921_state = Q921_DOWN;
+		q921_setstate(pri, Q921_TEI_UNASSIGNED);
 		if (isCPE)
 			q921_tei_request(pri);
 #endif
