@@ -2126,8 +2126,10 @@ static void q921_acknowledge_pending_check(struct pri *pri)
 
 static void q921_statemachine_check(struct pri *pri)
 {
-	q921_send_queued_iframes(pri);
-	q921_acknowledge_pending_check(pri);
+	if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED) {
+		q921_send_queued_iframes(pri);
+		q921_acknowledge_pending_check(pri);
+	}
 }
 
 static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int len)
