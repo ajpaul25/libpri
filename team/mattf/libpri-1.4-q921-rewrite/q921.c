@@ -145,12 +145,11 @@ static void q921_tei_request(void *vpri)
 		return;
 	}
 	pri->n202_counter++;
-#if 0
 	if (pri->n202_counter > pri->timers[PRI_TIMER_N202]) {
-		pri_error(pri, "Unable to assign TEI from network\n");
+		pri_error(pri, "Unable to receive TEI from network!\n");
+		pri->n202_counter = 0;
 		return;
 	}
-#endif
 	pri->ri = random() % 65535;
 	q921_send_tei(pri, Q921_TEI_IDENTITY_REQUEST, pri->ri, Q921_TEI_GROUP, 1);
 	pri_schedule_del(pri, pri->t202_timer);
@@ -739,13 +738,57 @@ int q921_transmit_uiframe(struct pri *pri, void *buf, int len)
 	return 0;
 }
 
+static struct pri * pri_find_tei(struct pri *vpri, int tei)
+{
+	struct pri *pri;
+	for (pri = vpri; pri; pri = pri->subchannel) {
+		if (pri->tei == tei)
+			return pri;
+	}
+
+	return NULL;
+}
+
 /* This is the equivalent of a DL-DATA request, as well as the I frame queued up outcome */
-int q921_transmit_iframe(struct pri *pri, void *buf, int len, int cr)
+int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 {
 	q921_frame *f, *prev=NULL;
+	struct pri *pri;
+
+	if (tei == Q921_TEI_GROUP) {
+		pri_error(vpri, "Huh?! Shouldn't be sending I-frames out the group TEI\n");
+		return 0;
+	}
+
+	pri = pri_find_tei(vpri, tei);
+
+	if (!pri) {
+		pri_error(vpri, "Huh?! Unable to locate PRI associated with TEI %d.  Did we have to ditch it due to error conditions?\n", tei);
+		return 0;
+	}
+
+	/* If we aren't in a state compatiable with DL-DATA requests, start getting us there here */
+	switch (pri->q921_state) {
+	case Q921_TEI_UNASSIGNED:
+		/* If we're unassigned, we have to DL-ESTABLISH first - first rev of this code is going to assume
+		 * we're PTMP, TE side.  We have different state rules when we're NT side */
+		q921_start(pri);
+		break;
+		
+	case Q921_TEI_ASSIGNED:
+		q921_establish_data_link(pri);
+		pri->l3initiated = 1;
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		break;
+	default:
+		break;
+	}
 
 	/* Figure B.7/Q.921 Page 70 */
 	switch (pri->q921_state) {
+	case Q921_TEI_UNASSIGNED:
+	case Q921_ASSIGN_AWAITING_TEI:
+	case Q921_TEI_ASSIGNED:
 	case Q921_TIMER_RECOVERY:
 	case Q921_AWAITING_ESTABLISHMENT:
 	case Q921_MULTI_FRAME_ESTABLISHED:
@@ -1220,7 +1263,7 @@ static void q921_tei_release_and_reacquire(struct pri *master)
 	master->subchannel = NULL;
 	master->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
 	master->schedev = 1;
-	q921_start(master, master->localtype == PRI_CPE);
+	q921_start(master);
 }
 
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
@@ -1262,11 +1305,17 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 				++tei;
 			sub = sub->subchannel;
 		}
+
+		if (tei >= Q921_TEI_GROUP) {
+			pri_error(pri, "Reached maximum TEI quota, cannot assign new TEI\n");
+			return NULL;
+		}
 		sub->subchannel = __pri_new_tei(-1, pri->localtype, pri->switchtype, pri, NULL, NULL, NULL, tei, 1);
 		if (!sub->subchannel) {
 			pri_error(pri, "Unable to allocate D-channel for new TEI %d\n", tei);
 			return NULL;
 		}
+		q921_setstate(sub->subchannel, Q921_TEI_ASSIGNED);
 		q921_send_tei(pri, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 1);
 		break;
 	case Q921_TEI_IDENTITY_ASSIGNED:
@@ -1323,14 +1372,14 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 static int is_command(struct pri *pri, q921_h *h)
 {
-	int	command =0;
+	int command = 0;
 	int c_r = h->s.h.c_r;
 
 	if ((pri->localtype == PRI_NETWORK && c_r == 0) ||
 		(pri->localtype == PRI_CPE && c_r == 1))
 		command = 1;
 
-	return( command );
+	return command;
 }
 
 static void q921_clear_exception_conditions(struct pri *pri)
@@ -1398,6 +1447,33 @@ static void stop_sabme_timer(struct pri *pri)
 }
 #endif
 
+static pri_event *q921_disc_rx(struct pri *pri, q921_h *h)
+{
+	pri_event * res = NULL;
+
+	switch (pri->q921_state) {
+	case Q921_AWAITING_RELEASE:
+		q921_send_ua(pri, h->u.p_f);
+		break;
+	case Q921_MULTI_FRAME_ESTABLISHED:
+	case Q921_TIMER_RECOVERY:
+		q921_discard_iqueue(pri);
+		q921_send_ua(pri, h->u.p_f);
+		/* DL-RELEASE Indication */
+		stop_t200(pri);
+		if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED)
+			stop_t203(pri);
+		q921_setstate(pri, Q921_TEI_ASSIGNED);
+		break;
+	default:
+		pri_error(pri, "Don't know what to do with DISC in state %d\n", pri->q921_state);
+		break;
+
+	}
+
+	return res;
+}
+
 static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 {
 	pri_event * res = NULL;
@@ -1406,7 +1482,7 @@ static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 	case Q921_TEI_ASSIGNED:
 		pri_error(pri, "MDL-ERROR (C, D): UA received in state %d\n", pri->q921_state);
 		break;
-	case Q921_AWAITING_ESTABLISH:
+	case Q921_AWAITING_ESTABLISHMENT:
 		if (!h->u.p_f) {
 			pri_error(pri, "MDL-ERROR: Received UA with F = 0 while awaiting establishment\n");
 			break;
@@ -1699,7 +1775,8 @@ static pri_event *q921_iframe_rx(struct pri *pri, q921_h *h, int len)
 
 			pri->reject_exception = 0;
 
-			res = q931_receive(pri, (q931_h *)h->i.data, len - 4);
+			//res = q931_receive(PRI_MASTER(pri), pri->tei, (q931_h *)h->i.data, len - 4);
+			res = q931_receive(pri, pri->tei, (q931_h *)h->i.data, len - 4);
 
 			if (h->i.p_f) {
 				q921_rr(pri, 1, 0);
@@ -1726,7 +1803,7 @@ static pri_event *q921_iframe_rx(struct pri *pri, q921_h *h, int len)
 
 		if (!n_r_is_valid(pri, h->i.n_r)) {
 			n_r_error_recovery(pri);
-			q921_setstate(pri, Q921_AWAITING_ESTABLISH);
+			q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
 		} else {
 			if (pri->q921_state == Q921_TIMER_RECOVERY) {
 				update_v_a(pri, h->i.n_r);
@@ -1951,14 +2028,14 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 #endif
 			} else if (!h->u.m2) {
 				if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
-					pri_error(pri, "%s:%d FIXME!!!\n", __FUNCTION__, __LINE__);
-					return NULL;
 
 					q921_receive_MDL(pri, (q921_u *)h, len);
+
 				} else {
 					int res;
 
-					res = q931_receive(pri, (q931_h *) h->u.data, len - 3);
+					//res = q931_receive(PRI_MASTER(pri), pri->tei, (q931_h *) h->u.data, len - 3);
+					res = q931_receive(pri, pri->tei, (q931_h *) h->u.data, len - 3);
 					if (res == -1) {
 						return NULL;
 					}
@@ -1968,8 +2045,7 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			}
 			break;
 		case 2:
-			pri_error(pri, "%s:%d FIXME!!!\n", __FUNCTION__, __LINE__);
-			return NULL;
+			return q921_disc_rx(pri, h);
 #if 0
 			if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP))
 				pri_message(pri, "-- Got Disconnect from peer.\n");
@@ -2147,7 +2223,6 @@ static void q921_restart(struct pri *pri, int now)
 
 static void q921_establish_data_link(struct pri *pri)
 {
-	pri->k = 20;
 	q921_clear_exception_conditions(pri);
 	pri->RC = 0;
 	stop_t203(pri);
@@ -2155,16 +2230,15 @@ static void q921_establish_data_link(struct pri *pri)
 	q921_send_sabme(pri);
 }
 
-void q921_start(struct pri *pri, int isCPE)
+void q921_start(struct pri *pri)
 {
-	//q921_reset(pri, 1);
-	if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
-#ifndef NO_OLD_CODE
+	if (PTMP_MODE(pri)) {
 		q921_setstate(pri, Q921_TEI_UNASSIGNED);
-		if (isCPE)
+		if (TE_MODE(pri)) {
 			q921_tei_request(pri);
-#endif
+		}
 	} else {
+		/* PTP mode, no need for TEI management junk */
 		q921_establish_data_link(pri);
 		pri->l3initiated = 1;
 		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);

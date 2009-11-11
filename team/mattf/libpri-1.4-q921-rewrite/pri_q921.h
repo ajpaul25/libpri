@@ -169,22 +169,15 @@ typedef struct q921_frame {
 #define Q921_DEC(j) (j) = (((j) - 1) % 128)
 
 typedef enum q921_state {
-	Q921_DOWN = 0,
 	/* All states except Q921_DOWN are defined in Q.921 SDL diagrams */
 	Q921_TEI_UNASSIGNED = 1,
 	Q921_ASSIGN_AWAITING_TEI = 2,
 	Q921_ESTABLISH_AWAITING_TEI = 3,
 	Q921_TEI_ASSIGNED = 4,
-	Q921_LINK_CONNECTION_RELEASED = 4,	/* Also known as TEI_ASSIGNED */
-	Q921_AWAITING_ESTABLISH = 5,
 	Q921_AWAITING_ESTABLISHMENT = 5,
 	Q921_AWAITING_RELEASE = 6,
 	Q921_MULTI_FRAME_ESTABLISHED = 7,
-	Q921_LINK_CONNECTION_ESTABLISHED = 7,
 	Q921_TIMER_RECOVERY = 8,
-#if 1
-	Q921_NEGOTIATION,
-#endif
 } q921_state;
 
 static inline int Q921_ADD(int a, int b)
@@ -196,13 +189,13 @@ static inline int Q921_ADD(int a, int b)
 extern void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx);
 
 /* Bring up the D-channel */
-extern void q921_start(struct pri *pri, int now);
+extern void q921_start(struct pri *pri);
 
 //extern void q921_reset(struct pri *pri, int reset_iqueue);
 
 extern pri_event *q921_receive(struct pri *pri, q921_h *h, int len);
 
-extern int q921_transmit_iframe(struct pri *pri, void *buf, int len, int cr);
+extern int q921_transmit_iframe(struct pri *pri, int tei, void *buf, int len, int cr);
 
 extern int q921_transmit_uiframe(struct pri *pri, void *buf, int len);
 
