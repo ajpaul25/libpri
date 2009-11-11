@@ -5852,8 +5852,6 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		}
 	}
 
-	missingmand = 0;
-
 	/* Post handling */
 	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
 		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
