@@ -3850,12 +3850,12 @@ static void init_header(struct pri *ctrl, q931_call *call, unsigned char *buf, q
 	*mhb = mh;
 }
 
-static int q931_xmit(struct pri *ctrl, q931_h *h, int len, int cr, int uiframe)
+static int q931_xmit(struct pri *ctrl, int tei, q931_h *h, int len, int cr, int uiframe)
 {
 	if (uiframe) {
 		q921_transmit_uiframe(ctrl, h, len);
 	} else {
-		q921_transmit_iframe(ctrl, h, len, cr);
+		q921_transmit_iframe(ctrl, tei, h, len, cr);
 	}
 	/* The transmit operation might dump the q921 header, so logging the q931
 	   message body after the transmit puts the sections of the message in the
@@ -3975,7 +3975,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 				ctrl, ctrl->tei, ctrl->sapi,
 				call->pri, call->pri->tei, call->pri->sapi);
 		}
-		q931_xmit(ctrl, h, len, 1, uiframe);
+		q931_xmit(ctrl, ctrl->tei, h, len, 1, uiframe);
 	}
 	call->acked = 1;
 	return 0;
@@ -5697,7 +5697,7 @@ static struct q931_call *q931_get_subcall(struct pri *ctrl, struct q931_call *ma
 	return cur;
 }
 
-int q931_receive(struct pri *ctrl, q931_h *h, int len)
+int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 {
 	q931_mh *mh;
 	q931_call *c;
@@ -5731,7 +5731,7 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 		   KLUDGE this by changing byte 4 from a 0xf (SERVICE) 
 		   to a 0x7 (SERVICE ACKNOWLEDGE) */
 		h->raw[h->crlen + 2] -= 0x8;
-		q931_xmit(ctrl, h, len, 1, 0);
+		q931_xmit(ctrl, ctrl->tei, h, len, 1, 0);
 		return 0;
 	}
 

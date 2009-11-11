@@ -331,9 +331,7 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	default:
 		break;
 	}
-	/* Start Q.921 layer, Wait if we're the network */
-	if (p)
-		q921_start(p, p->localtype == PRI_CPE);
+	p->k = p->timers[PRI_TIMER_K];
 	
 	return p;
 }
