@@ -70,7 +70,9 @@ struct pri {
 	int protodisc;
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
-	
+	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
+	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
+
 	/* Q.921 State */
 	int q921_state;	
 	int k;
@@ -119,6 +121,13 @@ struct pri {
 	/* Q.931 calls */
 	q931_call **callpool;
 	q931_call *localpool;
+
+	/*!
+	 * \brief Q.931 Dummy call reference call associated with this TEI.
+	 * \note If present then this call is allocated as part of the
+	 * D channel control structure.
+	 */
+	q931_call *dummy_call;
 
 	/* do we do overlap dialing */
 	int overlapdial;
@@ -189,7 +198,6 @@ struct q931_party_number {
 /*! \brief Maximum subaddress length plus null terminator */
 #define PRI_MAX_SUBADDRESS_LEN	(20 + 1)
 
-#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
 struct q931_party_subaddress {
 	/*! \brief TRUE if the subaddress information is valid/present */
 	unsigned char valid;
@@ -213,17 +221,14 @@ struct q931_party_subaddress {
 	 * \note The null terminator is a convenience only since the data could be
 	 * BCD/binary and thus have a null byte as part of the contents.
 	 */
-	char data[PRI_MAX_SUBADDRESS_LEN];
+	unsigned char data[PRI_MAX_SUBADDRESS_LEN];
 };
-#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
 
 struct q931_party_address {
 	/*! \brief Subscriber phone number */
 	struct q931_party_number number;
-#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
 	/*! \brief Subscriber subaddress */
 	struct q931_party_subaddress subaddress;
-#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
 };
 
 /*! \brief Information needed to identify an endpoint in a call. */
@@ -232,10 +237,8 @@ struct q931_party_id {
 	struct q931_party_name name;
 	/*! \brief Subscriber phone number */
 	struct q931_party_number number;
-#if defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT)
 	/*! \brief Subscriber subaddress */
 	struct q931_party_subaddress subaddress;
-#endif	/* defined(POSSIBLE_FUTURE_SUBADDRESS_SUPPORT) */
 };
 
 enum Q931_REDIRECTING_STATE {
@@ -301,6 +304,7 @@ struct pri_sr {
 	int cis_call;
 	int cis_auto_disconnect;
 	const char *useruserinfo;
+	const char *keypad_digits;
 	int transferable;
 	int reversecharge;
 };
@@ -309,14 +313,13 @@ struct pri_sr {
 #define PRI_SWITCH_GR303_EOC_PATH	19
 #define PRI_SWITCH_GR303_TMC_SWITCHING	20
 
+#define Q931_MAX_TEI	8
+
 struct apdu_event {
-	int message;			/* What message to send the ADPU in */
-	void (*callback)(void *data);	/* Callback function for when response is received */
-	void *data;			/* Data to callback */
-	unsigned char apdu[255];			/* ADPU to send */
-	int apdu_len; 			/* Length of ADPU */
-	int sent;  			/* Have we been sent already? */
 	struct apdu_event *next;	/* Linked list pointer */
+	int message;			/* What message to send the ADPU in */
+	int apdu_len; 			/* Length of ADPU */
+	unsigned char apdu[255];			/* ADPU to send */
 };
 
 /*! \brief Incoming call transfer states. */
@@ -339,6 +342,22 @@ enum INCOMING_CT_STATE {
 	 * that we need to post a connected line update.
 	 */
 	INCOMING_CT_STATE_POST_CONNECTED_LINE
+};
+
+/*! Call hold supplementary states. */
+enum Q931_HOLD_STATE {
+	/*! \brief No call hold activity. */
+	Q931_HOLD_STATE_IDLE,
+	/*! \brief Request made to hold call. */
+	Q931_HOLD_STATE_HOLD_REQ,
+	/*! \brief Request received to hold call. */
+	Q931_HOLD_STATE_HOLD_IND,
+	/*! \brief Call is held. */
+	Q931_HOLD_STATE_CALL_HELD,
+	/*! \brief Request made to retrieve call. */
+	Q931_HOLD_STATE_RETRIEVE_REQ,
+	/*! \brief Request received to retrieve call. */
+	Q931_HOLD_STATE_RETRIEVE_IND,
 };
 
 /* q931_call datastructure */
@@ -456,10 +475,15 @@ struct q931_call {
 
 	/*! \brief Incoming call transfer state. */
 	enum INCOMING_CT_STATE incoming_ct_state;
+	/*! Call hold supplementary state. */
+	enum Q931_HOLD_STATE hold_state;
+	/*! Call hold event timer */
+	int hold_timer;
+
+	int deflection_in_progress;	/*!< CallDeflection for NT PTMP in progress. */
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];
-	char callingsubaddr[PRI_MAX_SUBADDRESS_LEN];	/* Calling party subaddress */
 	
 	long aoc_units;				/* Advice of Charge Units */
 
@@ -476,6 +500,30 @@ struct q931_call {
 							   -1 - No reverse charging
 							    1 - Reverse charging
 							0,2-7 - Reserved for future use */
+	int t303_timer;
+	int t303_expirycnt;
+
+	int hangupinitiated;
+	/*! \brief TRUE if we broadcast this call's SETUP message. */
+	int outboundbroadcast;
+	int performing_fake_clearing;
+	/*!
+	 * \brief Master call controlling this call.
+	 * \note Always valid.  Master and normal calls point to self.
+	 */
+	struct q931_call *master_call;
+
+	/* These valid in master call only */
+	struct q931_call *subcalls[Q931_MAX_TEI];
+	int pri_winner;
+};
+
+/*! D channel control structure with associated dummy call reference record. */
+struct d_ctrl_dummy {
+	/*! D channel control structure. */
+	struct pri ctrl;
+	/*! Dummy call reference call record. */
+	struct q931_call dummy_call;
 };
 
 extern int pri_schedule_event(struct pri *pri, int ms, void (*function)(void *data), void *data);
@@ -495,29 +543,86 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 
 void __pri_free_tei(struct pri *p);
 
+void q931_init_call_record(struct pri *ctrl, struct q931_call *call, int cr);
+
 void q931_party_name_init(struct q931_party_name *name);
 void q931_party_number_init(struct q931_party_number *number);
+void q931_party_subaddress_init(struct q931_party_subaddress *subaddr);
 void q931_party_address_init(struct q931_party_address *address);
 void q931_party_id_init(struct q931_party_id *id);
 void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
 
+static inline void q931_party_address_to_id(struct q931_party_id *id, struct q931_party_address *address)
+{
+	id->number = address->number;
+	id->subaddress = address->subaddress;
+}
+
 int q931_party_name_cmp(const struct q931_party_name *left, const struct q931_party_name *right);
 int q931_party_number_cmp(const struct q931_party_number *left, const struct q931_party_number *right);
+int q931_party_subaddress_cmp(const struct q931_party_subaddress *left, const struct q931_party_subaddress *right);
 int q931_party_id_cmp(const struct q931_party_id *left, const struct q931_party_id *right);
 
 void q931_party_name_copy_to_pri(struct pri_party_name *pri_name, const struct q931_party_name *q931_name);
 void q931_party_number_copy_to_pri(struct pri_party_number *pri_number, const struct q931_party_number *q931_number);
+void q931_party_subaddress_copy_to_pri(struct pri_party_subaddress *pri_subaddress, const struct q931_party_subaddress *q931_subaddress);
 void q931_party_id_copy_to_pri(struct pri_party_id *pri_id, const struct q931_party_id *q931_id);
 void q931_party_redirecting_copy_to_pri(struct pri_party_redirecting *pri_redirecting, const struct q931_party_redirecting *q931_redirecting);
 
 void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id);
 int q931_party_id_presentation(const struct q931_party_id *id);
 
-const char *q931_call_state_str(int callstate);
+const char *q931_call_state_str(enum Q931_CALL_STATE callstate);
+const char *msg2str(int msg);
 
-int q931_is_ptmp(struct pri *ctrl);
+int q931_is_ptmp(const struct pri *ctrl);
+int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_type);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
+
+static inline struct pri * PRI_MASTER(struct pri *mypri)
+{
+	struct pri *pri = mypri;
+	
+	if (!pri)
+		return NULL;
+
+	while (pri->master)
+		pri = pri->master;
+
+	return pri;
+}
+
+static inline int BRI_NT_PTMP(struct pri *mypri)
+{
+	struct pri *pri;
+
+	pri = PRI_MASTER(mypri);
+
+	return pri->bri && (((pri)->localtype == PRI_NETWORK) && ((pri)->tei == Q921_TEI_GROUP));
+}
+
+static inline int BRI_TE_PTMP(struct pri *mypri)
+{
+	struct pri *pri;
+
+	pri = PRI_MASTER(mypri);
+
+	return pri->bri && (((pri)->localtype == PRI_CPE) && ((pri)->tei == Q921_TEI_GROUP));
+}
+
+#define Q931_DUMMY_CALL_REFERENCE	-1
+
+/*!
+ * \brief Deterimine if the given call control pointer is a dummy call.
+ *
+ * \retval TRUE if given call is a dummy call.
+ * \retval FALSE otherwise.
+ */
+static inline int q931_is_dummy_call(const q931_call *call)
+{
+	return (call->cr == Q931_DUMMY_CALL_REFERENCE) ? 1 : 0;
+}
 
 #endif

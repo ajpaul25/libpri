@@ -86,6 +86,8 @@ static const struct pri_timer_table pri_timer[] = {
 	{ "T320",           PRI_TIMER_T320,             PRI_ALL_SWITCHES },
 	{ "T321",           PRI_TIMER_T321,             PRI_ALL_SWITCHES },
 	{ "T322",           PRI_TIMER_T322,             PRI_ALL_SWITCHES },
+	{ "T-HOLD",         PRI_TIMER_T_HOLD,           PRI_ALL_SWITCHES },
+	{ "T-RETRIEVE",     PRI_TIMER_T_RETRIEVE,       PRI_ALL_SWITCHES },
 /* *INDENT-ON* */
 };
 
@@ -150,6 +152,10 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 	ctrl->timers[PRI_TIMER_T313] = 4 * 1000;	/* Wait for CONNECT acknowledge, CPE side only */
 	ctrl->timers[PRI_TIMER_TM20] = 2500;		/* Max time awaiting XID response - Q.921 Appendix IV */
 	ctrl->timers[PRI_TIMER_NM20] = 3;			/* Number of XID retransmits - Q.921 Appendix IV */
+	ctrl->timers[PRI_TIMER_T303] = 4 * 1000;			/* Length between SETUP retransmissions and timeout */
+
+	ctrl->timers[PRI_TIMER_T_HOLD] = 4 * 1000;	/* Wait for HOLD request response. */
+	ctrl->timers[PRI_TIMER_T_RETRIEVE] = 4 * 1000;/* Wait for RETRIEVE request response. */
 
 	/* Set any switch specific override default values */
 	switch (switchtype) {
@@ -220,18 +226,44 @@ static int __pri_write(struct pri *pri, void *buf, int buflen)
 	return res;
 }
 
-/* Pass in the master for this function */
 void __pri_free_tei(struct pri * p)
 {
-	free (p);
+	if (p) {
+		struct q931_call *call;
+
+		call = p->dummy_call;
+		if (call) {
+			pri_schedule_del(call->pri, call->retranstimer);
+			pri_call_apdu_queue_cleanup(call);
+		}
+		free(p);
+	}
 }
 
 struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri)
 {
+	struct d_ctrl_dummy *dummy_ctrl;
 	struct pri *p;
 
-	if (!(p = calloc(1, sizeof(*p))))
-		return NULL;
+	switch (switchtype) {
+	case PRI_SWITCH_GR303_EOC:
+	case PRI_SWITCH_GR303_TMC:
+	case PRI_SWITCH_GR303_TMC_SWITCHING:
+	case PRI_SWITCH_GR303_EOC_PATH:
+		p = calloc(1, sizeof(*p));
+		if (!p) {
+			return NULL;
+		}
+		dummy_ctrl = NULL;
+		break;
+	default:
+		dummy_ctrl = calloc(1, sizeof(*dummy_ctrl));
+		if (!dummy_ctrl) {
+			return NULL;
+		}
+		p = &dummy_ctrl->ctrl;
+		break;
+	}
 
 	p->bri = bri;
 	p->fd = fd;
@@ -259,7 +291,14 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	p->q931_rxcount = 0;
 	p->q931_txcount = 0;
 #endif
-	if (switchtype == PRI_SWITCH_GR303_EOC) {
+	if (dummy_ctrl) {
+		/* Initialize the dummy call reference call record. */
+		dummy_ctrl->ctrl.dummy_call = &dummy_ctrl->dummy_call;
+		q931_init_call_record(&dummy_ctrl->ctrl, dummy_ctrl->ctrl.dummy_call,
+			Q931_DUMMY_CALL_REFERENCE);
+	}
+	switch (switchtype) {
+	case PRI_SWITCH_GR303_EOC:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 		p->sapi = Q921_SAPI_GR303_EOC;
 		p->tei = Q921_TEI_GR303_EOC_OPS;
@@ -268,7 +307,8 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 			free(p);
 			p = NULL;
 		}
-	} else if (switchtype == PRI_SWITCH_GR303_TMC) {
+		break;
+	case PRI_SWITCH_GR303_TMC:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 		p->sapi = Q921_SAPI_GR303_TMC_CALLPROC;
 		p->tei = Q921_TEI_GR303_TMC_CALLPROC;
@@ -277,14 +317,19 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 			free(p);
 			p = NULL;
 		}
-	} else if (switchtype == PRI_SWITCH_GR303_TMC_SWITCHING) {
+		break;
+	case PRI_SWITCH_GR303_TMC_SWITCHING:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 		p->sapi = Q921_SAPI_GR303_TMC_SWITCHING;
 		p->tei = Q921_TEI_GR303_TMC_SWITCHING;
-	} else if (switchtype == PRI_SWITCH_GR303_EOC_PATH) {
+		break;
+	case PRI_SWITCH_GR303_EOC_PATH:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
 		p->sapi = Q921_SAPI_GR303_EOC;
 		p->tei = Q921_TEI_GR303_EOC_PATH;
+		break;
+	default:
+		break;
 	}
 	/* Start Q.921 layer, Wait if we're the network */
 	if (p)
@@ -309,7 +354,7 @@ int pri_restart(struct pri *pri)
 #if 0
 	/* Restart Q.921 layer */
 	if (pri) {
-		q921_reset(pri);
+		q921_reset(pri, 1);
 		q921_start(pri, pri->localtype == PRI_CPE);	
 	}
 #else
@@ -385,6 +430,12 @@ char *pri_event2str(int id)
 		{ PRI_EVENT_KEYPAD_DIGIT,   "Keypad Digit" },
 		{ PRI_EVENT_SERVICE,        "Service" },
 		{ PRI_EVENT_SERVICE_ACK,    "Service ACK" },
+		{ PRI_EVENT_HOLD,           "Hold" },
+		{ PRI_EVENT_HOLD_ACK,       "Hold Ack" },
+		{ PRI_EVENT_HOLD_REJ,       "Hold Rej" },
+		{ PRI_EVENT_RETRIEVE,       "Retrieve" },
+		{ PRI_EVENT_RETRIEVE_ACK,   "Retrieve ACK" },
+		{ PRI_EVENT_RETRIEVE_REJ,   "Retrieve Rej" },
 /* *INDENT-ON* */
 	};
 
@@ -543,15 +594,6 @@ int pri_keypad_facility(struct pri *pri, q931_call *call, const char *digits)
 	return q931_keypad_facility(pri, call, digits);
 }
 
-
-int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason)
-{
-	if (!pri || !call)
-		return -1;
-
-	return qsig_cf_callrerouting(pri, call, dest, original, reason);
-}
-
 int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
 {
 	if (!pri || !call)
@@ -562,7 +604,7 @@ int pri_notify(struct pri *pri, q931_call *call, int channel, int info)
 void pri_destroycall(struct pri *pri, q931_call *call)
 {
 	if (pri && call)
-		__q931_destroycall(pri, call);
+		q931_destroycall(pri, call);
 	return;
 }
 
@@ -622,6 +664,40 @@ static void pri_copy_party_number_to_q931(struct q931_party_number *q931_number,
 
 /*!
  * \internal
+ * \brief Copy the PRI party subaddress to the Q.931 party subaddress structure.
+ *
+ * \param q931_subaddress Q.931 party subaddress structure
+ * \param pri_subaddress PRI party subaddress structure
+ *
+ * \return Nothing
+ */
+static void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931_subaddress, const struct pri_party_subaddress *pri_subaddress)
+{
+	int length;
+	int maxlen = sizeof(q931_subaddress->data) - 1;
+
+	q931_party_subaddress_init(q931_subaddress);
+
+	if (!pri_subaddress->valid) {
+		return;
+	}
+
+	q931_subaddress->valid = 1;
+	q931_subaddress->type = pri_subaddress->type;
+
+	length = pri_subaddress->length;
+	if (length > maxlen){
+		length = maxlen;
+	} else {
+		q931_subaddress->odd_even_indicator = pri_subaddress->odd_even_indicator;
+	}
+	q931_subaddress->length = length;
+	memcpy(q931_subaddress->data, pri_subaddress->data, length);
+	q931_subaddress->data[length] = '\0';
+}
+
+/*!
+ * \internal
  * \brief Copy the PRI party id to the Q.931 party id structure.
  *
  * \param q931_id Q.931 party id structure
@@ -633,11 +709,14 @@ static void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struc
 {
 	pri_copy_party_name_to_q931(&q931_id->name, &pri_id->name);
 	pri_copy_party_number_to_q931(&q931_id->number, &pri_id->number);
+	pri_copy_party_subaddress_to_q931(&q931_id->subaddress, &pri_id->subaddress);
 }
 
 int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pri_party_connected_line *connected)
 {
 	struct q931_party_id party_id;
+	unsigned idx;
+	struct q931_call *subcall;
 
 	if (!ctrl || !call) {
 		return -1;
@@ -650,6 +729,16 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 		return 0;
 	}
 	call->local_id = party_id;
+
+	/* Update all subcalls with new local_id. */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->local_id = party_id;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_CALL_INITIATED:
@@ -692,6 +781,9 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 
 int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_party_redirecting *redirecting)
 {
+	unsigned idx;
+	struct q931_call *subcall;
+
 	if (!ctrl || !call) {
 		return -1;
 	}
@@ -700,6 +792,21 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 	pri_copy_party_id_to_q931(&call->redirecting.to, &redirecting->to);
 	q931_party_id_fixup(ctrl, &call->redirecting.to);
 	call->redirecting.reason = redirecting->reason;
+
+	/*
+	 * Update all subcalls with new redirecting.to information and reason.
+	 * I do not think we will ever have any subcalls when this data is relevant,
+	 * but update it just in case.
+	 */
+	if (call->outboundbroadcast && call->master_call == call) {
+		for (idx = 0; idx < Q931_MAX_TEI; ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				subcall->redirecting.to = call->redirecting.to;
+				subcall->redirecting.reason = redirecting->reason;
+			}
+		}
+	}
 
 	switch (call->ourcallstate) {
 	case Q931_CALL_STATE_NULL:
@@ -845,7 +952,7 @@ int pri_hangup(struct pri *pri, q931_call *call, int cause)
 		return -1;
 	if (cause == -1)
 		/* normal clear cause */
-		cause = 16;
+		cause = PRI_CAUSE_NORMAL_CLEARING;
 	return q931_hangup(pri, call, cause);
 }
 
@@ -869,6 +976,14 @@ q931_call *pri_new_call(struct pri *pri)
 	if (!pri)
 		return NULL;
 	return q931_new_call(pri);
+}
+
+int pri_is_dummy_call(q931_call *call)
+{
+	if (!call) {
+		return 0;
+	}
+	return q931_is_dummy_call(call);
 }
 
 void pri_dump_event(struct pri *pri, pri_event *e)
@@ -978,7 +1093,7 @@ int pri_setup(struct pri *pri, q931_call *c, struct pri_sr *req)
 
 int pri_call(struct pri *pri, q931_call *c, int transmode, int channel, int exclusive, 
 					int nonisdn, char *caller, int callerplan, char *callername, int callerpres, char *called,
-					int calledplan,int ulayer1)
+					int calledplan, int ulayer1)
 {
 	struct pri_sr req;
 	if (!pri || !c)
@@ -1015,7 +1130,7 @@ void pri_message(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_message)
-		__pri_message(pri, tmp);
+		__pri_message(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stdout);
 }
@@ -1028,7 +1143,7 @@ void pri_error(struct pri *pri, char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_error)
-		__pri_error(pri, tmp);
+		__pri_error(PRI_MASTER(pri), tmp);
 	else
 		fputs(tmp, stderr);
 }
@@ -1210,6 +1325,11 @@ int pri_sr_set_called(struct pri_sr *sr, char *called, int calledplan, int numco
 	return 0;
 }
 
+void pri_sr_set_called_subaddress(struct pri_sr *sr, const struct pri_party_subaddress *subaddress)
+{
+	pri_copy_party_subaddress_to_q931(&sr->called.subaddress, subaddress);
+}
+
 int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int callerplan, int callerpres)
 {
 	q931_party_id_init(&sr->caller);
@@ -1228,6 +1348,11 @@ int pri_sr_set_caller(struct pri_sr *sr, char *caller, char *callername, int cal
 		}
 	}
 	return 0;
+}
+
+void pri_sr_set_caller_subaddress(struct pri_sr *sr, const struct pri_party_subaddress *subaddress)
+{
+	pri_copy_party_subaddress_to_q931(&sr->caller.subaddress, subaddress);
 }
 
 void pri_sr_set_caller_party(struct pri_sr *sr, const struct pri_party_id *caller)
@@ -1278,4 +1403,125 @@ void pri_sr_set_redirecting_parties(struct pri_sr *sr, const struct pri_party_re
 void pri_sr_set_reversecharge(struct pri_sr *sr, int requested)
 {
 	sr->reversecharge = requested;
+}
+
+void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits)
+{
+	sr->keypad_digits = keypad_digits;
+}
+
+void pri_hold_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->hold_support = enable ? 1 : 0;
+	}
+}
+
+int pri_hold(struct pri *ctrl, q931_call *call)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold(ctrl, call);
+}
+
+int pri_hold_ack(struct pri *ctrl, q931_call *call)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold_ack(ctrl, call);
+}
+
+int pri_hold_rej(struct pri *ctrl, q931_call *call, int cause)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_hold_rej(ctrl, call, cause);
+}
+
+int pri_retrieve(struct pri *ctrl, q931_call *call, int channel)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve(ctrl, call, channel);
+}
+
+int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve_ack(ctrl, call, channel);
+}
+
+int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_send_retrieve_rej(ctrl, call, cause);
+}
+
+int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *dest, const char* original, const char* reason)
+{
+	if (!pri || !call || !dest)
+		return -1;
+
+	return qsig_cf_callrerouting(pri, call, dest, original, reason);
+}
+
+void pri_reroute_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->deflection_support = enable ? 1 : 0;
+	}
+}
+
+int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_id *caller, const struct pri_party_redirecting *deflection, int subscription_option)
+{
+	const struct q931_party_id *caller_id;
+	struct q931_party_id local_caller;
+	struct q931_party_redirecting reroute;
+
+	if (!ctrl || !call || !deflection) {
+		return -1;
+	}
+
+	if (caller) {
+		/* Convert the caller update information. */
+		pri_copy_party_id_to_q931(&local_caller, caller);
+		q931_party_id_fixup(ctrl, &local_caller);
+		caller_id = &local_caller;
+	} else {
+		caller_id = NULL;
+	}
+
+	/* Convert the deflection information. */
+	q931_party_redirecting_init(&reroute);
+	pri_copy_party_id_to_q931(&reroute.from, &deflection->from);
+	q931_party_id_fixup(ctrl, &reroute.from);
+	pri_copy_party_id_to_q931(&reroute.to, &deflection->to);
+	q931_party_id_fixup(ctrl, &reroute.to);
+	pri_copy_party_id_to_q931(&reroute.orig_called, &deflection->orig_called);
+	q931_party_id_fixup(ctrl, &reroute.orig_called);
+	reroute.reason = deflection->reason;
+	reroute.orig_reason = deflection->orig_reason;
+	if (deflection->count <= 0) {
+		/*
+		 * We are deflecting with an unknown count
+		 * so assume the count is one.
+		 */
+		reroute.count = 1;
+	} else if (deflection->count < PRI_MAX_REDIRECTS) {
+		reroute.count = deflection->count;
+	} else {
+		reroute.count = PRI_MAX_REDIRECTS;
+	}
+
+	return send_reroute_request(ctrl, call, caller_id, &reroute, subscription_option);
 }
