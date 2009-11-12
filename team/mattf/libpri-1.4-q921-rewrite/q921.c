@@ -598,12 +598,20 @@ static void t200_expire(void *vpri)
 		} else {
 			q921_discard_iqueue(pri);
 			pri_error(pri, "MDL-ERROR (G) : T200 expired N200 times in state %d\n", pri->q921_state);
-			/* Deviation - We're still going to try to go back to multiframe established */
+			if (PTP_MODE(pri)) {
+				/* This branch is a deviation from SDL - We're still going to try to go back to multiframe established */
+				pri->RC = 0;
+				start_t200(pri);
+			} else {
+				/* This branch is according to SDL, Figure B.5/Q.921 on page 67 */
+				q921_setstate(pri, Q921_TEI_ASSIGNED);
+			}
 			q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
+#if 0
 			pri->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
 			pri->schedev = 1;
-			pri->RC = 0;
-			start_t200(pri);
+#endif
+			/* XXX: We need to add some MDL functions to cover deviations from the SDL, but for now, this is how we'll do it */
 		}
 		break;
 	default:
@@ -774,7 +782,6 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 		 * we're PTMP, TE side.  We have different state rules when we're NT side */
 		q921_start(pri);
 		break;
-		
 	case Q921_TEI_ASSIGNED:
 		q921_establish_data_link(pri);
 		pri->l3initiated = 1;
