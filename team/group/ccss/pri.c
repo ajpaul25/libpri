@@ -107,6 +107,9 @@ static const struct pri_timer_table pri_timer[] = {
 	{ "CCBS-T2",        PRI_TIMER_QSIG_CCBS_T2,     PRI_BIT(PRI_SWITCH_QSIG) },
 	{ "CCNR-T2",        PRI_TIMER_QSIG_CCNR_T2,     PRI_BIT(PRI_SWITCH_QSIG) },
 	{ "CC-T3",          PRI_TIMER_QSIG_CC_T3,       PRI_BIT(PRI_SWITCH_QSIG) },
+#if defined(QSIG_PATH_RESERVATION_SUPPORT)
+	{ "CC-T4",          PRI_TIMER_QSIG_CC_T4,       PRI_BIT(PRI_SWITCH_QSIG) },
+#endif	/* defined(QSIG_PATH_RESERVATION_SUPPORT) */
 /* *INDENT-ON* */
 };
 
@@ -199,6 +202,9 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 	ctrl->timers[PRI_TIMER_QSIG_CCBS_T2] = 60 * 60 * 1000;/* CCBS supervision timeout. */
 	ctrl->timers[PRI_TIMER_QSIG_CCNR_T2] = 195 * 60 * 1000;/* CCNR supervision timeout. */
 	ctrl->timers[PRI_TIMER_QSIG_CC_T3] = 30 * 1000;/* Max time to wait for user A to respond to user B availability. */
+#if defined(QSIG_PATH_RESERVATION_SUPPORT)
+	ctrl->timers[PRI_TIMER_QSIG_CC_T4] = 40 * 1000;/* Path reservation supervision timeout. */
+#endif	/* defined(QSIG_PATH_RESERVATION_SUPPORT) */
 
 	/* Set any switch specific override default values */
 	switch (switchtype) {
@@ -1695,4 +1701,44 @@ int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr)
 void pri_call_set_cc_operation(q931_call *call, int cc_operation)
 {
 	call->ccoperation = cc_operation;
+}
+
+void pri_cc_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->cc_support = enable ? 1 : 0;
+	}
+}
+
+void pri_cc_recall_mode(struct pri *ctrl, int mode)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->cc.option.recall_mode = mode ? 1 : 0;
+	}
+}
+
+void pri_cc_retain_service(struct pri *ctrl, int retain_service)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->cc.option.retain_service = retain_service ? 1 : 0;
+	}
+}
+
+void pri_cc_retain_signaling_req(struct pri *ctrl, int signaling_retention)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl && 0 <= signaling_retention && signaling_retention < 3) {
+		ctrl->cc.option.signaling_retention_req = signaling_retention;
+	}
+}
+
+void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->cc.option.signaling_retention_rsp = signaling_retention ? 1 : 0;
+	}
 }

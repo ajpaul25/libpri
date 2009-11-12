@@ -48,6 +48,13 @@ struct pri_sched {
 
 struct pri_cc_record;
 
+/*
+ * libpri needs to be able to allocate B channels to support Q.SIG path reservation.
+ * Until that happens, path reservation is not possible.  Fortunately,
+ * path reservation is optional with a fallback to what we can implement.
+ */
+//#define QSIG_PATH_RESERVATION_SUPPORT	1
+
 /*! Maximum number of scheduled events active at the same time. */
 #define MAX_SCHED	(128 + 256) /* 256 CC supervision timer events */
 
@@ -74,6 +81,7 @@ struct pri {
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
 	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
 	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
+	unsigned int cc_support:1;/* TRUE if upper layer supports call completion. */
 
 	/* Q.921 State */
 	int q921_state;	
@@ -143,7 +151,7 @@ struct pri {
 	short last_invoke;	/* Last ROSE invoke ID */
 	unsigned char sendfacility;
 
-	/*! Call completion */
+	/*! Call completion (Valid in master record only) */
 	struct {
 		/*! Active CC records */
 		struct pri_cc_record *pool;
@@ -153,6 +161,21 @@ struct pri {
 		unsigned char last_reference_id;
 		/*! Last CC PTMP linkage id allocated. (0-127) */
 		unsigned char last_linkage_id;
+		/*! Configured CC options. */
+		struct {
+			/*! PTMP recall mode: globalRecall(0), specificRecall(1) */
+			unsigned char recall_mode;
+			/*! TRUE if can retain cc service if party B is unavailable again. */
+			unsigned char retain_service;
+			/*! Q.SIG Request signaling link retention: release(0), retain(1), do-not-care(2) */
+			unsigned char signaling_retention_req;
+			/*! Q.SIG Response request signaling link retention: release(0), retain(1) */
+			unsigned char signaling_retention_rsp;
+#if defined(QSIG_PATH_RESERVATION_SUPPORT)
+			/*! Q.SIG TRUE if response request can support path reservation. */
+			unsigned char allow_path_reservation;
+#endif	/* defined(QSIG_PATH_RESERVATION_SUPPORT) */
+		} option;
 	} cc;
 };
 
@@ -313,6 +336,8 @@ struct pri_sr {
 	const char *keypad_digits;
 	int transferable;
 	int reversecharge;
+
+/* BUGBUG these CC elements will not be retained. */
 	int ccbsnr;
 	int ccringout;
 };
@@ -536,8 +561,6 @@ struct q931_call {
 		struct pri_cc_record *record;
 		/*! Original calling party. */
 		struct q931_party_id party_a;
-		/*! Original called party. */
-		struct q931_party_address party_b;
 		/*! TRUE if the remote party is party B. */
 		unsigned char party_b_is_remote;
 /* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
@@ -547,8 +570,8 @@ struct q931_call {
 enum CC_STATES {
 	/*! CC is not active. */
 	CC_STATE_IDLE,
-	/*! CC has recorded call information in anticipation of CC availability. */
-	CC_STATE_RECORD_RETENTION,
+	// /*! CC has recorded call information in anticipation of CC availability. */
+	// CC_STATE_RECORD_RETENTION,
 	/*! CC is available and waiting on ALERTING or DISCONNECT to go out. */
 	CC_STATE_PENDING_AVAILABLE,
 	/*! CC is available and waiting on possible CC request. */
@@ -559,10 +582,39 @@ enum CC_STATES {
 	CC_STATE_ACTIVATED,
 	/*! CC party B is available and waiting for status of party A. */
 	CC_STATE_B_AVAILABLE,
-	/*! CC is suspended because party A is not available. */
+	/*! CC is suspended because party A is not available. (Monitor party A.) */
 	CC_STATE_SUSPENDED,
 	/*! CC is waiting for party A to initiate CC callback. */
 	CC_STATE_WAIT_CALLBACK,
+	/*! CC is waiting for signaling link to be cleared before destruction. */
+	CC_STATE_WAIT_DESTRUCTION,
+};
+
+enum CC_EVENTS {
+	/*! CC is available for the current call. */
+	CC_EVENT_AVAILABLE,
+	/*! Requesting CCBS activation. */
+	CC_EVENT_CCBS_REQUEST,
+	/*! Requesting CCNR activation. */
+	CC_EVENT_CCNR_REQUEST,
+	/*! CC party B is available. */
+	CC_EVENT_REMOTE_USER_FREE,
+	/*! CC poll/prompt for party A status. */
+	CC_EVENT_A_STATUS,
+	/*! CC party A is free/available for recall. */
+	CC_EVENT_A_FREE,
+	/*! CC party A is busy/not-available for recall. */
+	CC_EVENT_A_BUSY,
+	/*! Suspend monitoring party B because party A is busy. */
+	CC_EVENT_SUSPEND,
+	/*! Resume monitoring party B because party A is now available. */
+	CC_EVENT_RESUME,
+	/*! This is the call completion recall call attempt. */
+	CC_EVENT_RECALL,
+	/*! Tear down call completion request. */
+	CC_EVENT_CANCEL,
+	/*! Tear down of call completion completed. */
+	CC_EVENT_CANCEL_COMPLETE,
 };
 
 /* Invalid PTMP call completion reference and linkage id value. */
@@ -572,6 +624,18 @@ enum CC_STATES {
 struct pri_cc_record {
 	/*! Next call-completion record in the list */
 	struct pri_cc_record *next;
+	/*!
+	 * \brief Associated signaling link. (NULL if not established.)
+	 * \note
+	 * PTMP - Broadcast dummy call reference call.
+	 * (If needed, the TE side could use this pointer to locate its specific
+	 * dummy call reference call.)
+	 * \note
+	 * PTP - REGISTER signaling link.
+	 * \note
+	 * Q.SIG - SETUP signaling link.
+	 */
+	struct q931_call *signaling;
 	/*! Call-completion record id (0 - 65535) */
 	long record_id;
 	/*! Call-completion state */
@@ -584,10 +648,27 @@ struct pri_cc_record {
 
 	/*! TRUE if the remote party is party B. */
 	unsigned char party_b_is_remote;
+	/*! TRUE if party_a_busy status is valid. (PTMP) */
+	unsigned char party_a_status_valid;
+	/*! TRUE if the status of party A is busy. (PTMP) */
+	unsigned char party_a_busy;
 	/*! PTMP pre-activation reference id. (0-127) */
 	unsigned char call_linkage_id;
 	/*! PTMP active CCBS reference id. (0-127) */
 	unsigned char ccbs_reference_id;
+	/*! Negotiated options */
+	struct {
+		/*! PTMP recall mode: globalRecall(0), specificRecall(1) */
+		unsigned char recall_mode;
+		/*! TRUE if can retain cc service if party B is unavailable again. */
+		unsigned char retain_service;
+		/*! TRUE if Q.SIG signaling link is retained. */
+		unsigned char retain_signaling_link;
+#if defined(QSIG_PATH_RESERVATION_SUPPORT)
+		/*! Q.SIG TRUE if can do path reservation. */
+		unsigned char do_path_reservation;
+#endif	/* defined(QSIG_PATH_RESERVATION_SUPPORT) */
+	} option;
 };
 
 /*! D channel control structure with associated dummy call reference record. */
@@ -659,6 +740,11 @@ int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
+
+void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
+struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
+int pri_cc_event_down(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
+int pri_cc_event_up(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
 
 static inline struct pri * PRI_MASTER(struct pri *mypri)
 {

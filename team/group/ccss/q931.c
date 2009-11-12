@@ -4835,7 +4835,6 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	/* Save the initial cc-parties. */
 	c->cc.party_a = c->local_id;
-	c->cc.party_b = c->called;
 	c->cc.party_b_is_remote = 1;
 
 	if (ctrl->subchannel && !ctrl->bri)
@@ -6749,7 +6748,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		/* Save the initial cc-parties. (Incoming SETUP can only be a master call.) */
 		c->cc.party_a = c->remote_id;
-		c->cc.party_b = c->called;
 		c->cc.party_b_is_remote = 0;
 
 		q931_fill_ring_event(ctrl, c);

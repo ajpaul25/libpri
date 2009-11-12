@@ -554,8 +554,7 @@ struct pri_qsig_cc_request_res {
 #define PRI_SUBCMD_CC_STATUS				12	/*!< Unsolicited update of CC party A status */
 #define PRI_SUBCMD_CC_CALL					13	/*!< Indicate that this call is a CC callback */
 #define PRI_SUBCMD_CC_CANCEL				14	/*!< Unsolicited indication that CC is canceled */
-#define PRI_SUBCMD_CC_DEACTIVATE_REQ		15	/*!< CC deactivation request */
-#define PRI_SUBCMD_CC_DEACTIVATE_RSP		16	/*!< CC deactivation request response */
+#define PRI_SUBCMD_CC_DEACTIVATE_RSP		15	/*!< CC deactivation request response */
 
 struct pri_subcmd_status_request {
 	/*!
@@ -624,6 +623,10 @@ struct pri_subcmd_cc_request_rsp {
 	 * \note Use pri_facility_error2str() to convert the error_code.
 	 */
 	int error_code;
+	/*!
+	 * \brief TRUE if negotiated to retain CC service if B busy again.
+	 */
+	int retain_service;
 };
 
 struct pri_subcmd_cc_status {
@@ -727,7 +730,6 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_status cc_status;
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_id cc_cancel;
-		struct pri_subcmd_cc_id cc_deactivate_req;
 		struct pri_subcmd_cc_deactivate_rsp cc_deactivate_rsp;
 
 /* BUGBUG eliminate these struct members. */
@@ -1497,7 +1499,58 @@ int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
 int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req);
 void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status);
 
-/* Call-completion function prototypes */
+/*!
+ * \brief Set the call completion feature enable flag.
+ *
+ * \param ctrl D channel controller.
+ * \param enable TRUE to enable call completion feature.
+ *
+ * \return Nothing
+ */
+void pri_cc_enable(struct pri *ctrl, int enable);
+
+/*!
+ * \brief Set the PTMP NT call completion recall mode.
+ *
+ * \param ctrl D channel controller.
+ * \param mode globalRecall(0), specificRecall(1)
+ *
+ * \return Nothing
+ */
+void pri_cc_recall_mode(struct pri *ctrl, int mode);
+
+/*!
+ * \brief Set the call completion service retention mode if party B is busy again.
+ *
+ * \param ctrl D channel controller.
+ * \param retain_service TRUE if can retain cc service if party B is unavailable again.
+ *
+ * \return Nothing
+ */
+void pri_cc_retain_service(struct pri *ctrl, int retain_service);
+
+/*!
+ * \brief Set the Q.SIG call completion signaling link retention mode.
+ * (Requestor/Initiator/Originator/Party-A)
+ *
+ * \param ctrl D channel controller.
+ * \param signaling_retention release(0), retain(1), do-not-care(2).
+ *
+ * \return Nothing
+ */
+void pri_cc_retain_signaling_req(struct pri *ctrl, int signaling_retention);
+
+/*!
+ * \brief Set the Q.SIG call completion signaling link retention mode.
+ * (Responder/Answerer/Party-B)
+ *
+ * \param ctrl D channel controller.
+ * \param signaling_retention release(0), retain(1).
+ *
+ * \return Nothing
+ */
+void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention);
+
 long pri_cc_available(struct pri *ctrl, q931_call *call);
 int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
 void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
