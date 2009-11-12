@@ -336,10 +336,6 @@ struct pri_sr {
 	const char *keypad_digits;
 	int transferable;
 	int reversecharge;
-
-/* BUGBUG these CC elements will not be retained. */
-	int ccbsnr;
-	int ccringout;
 };
 
 /* Internal switch types */
@@ -549,11 +545,6 @@ struct q931_call {
 	/* These valid in master call only */
 	struct q931_call *subcalls[Q931_MAX_TEI];
 	int pri_winner;
-
-/* BUGBUG These CC elements will not be retained. (At least in this form) */
-	int ccoperation;		/* QSIG_CCBSREQUEST/QSIG_CCNRREQUEST */
-	int ccrequestresult;
-	int cctimer2;			/* Timer for QSIG-timer2 */
 
 	/* Call completion */
 	struct {

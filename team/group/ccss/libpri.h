@@ -354,12 +354,6 @@
 #define PRI_NSF_ATT_MULTIQUEST         0xF0
 #define PRI_NSF_CALL_REDIRECTION_SERVICE       0xF7
 
-/* BUGBUG eliminate these defines ECMA 186 */
-#define PRI_CC_CCNRREQUEST		27
-#define PRI_CC_CANCEL			28
-#define PRI_CC_RINGOUT			31
-#define PRI_CC_CCBSREQUEST		40
-
 typedef struct q931_call q931_call;
 
 /* Name character set enumeration values */
@@ -517,28 +511,6 @@ struct pri_rerouting_data {
 	int invoke_id;
 };
 
-/* BUGBUG eliminate this struct definition. */
-/* Structures for qsig_cc_facilities */
-struct pri_qsig_cc_extension {
-	int	cc_extension_tag;
-	char extension[256];
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_qsig_cc_optional_arg {
-	char number_A[256];
-	char number_B[256];
-	int	service;
-	struct pri_qsig_cc_extension cc_extension;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_qsig_cc_request_res {
-	int	no_path_reservation;
-	int	retain_service;
-	struct pri_qsig_cc_extension cc_extension;
-};
-
 /* Subcommands derived from supplementary services. */
 #define PRI_SUBCMD_REDIRECTING				1	/*!< Redirecting information update */
 #define PRI_SUBCMD_CONNECTED_LINE			2	/*!< Connected line information update */
@@ -661,55 +633,6 @@ struct pri_subcmd_cc_deactivate_rsp {
 	int error_code;
 };
 
-/* BUGBUG eliminate the following defines */
-#define PRI_SUBCMD_CC_CCBSREQUEST_RR	93
-#define PRI_SUBCMD_CC_CCNRREQUEST_RR	94
-#define PRI_SUBCMD_CC_CANCEL_INV		95
-#define PRI_SUBCMD_CC_EXECPOSSIBLE_INV	96
-#define PRI_SUBCMD_CC_RINGOUT_INV		97
-#define PRI_SUBCMD_CC_SUSPEND_INV		98
-#define PRI_SUBCMD_CC_ERROR				99
-
-/* BUGBUG eliminate the following defines */
-#define PRI_CCERROR_UNSPECIFIED				1008
-#define PRI_CCERROR_REMOTE_USER_BUSY_AGAIN	1012
-#define PRI_CCERROR_FAILURE_TO_MATCH		1013
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_ccbs_rr {
-	struct pri_qsig_cc_request_res cc_request_res;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_ccnr_rr {
-	struct pri_qsig_cc_request_res cc_request_res;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_cancel_inv {
-	struct pri_qsig_cc_optional_arg	cc_optional_arg;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_execpossible_inv {
-	struct pri_qsig_cc_optional_arg	cc_optional_arg;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_suspend_inv {
-	struct pri_qsig_cc_extension cc_extension;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_ringout_inv {
-	struct pri_qsig_cc_extension cc_extension;
-};
-
-/* BUGBUG eliminate this struct definition. */
-struct pri_subcmd_cc_error {
-	int	error_value;
-};
-
 struct pri_subcommand {
 	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
@@ -731,15 +654,6 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_id cc_cancel;
 		struct pri_subcmd_cc_deactivate_rsp cc_deactivate_rsp;
-
-/* BUGBUG eliminate these struct members. */
-		struct pri_subcmd_cc_ccbs_rr cc_ccbs_rr;
-		struct pri_subcmd_cc_ccnr_rr cc_ccnr_rr;
-		struct pri_subcmd_cc_cancel_inv cc_cancel_inv;
-		struct pri_subcmd_cc_execpossible_inv cc_execpossible_inv;
-		struct pri_subcmd_cc_suspend_inv cc_suspend_inv;
-		struct pri_subcmd_cc_ringout_inv cc_ringout_inv;
-		struct pri_subcmd_cc_error cc_error;
 	} u;
 };
 
@@ -1160,15 +1074,6 @@ extern int pri_maintenance_service(struct pri *pri, int span, int channel, int c
 /* Create a new call */
 q931_call *pri_new_call(struct pri *pri);
 
-/* BUGBUG eliminate this prototype. */
-q931_call *pri_new_nochannel_call(struct pri *pri, int *cr);
-
-/* BUGBUG eliminate this prototype. */
-q931_call *pri_find_call(struct pri *pri, int cr);
-
-/* BUGBUG eliminate this prototype. */
-void pri_call_set_cc_operation(q931_call *call, int cc_operation);
-
 /*!
  * \brief Deterimine if the given call control pointer is a dummy call.
  *
@@ -1254,11 +1159,6 @@ int pri_sr_set_redirecting(struct pri_sr *sr, char *num, int plan, int pres, int
  * \return Nothing
  */
 void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits);
-
-/* BUGBUG eliminate this prototype. */
-int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout);
-/* BUGBUG eliminate this prototype. */
-int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr);
 
 #define PRI_USER_USER_TX
 /* Set the user user field.  Warning!  don't send binary data accross this field */

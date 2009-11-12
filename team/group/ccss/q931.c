@@ -4506,18 +4506,6 @@ static void pri_disconnect_timeout(void *data)
 	q931_release(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
 }
 
-static void pri_cctimer2_timeout(void *data)
-{
-	int cause = 16;
-	struct q931_call *c = data;
-	struct pri *ctrl = c->pri;
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
-		pri_message(ctrl, "Timed out no-channel call\n");
-	c->ccoperation = PRI_CC_CANCEL;
-	/* normal clear cause */
-	q931_hangup(ctrl, c, cause);
-}
-
 static int connect_ies[] = {
 	Q931_CHANNEL_IDENT,
 	Q931_IE_FACILITY,
@@ -4825,11 +4813,6 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		c->progressmask = 0;
 
 	c->reversecharge = req->reversecharge;
-
-	if (req->ccringout)
-		c->ccoperation = PRI_CC_RINGOUT;
-	if (req->ccbsnr)
-		c->ccoperation = req->ccbsnr;
 
 	pri_call_add_standard_apdus(ctrl, c);
 
@@ -5437,15 +5420,6 @@ static int __q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 	}
 	if (c->cis_call) {
 		disconnect = 0;
-
-		if (c->ccoperation == PRI_CC_CANCEL) {
-			add_qsigCcInv_facility_ie(ctrl, c, Q931_RELEASE);
-		}
-		if (c->cctimer2) {
-			pri_schedule_del(ctrl, c->cctimer2);
-			c->cctimer2 = 0;
-			pri_message(ctrl, "NEW_HANGUP DEBUG: stop CC-Timer2\n");
-		}
 	}
 
 	c->hangupinitiated = 1;
@@ -5700,8 +5674,6 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->reversecharge = -1;
 		/* Fall through */
 	case Q931_CONNECT:
-		c->ccrequestresult = 0;
-		/* Fall through */
 	case Q931_ALERTING:
 	case Q931_PROGRESS:
 		c->useruserinfo[0] = '\0';
@@ -6816,11 +6788,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			if (subcmd) {
 				subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
 				q931_party_id_copy_to_pri(&subcmd->u.connected_line.id, &c->remote_id);
-			}
-
-			if (c->cis_call && c->ccrequestresult) {
-				pri_message(ctrl, "Q931_CONNECT: start CC-Timer2\n");
-				c->cctimer2 = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_QSIG_CCBS_T2], pri_cctimer2_timeout, c);
 			}
 
 			return Q931_RES_HAVEEVENT;

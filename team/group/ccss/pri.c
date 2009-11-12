@@ -1070,17 +1070,6 @@ q931_call *pri_new_call(struct pri *pri)
 	return q931_new_call(pri);
 }
 
-q931_call *pri_new_nochannel_call(struct pri *pri, int *cr)
-{
-	q931_call *call;
-	if (!pri)
-		return NULL;
-	call = q931_new_call(pri);
-	if (cr)
-		*cr = call->cr;
-	return call;
-}
-
 int pri_is_dummy_call(q931_call *call)
 {
 	if (!call) {
@@ -1311,8 +1300,6 @@ char *pri_dump_info_str(struct pri *ctrl)
 #endif
 	unsigned idx;
 	unsigned long switch_bit;
-	q931_call *cur;
-	struct pri *master;
 
 	if (!ctrl) {
 		return NULL;
@@ -1366,66 +1353,13 @@ char *pri_dump_info_str(struct pri *ctrl)
 		}
 	}
 
-	/* Find the master  - He has the call pool */
-	if (ctrl->master) {
-		master = ctrl->master;
-	} else {
-		master = ctrl;
-	}
-
-	idx = 0;
-	cur = *master->callpool;
-	while (cur) {
-		if (cur->cctimer2) {
-			struct timeval tv;
-			int time_sec_to_go;
-			int time_to_go_min;
-			int time_to_go_sec;
-
-			gettimeofday(&tv, NULL);
-			time_sec_to_go = ctrl->pri_sched[cur->cctimer2].when.tv_sec - tv.tv_sec;
-			if (time_sec_to_go < 0) {
-				time_sec_to_go = 0;
-			}
-			time_to_go_min = time_sec_to_go / 60;
-			time_to_go_sec = time_sec_to_go % 60;
-
-			used = pri_snprintf(buf, used, buf_size,
-				"%u. Active Q.931 Call: %p cr=%d: (%dmin %dsec)\n", ++idx, cur, cur->cr,
-				time_to_go_min, time_to_go_sec);
-		} else {
-			used = pri_snprintf(buf, used, buf_size, "%u. Active Q.931 Call: %p cr=%d\n",
-				++idx, cur, cur->cr);
-		}
-		cur = cur->next;
-	}
+/* BUGBUG add display of active call completion information. */
 
 	if (buf_size < used) {
 		pri_message(ctrl,
 			"pri_dump_info_str(): Produced output exceeded buffer capacity. (Truncated)\n");
 	}
 	return buf;
-}
-
-q931_call *pri_find_call(struct pri *pri, int cr)
-{
-	q931_call *cur;
-	struct pri *master;
-
-	/* Find the master  - He has the call pool */
-	if (pri->master)
-		master = pri->master;
-	else
-		master = pri;
-	
-	cur = *master->callpool;
-	while(cur) {
-		if (cur->cr == cr)
-			return cur;
-		cur = cur->next;
-	}
-
-	return NULL;
 }
 
 int pri_get_crv(struct pri *pri, q931_call *call, int *callmode)
@@ -1684,23 +1618,6 @@ int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_i
 	}
 
 	return send_reroute_request(ctrl, call, caller_id, &reroute, subscription_option);
-}
-
-int pri_sr_set_ccringout(struct pri_sr *sr, int ccringout)
-{
-	sr->ccringout = ccringout;
-	return 0;
-}
-
-int pri_sr_set_ccbsnr(struct pri_sr *sr, int ccbsnr)
-{
-	sr->ccbsnr = ccbsnr;
-	return 0;
-}
-
-void pri_call_set_cc_operation(q931_call *call, int cc_operation)
-{
-	call->ccoperation = cc_operation;
 }
 
 void pri_cc_enable(struct pri *ctrl, int enable)
