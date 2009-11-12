@@ -749,7 +749,7 @@ int q921_transmit_uiframe(struct pri *pri, void *buf, int len)
 static struct pri * pri_find_tei(struct pri *vpri, int tei)
 {
 	struct pri *pri;
-	for (pri = vpri; pri; pri = pri->subchannel) {
+	for (pri = PRI_MASTER(vpri); pri; pri = pri->subchannel) {
 		if (pri->tei == tei)
 			return pri;
 	}
@@ -763,39 +763,46 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 	q921_frame *f, *prev=NULL;
 	struct pri *pri;
 
-	if (tei == Q921_TEI_GROUP) {
-		pri_error(vpri, "Huh?! Shouldn't be sending I-frames out the group TEI\n");
-		return 0;
-	}
+	if (BRI_NT_PTMP(vpri)) {
+		if (tei == Q921_TEI_GROUP) {
+			pri_error(vpri, "Huh?! For NT-PTMP, we shouldn't be sending I-frames out the group TEI\n");
+			return 0;
+		}
 
-	pri = pri_find_tei(vpri, tei);
+		pri = pri_find_tei(vpri, tei);
+		if (!pri) {
+			pri_error(vpri, "Huh?! Unable to locate PRI associated with TEI %d.  Did we have to ditch it due to error conditions?\n", tei);
+			return 0;
+		}
+	} else if (BRI_TE_PTMP(vpri)) {
+		/* We don't care what the tei is, since we only support one sub and one TEI */
+		pri = PRI_MASTER(vpri)->subchannel;
 
-	if (!pri) {
-		pri_error(vpri, "Huh?! Unable to locate PRI associated with TEI %d.  Did we have to ditch it due to error conditions?\n", tei);
-		return 0;
-	}
+		if (!pri) {
+			pri = PRI_MASTER(vpri);
+			if (pri->q921_state == Q921_TEI_UNASSIGNED) {
+				q921_tei_request(vpri);
+				/* We don't setstate here because the pri with the TEI we need hasn't been created */
+				q921_setstate(vpri, Q921_ESTABLISH_AWAITING_TEI);
+			}
+		}
 
-	/* If we aren't in a state compatiable with DL-DATA requests, start getting us there here */
-	switch (pri->q921_state) {
-	case Q921_TEI_UNASSIGNED:
-		/* If we're unassigned, we have to DL-ESTABLISH first - first rev of this code is going to assume
-		 * we're PTMP, TE side.  We have different state rules when we're NT side */
-		q921_start(pri);
-		break;
-	case Q921_TEI_ASSIGNED:
-		q921_establish_data_link(pri);
-		pri->l3initiated = 1;
-		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
-		break;
-	default:
-		break;
+	} else {
+		/* Should just be PTP modes, which shouldn't have subs, but just in case, we'll do this */
+		pri = PRI_MASTER(vpri);
 	}
 
 	/* Figure B.7/Q.921 Page 70 */
 	switch (pri->q921_state) {
-	case Q921_TEI_UNASSIGNED:
-	case Q921_ASSIGN_AWAITING_TEI:
 	case Q921_TEI_ASSIGNED:
+		/* If we aren't in a state compatiable with DL-DATA requests, start getting us there here */
+		q921_establish_data_link(pri);
+		pri->l3initiated = 1;
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		/* For all rest, we've done the work to get us up prior to this and fall through */
+	case Q921_TEI_UNASSIGNED:
+	case Q921_ESTABLISH_AWAITING_TEI:
+	case Q921_ASSIGN_AWAITING_TEI:
 	case Q921_TIMER_RECOVERY:
 	case Q921_AWAITING_ESTABLISHMENT:
 	case Q921_MULTI_FRAME_ESTABLISHED:
@@ -1318,6 +1325,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 		}
 		sub->subchannel = __pri_new_tei(-1, pri->localtype, pri->switchtype, pri, NULL, NULL, NULL, tei, 1);
+		
 		if (!sub->subchannel) {
 			pri_error(pri, "Unable to allocate D-channel for new TEI %d\n", tei);
 			return NULL;
@@ -1347,7 +1355,30 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			pri_error(pri, "Unable to allocate D-channel for new TEI %d\n", tei);
 			return NULL;
 		}
-		q921_setstate(pri, Q921_TEI_ASSIGNED);
+
+		/* Make sure we copy in the q921 state from the master before we reset it */
+		pri->subchannel->q921_state = pri->q921_state;
+		/* Also copy in any pending DL-DATA requests that we queued up */
+		pri->subchannel->txqueue = pri->txqueue;
+		
+		/* Restore master PRI to empty state */
+		pri->q921_state = Q921_TEI_UNASSIGNED;
+		pri->txqueue = NULL;
+
+		switch (pri->subchannel->q921_state) {
+		case Q921_ESTABLISH_AWAITING_TEI:
+			q921_setstate(pri->subchannel, Q921_TEI_ASSIGNED);
+			break;
+		case Q921_ASSIGN_AWAITING_TEI:
+			q921_establish_data_link(pri->subchannel);
+			pri->subchannel->l3initiated = 1;
+			q921_setstate(pri->subchannel, Q921_AWAITING_ESTABLISHMENT);
+			break;
+		default:
+			pri_error(pri, "Don't know what to do with subchannel in state %d after receiving TEI\n", pri->subchannel->q921_state);
+			return NULL;
+		}
+
 		break;
 	case Q921_TEI_IDENTITY_CHECK_REQUEST:
 		if (!BRI_TE_PTMP(pri))
@@ -2243,9 +2274,11 @@ void q921_start(struct pri *pri)
 {
 	if (PTMP_MODE(pri)) {
 		q921_setstate(pri, Q921_TEI_UNASSIGNED);
+#if 0
 		if (TE_MODE(pri)) {
 			q921_tei_request(pri);
 		}
+#endif
 	} else {
 		/* PTP mode, no need for TEI management junk */
 		q921_establish_data_link(pri);
