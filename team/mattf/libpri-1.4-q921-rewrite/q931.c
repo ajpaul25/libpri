@@ -3922,14 +3922,6 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 	len = sizeof(buf) - len;
 
 	ctrl = call->pri;
-	if (BRI_TE_PTMP(ctrl)) {
-		/*
-		 * Must use the BRI subchannel structure to send with the correct TEI.
-		 * Note: If the subchannel is NULL then there is no TEI assigned and
-		 * we should not be sending anything out at this time.
-		 */
-		ctrl = ctrl->subchannel;
-	}
 	if (ctrl) {
 		int uiframe;
 
