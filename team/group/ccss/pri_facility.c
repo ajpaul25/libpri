@@ -2698,80 +2698,6 @@ int rose_connected_name_encode(struct pri *ctrl, q931_call *call, int messagetyp
 	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer);
 }
 
-/* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-
-/*!
- * \internal
- * \brief Encode the Q.SIG CCExtension invoke message.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param pos Starting position to encode the facility ie contents.
- * \param end End of facility ie contents encoding data buffer.
- * \param operation Call-Completion operation to generate.
- *
- * \retval Start of the next ASN.1 component to encode on success.
- * \retval NULL on error.
- */
-static unsigned char *enc_qsig_CCExtension_invoke(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, enum rose_operation operation)
-{
-	struct fac_extension_header header;
-	struct rose_msg_invoke msg;
-
-	memset(&header, 0, sizeof(header));
-	header.nfe_present = 1;
-	header.nfe.source_entity = 0;	/* endPINX */
-	header.nfe.destination_entity = 0;	/* endPINX */
-	header.interpretation_present = 1;
-	header.interpretation = 0;	/* discardAnyUnrecognisedInvokePdu */
-	pos = facility_encode_header(ctrl, pos, end, &header);
-	if (!pos) {
-		return NULL;
-	}
-
-	memset(&msg, 0, sizeof(msg));
-	msg.operation = operation;
-	msg.invoke_id = get_invokeid(ctrl);
-	pos = rose_encode_invoke(ctrl, pos, end, &msg);
-
-	return pos;
-}
-
-/*!
- * \brief Encode and queue CcRingout or CcCancel.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param call Call leg from which to encode message.
- * \param messagetype Q.931 message type the facility will go out on.
- *
- * \retval 0 on success.
- * \retval -1 on error.
- */
-int add_qsigCcInv_facility_ie(struct pri *ctrl, q931_call *call, int messagetype)
-{
-	unsigned char buffer[256];
-	unsigned char *end;
-	enum rose_operation operation;
-
-	switch (call->ccoperation) {
-	case PRI_CC_RINGOUT:
-		operation = ROSE_QSIG_CcRingout;
-		break;
-	case PRI_CC_CANCEL:
-		operation = ROSE_QSIG_CcCancel;
-		break;
-	default:
-		return -1;
-	}
-	end = enc_qsig_CCExtension_invoke(ctrl, buffer, buffer + sizeof(buffer), operation);
-	if (!end) {
-		return -1;
-	}
-
-	return pri_call_apdu_queue(call, messagetype, buffer, end - buffer);
-}
-/* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-
 /*!
  * \brief Put the APDU on the call queue.
  *
@@ -2844,104 +2770,6 @@ int pri_call_apdu_queue_cleanup(q931_call *call)
 	return 0;
 }
 
-/* ===== Begin Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-
-/*!
- * \internal
- * \brief Encode the Q.SIG CCRequestArg invoke message.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param pos Starting position to encode the facility ie contents.
- * \param end End of facility ie contents encoding data buffer.
- * \param call Call leg from which to encode request.
- * \param cc_request Call-Completion request operation to generate.
- *
- * \retval Start of the next ASN.1 component to encode on success.
- * \retval NULL on error.
- */
-static unsigned char *enc_qsig_CCRequestArg(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, q931_call *call, enum rose_operation cc_request)
-{
-	struct fac_extension_header header;
-	struct rose_msg_invoke msg;
-
-	static const unsigned char q931ie[] = {
-		0x04,	/* Bearer Capability IE */
-		0x03,	/* len */
-		0x80,	/* ETSI Standard, Speech */
-		0x90,	/* circuit mode, 64kbit/s */
-		0xa3,	/* level 1 protocol, a-law */
-	};
-
-	memset(&header, 0, sizeof(header));
-	header.nfe_present = 1;
-	header.nfe.source_entity = 0;	/* endPINX */
-	header.nfe.destination_entity = 0;	/* endPINX */
-	header.interpretation_present = 1;
-	header.interpretation = 2;	/* rejectAnyUnrecognisedInvokePdu */
-	pos = facility_encode_header(ctrl, pos, end, &header);
-	if (!pos) {
-		return NULL;
-	}
-
-	memset(&msg, 0, sizeof(msg));
-	msg.operation = cc_request;
-	msg.invoke_id = get_invokeid(ctrl);
-
-	/* numberA is the local_id.number */
-	q931_copy_presented_number_unscreened_to_rose(ctrl,
-		&msg.args.qsig.CcbsRequest.number_a, &call->local_id.number);
-
-	/* numberB is the called.number */
-	q931_copy_number_to_rose(ctrl, &msg.args.qsig.CcbsRequest.number_b,
-		&call->called.number);
-
-	msg.args.qsig.CcbsRequest.q931ie.length = sizeof(q931ie);
-	memcpy(msg.args.qsig.CcbsRequest.q931ie_contents, q931ie, sizeof(q931ie));
-
-	msg.args.qsig.CcbsRequest.can_retain_service = 0;	/* FALSE */
-	msg.args.qsig.CcbsRequest.retain_sig_connection_present = 1;
-	msg.args.qsig.CcbsRequest.retain_sig_connection = 1;	/* TRUE */
-
-	pos = rose_encode_invoke(ctrl, pos, end, &msg);
-
-	return pos;
-}
-
-/*!
- * \brief Encode and queue CcbsRequest or CcnrRequest.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param call Call leg from which to encode request.
- *
- * \retval 0 on success.
- * \retval -1 on error.
- */
-static int add_qsigCcRequestArg_facility_ie(struct pri *ctrl, q931_call *call)
-{
-	unsigned char buffer[256];
-	unsigned char *end;
-	enum rose_operation operation;
-
-	switch (call->ccoperation) {
-	case PRI_CC_CCBSREQUEST:
-		operation = ROSE_QSIG_CcbsRequest;
-		break;
-	case PRI_CC_CCNRREQUEST:
-		operation = ROSE_QSIG_CcnrRequest;
-		break;
-	default:
-		return -1;
-	}
-	end = enc_qsig_CCRequestArg(ctrl, buffer, buffer + sizeof(buffer), call, operation);
-	if (!end) {
-		return -1;
-	}
-
-	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer);
-}
-/* ===== End Call Completion Supplementary Service (ETS 300 366/ECMA 186) ===== */
-
 /*! \note Only called when sending the SETUP message. */
 int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 {
@@ -2979,21 +2807,6 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 			call->redirecting.state = Q931_REDIRECTING_STATE_EXPECTING_RX_DIV_LEG_3;
 		}
 		add_callername_facility_ies(ctrl, call, 1);
-		if (call->ccoperation) {
-			switch (call->ccoperation) {
-			case 0:
-				break;
-			case PRI_CC_CCBSREQUEST:
-			case PRI_CC_CCNRREQUEST:
-				add_qsigCcRequestArg_facility_ie(ctrl, call);
-				break;
-			case PRI_CC_RINGOUT:
-				add_qsigCcInv_facility_ie(ctrl, call, Q931_SETUP);
-				break;
-			default:
-				break;
-			}
-		}
 		break;
 	case PRI_SWITCH_NI2:
 		add_callername_facility_ies(ctrl, call, (ctrl->localtype == PRI_CPE));
@@ -3483,21 +3296,6 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 	const struct fac_extension_header *header, const struct rose_msg_error *error)
 {
 	const char *dms100_operation;
-	struct pri_subcommand *subcmd;
-
-	switch (ctrl->switchtype) {
-	case PRI_SWITCH_QSIG:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_ERROR;
-		subcmd->u.cc_error.error_value = PRI_CCERROR_UNSPECIFIED;
-		break;
-	default:
-		break;
-	}
 
 	pri_error(ctrl, "ROSE RETURN ERROR:\n");
 	switch (ctrl->switchtype) {
@@ -3540,8 +3338,6 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_result *result)
 {
-	struct pri_subcommand *subcmd;
-
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
 		switch (result->invoke_id) {
@@ -3661,33 +3457,11 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_QSIG_CallRerouting:
 		/* Successfully completed call rerouting.  Nothing to do. */
 		break;
+#if 0	/* Not handled yet */
 	case ROSE_QSIG_CcbsRequest:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_CCBSREQUEST_RR;
-		subcmd->u.cc_ccbs_rr.cc_request_res.no_path_reservation =
-			result->args.qsig.CcbsRequest.no_path_reservation;
-		subcmd->u.cc_ccbs_rr.cc_request_res.retain_service =
-			result->args.qsig.CcbsRequest.retain_service;
-		subcmd->u.cc_ccbs_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
 		break;
 	case ROSE_QSIG_CcnrRequest:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_CCNRREQUEST_RR;
-		subcmd->u.cc_ccnr_rr.cc_request_res.no_path_reservation =
-			result->args.qsig.CcnrRequest.no_path_reservation;
-		subcmd->u.cc_ccnr_rr.cc_request_res.retain_service =
-			result->args.qsig.CcnrRequest.retain_service;
-		subcmd->u.cc_ccnr_rr.cc_request_res.cc_extension.cc_extension_tag = 0;
 		break;
-#if 0	/* Not handled yet */
 	case ROSE_QSIG_CcPathReserve:
 		break;
 #endif	/* Not handled yet */
@@ -4515,59 +4289,14 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		break;
 	case ROSE_QSIG_CcnrRequest:
 		break;
-#endif	/* Not handled yet */
 	case ROSE_QSIG_CcCancel:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_CANCEL_INV;
-		subcmd->u.cc_cancel_inv.cc_optional_arg.number_A[0] = '\0';
-		subcmd->u.cc_cancel_inv.cc_optional_arg.number_B[0] = '\0';
-		subcmd->u.cc_cancel_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
-		if (invoke->args.qsig.CcCancel.full_arg_present) {
-			libpri_copy_string(subcmd->u.cc_cancel_inv.cc_optional_arg.number_A,
-				(char *) invoke->args.qsig.CcCancel.number_a.str,
-				sizeof(subcmd->u.cc_cancel_inv.cc_optional_arg.number_A));
-			libpri_copy_string(subcmd->u.cc_cancel_inv.cc_optional_arg.number_B,
-				(char *) invoke->args.qsig.CcCancel.number_b.str,
-				sizeof(subcmd->u.cc_cancel_inv.cc_optional_arg.number_B));
-		}
 		break;
 	case ROSE_QSIG_CcExecPossible:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_EXECPOSSIBLE_INV;
-		subcmd->u.cc_execpossible_inv.cc_optional_arg.number_A[0] = '\0';
-		subcmd->u.cc_execpossible_inv.cc_optional_arg.number_B[0] = '\0';
-		subcmd->u.cc_execpossible_inv.cc_optional_arg.cc_extension.cc_extension_tag = 0;
-		if (invoke->args.qsig.CcExecPossible.full_arg_present) {
-			libpri_copy_string(subcmd->u.cc_execpossible_inv.cc_optional_arg.number_A,
-				(char *) invoke->args.qsig.CcExecPossible.number_a.str,
-				sizeof(subcmd->u.cc_execpossible_inv.cc_optional_arg.number_A));
-			libpri_copy_string(subcmd->u.cc_execpossible_inv.cc_optional_arg.number_B,
-				(char *) invoke->args.qsig.CcExecPossible.number_b.str,
-				sizeof(subcmd->u.cc_execpossible_inv.cc_optional_arg.number_B));
-		}
 		break;
-#if 0	/* Not handled yet */
 	case ROSE_QSIG_CcPathReserve:
 		break;
-#endif	/* Not handled yet */
 	case ROSE_QSIG_CcRingout:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
-		subcmd->cmd = PRI_SUBCMD_CC_RINGOUT_INV;
-		subcmd->u.cc_ringout_inv.cc_extension.cc_extension_tag = 0;
 		break;
-#if 0	/* Not handled yet */
 	case ROSE_QSIG_CcSuspend:
 		break;
 	case ROSE_QSIG_CcResume:
