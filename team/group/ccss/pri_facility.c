@@ -3723,6 +3723,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie,
 	const struct fac_extension_header *header, const struct rose_msg_invoke *invoke)
 {
+	struct pri_cc_record *cc_record;
 	struct pri_subcommand *subcmd;
 	struct q931_party_id party_id;
 	struct q931_party_redirecting deflection;
@@ -4061,8 +4062,41 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_ETSI_StatusRequest:
 		break;
 #endif	/* Not handled yet */
-#if 0	/* Not handled yet */
 	case ROSE_ETSI_CallInfoRetain:
+		if (!PRI_MASTER(ctrl)->cc_support) {
+			/*
+			 * Blocking the cc-available event effectively
+			 * disables call completion for outgoing calls.
+			 */
+			break;
+		}
+		/*
+		 * Since we received this facility, we will not be allocating any
+		 * reference and linkage id's.
+		 */
+		if (call->cc.record) {
+			/* Duplicate message!  Should not happen. */
+			break;
+		}
+		cc_record = pri_cc_new_record(ctrl, call);
+		if (!cc_record) {
+			break;
+		}
+		cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
+		cc_record->call_linkage_id =
+			invoke->args.etsi.CallInfoRetain.call_linkage_id & 0x7F;
+		cc_record->state = CC_STATE_AVAILABLE;
+
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
+			pri_cc_delete_record(ctrl, cc_record);
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		call->cc.record = cc_record;
+
+		subcmd->cmd = PRI_SUBCMD_CC_AVAILABLE;
+		subcmd->u.cc_available.cc_id = cc_record->record_id;
 		break;
 	case ROSE_ETSI_CCBSRequest:
 		break;
@@ -4095,16 +4129,40 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_ETSI_CCBS_T_RemoteUserFree:
 		break;
 	case ROSE_ETSI_CCBS_T_Available:
+		if (!PRI_MASTER(ctrl)->cc_support) {
+			/*
+			 * Blocking the cc-available event effectively
+			 * disables call completion for outgoing calls.
+			 */
+			break;
+		}
+		if (call->cc.record) {
+			/* Duplicate message!  Should not happen. */
+			break;
+		}
+		cc_record = pri_cc_new_record(ctrl, call);
+		if (!cc_record) {
+			break;
+		}
+		cc_record->state = CC_STATE_AVAILABLE;
+
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
+			pri_cc_delete_record(ctrl, cc_record);
+			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
+			break;
+		}
+		call->cc.record = cc_record;
+
+		subcmd->cmd = PRI_SUBCMD_CC_AVAILABLE;
+		subcmd->u.cc_available.cc_id = cc_record->record_id;
 		break;
-#endif	/* Not handled yet */
-#if 0	/* Not handled yet */
 	case ROSE_ETSI_CCNRRequest:
 		break;
 	case ROSE_ETSI_CCNRInterrogate:
 		break;
 	case ROSE_ETSI_CCNR_T_Request:
 		break;
-#endif	/* Not handled yet */
 	case ROSE_QSIG_CallingName:
 		/* CallingName is put in remote_id.name */
 		rose_copy_name_to_q931(ctrl, &call->remote_id.name,

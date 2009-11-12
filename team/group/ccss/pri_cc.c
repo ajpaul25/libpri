@@ -58,6 +58,7 @@ static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned
 {
 	struct pri_cc_record *cc_record;
 
+	ctrl = PRI_MASTER(ctrl);
 	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->ccbs_reference_id == reference_id) {
 			/* Found the record */
@@ -83,6 +84,7 @@ static struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned l
 {
 	struct pri_cc_record *cc_record;
 
+	ctrl = PRI_MASTER(ctrl);
 	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->call_linkage_id == linkage_id) {
 			/* Found the record */
@@ -107,6 +109,7 @@ static struct pri_cc_record *pri_cc_find_by_id(struct pri *ctrl, long cc_id)
 {
 	struct pri_cc_record *cc_record;
 
+	ctrl = PRI_MASTER(ctrl);
 	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (cc_record->record_id == cc_id) {
 			/* Found the record */
@@ -133,6 +136,7 @@ static struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const s
 {
 	struct pri_cc_record *cc_record;
 
+	ctrl = PRI_MASTER(ctrl);
 	for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
 		if (!q931_cmp_party_id_to_address(&cc_record->party_a, party_a)
 			&& !q931_party_address_cmp(&cc_record->party_b, party_b)) {
@@ -162,6 +166,7 @@ static int pri_cc_new_reference_id(struct pri *ctrl)
 	long reference_id;
 	long first_id;
 
+	ctrl = PRI_MASTER(ctrl);
 	ctrl->cc.last_reference_id = (ctrl->cc.last_reference_id + 1) & 0x7F;
 	reference_id = ctrl->cc.last_reference_id;
 	first_id = reference_id;
@@ -194,6 +199,7 @@ static int pri_cc_new_linkage_id(struct pri *ctrl)
 	long linkage_id;
 	long first_id;
 
+	ctrl = PRI_MASTER(ctrl);
 	ctrl->cc.last_linkage_id = (ctrl->cc.last_linkage_id + 1) & 0x7F;
 	linkage_id = ctrl->cc.last_linkage_id;
 	first_id = linkage_id;
@@ -225,6 +231,7 @@ static long pri_cc_new_id(struct pri *ctrl)
 	long record_id;
 	long first_id;
 
+	ctrl = PRI_MASTER(ctrl);
 	record_id = ++ctrl->cc.last_record_id;
 	first_id = record_id;
 	while (pri_cc_find_by_id(ctrl, record_id)) {
@@ -243,9 +250,7 @@ static long pri_cc_new_id(struct pri *ctrl)
 	return record_id;
 }
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
- * \internal
  * \brief Delete the given call completion record
  *
  * \param ctrl D channel controller.
@@ -253,11 +258,12 @@ static long pri_cc_new_id(struct pri *ctrl)
  *
  * \return Nothing
  */
-static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
+void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 {
 	struct pri_cc_record **prev;
 	struct pri_cc_record *current;
 
+	ctrl = PRI_MASTER(ctrl);
 	for (prev = &ctrl->cc.pool, current = ctrl->cc.pool; current;
 		prev = &current->next, current = current->next) {
 		if (current == doomed) {
@@ -269,10 +275,8 @@ static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 
 	/* The doomed node is not in the call completion database */
 }
-#endif
 
 /*!
- * \internal
  * \brief Allocate a new cc_record.
  *
  * \param ctrl D channel controller.
@@ -281,11 +285,12 @@ static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
  * \retval pointer to new call completion record
  * \retval NULL if failed
  */
-static struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
+struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 {
 	struct pri_cc_record *cc_record;
 	long record_id;
 
+	ctrl = PRI_MASTER(ctrl);
 	record_id = pri_cc_new_id(ctrl);
 	if (record_id < 0) {
 		return NULL;
@@ -300,7 +305,7 @@ static struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call
 	cc_record->call_linkage_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
 	cc_record->ccbs_reference_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
 	cc_record->party_a = call->cc.party_a;
-	cc_record->party_b = call->cc.party_b;
+	cc_record->party_b = call->called;
 	cc_record->party_b_is_remote = call->cc.party_b_is_remote;
 /* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 /*! \todo BUGBUG need more initialization?? */
@@ -310,6 +315,72 @@ static struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call
 	ctrl->cc.pool = cc_record;
 
 	return cc_record;
+}
+
+/*!
+ * \brief Send an event from the upper layer to the cc state machine.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \retval 0 if no error or event.
+ * \retval Q931_RES_HAVEEVENT if have an event.
+ * \retval -1 on error.
+ */
+int pri_cc_event_down(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	int res;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		res = 0;
+		break;
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		res = 0;
+		break;
+	default:
+		res = 0;
+		break;
+	}
+
+	return res;
+	/*! \todo BUGBUG pri_cc_event_down() not written */
+}
+
+/*!
+ * \brief Send an event from the link to the cc state machine.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \retval 0 if no error or event.
+ * \retval Q931_RES_HAVEEVENT if have an event.
+ * \retval -1 on error.
+ */
+int pri_cc_event_up(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	int res;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_QSIG:
+		res = 0;
+		break;
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		res = 0;
+		break;
+	default:
+		res = 0;
+		break;
+	}
+
+	return res;
+	/*! \todo BUGBUG pri_cc_event_up() not written */
 }
 
 /*!
@@ -364,6 +435,7 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 			if (!cc_record) {
 				break;
 			}
+			cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
 			cc_record->call_linkage_id = linkage_id;
 		} else {
 			cc_record = pri_cc_new_record(ctrl, call);
