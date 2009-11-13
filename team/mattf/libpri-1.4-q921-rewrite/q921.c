@@ -774,12 +774,12 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 		pri = PRI_MASTER(vpri)->subchannel;
 
 		if (pri->q921_state == Q921_TEI_UNASSIGNED) {
-			q921_tei_request(vpri);
+			q921_tei_request(pri);
 			/* We don't setstate here because the pri with the TEI we need hasn't been created */
-			q921_setstate(vpri, Q921_ESTABLISH_AWAITING_TEI);
+			q921_setstate(pri, Q921_ESTABLISH_AWAITING_TEI);
 		}
 	} else {
-		/* Should just be PTP modes, which shouldn't have subs, but just in case, we'll do this */
+		/* Should just be PTP modes, which shouldn't have subs */
 		pri = vpri;
 	}
 
@@ -1348,10 +1348,10 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		pri->tei = tei;
 
 		switch (pri->q921_state) {
-		case Q921_ESTABLISH_AWAITING_TEI:
+		case Q921_ASSIGN_AWAITING_TEI:
 			q921_setstate(pri, Q921_TEI_ASSIGNED);
 			break;
-		case Q921_ASSIGN_AWAITING_TEI:
+		case Q921_ESTABLISH_AWAITING_TEI:
 			q921_establish_data_link(pri);
 			pri->l3initiated = 1;
 			q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
