@@ -771,7 +771,7 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 		}
 	} else if (BRI_TE_PTMP(vpri)) {
 		/* We don't care what the tei is, since we only support one sub and one TEI */
-		pri = vpri;
+		pri = PRI_MASTER(vpri)->subchannel;
 
 		if (pri->q921_state == Q921_TEI_UNASSIGNED) {
 			q921_tei_request(vpri);
@@ -2090,7 +2090,6 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 				} else {
 					int res;
 
-					//res = q931_receive(PRI_MASTER(pri), pri->tei, (q931_h *) h->u.data, len - 3);
 					res = q931_receive(pri, pri->tei, (q931_h *) h->u.data, len - 3);
 					if (res == -1) {
 						return NULL;
@@ -2298,9 +2297,11 @@ static void q921_establish_data_link(struct pri *pri)
 void q921_start(struct pri *pri)
 {
 	if (PTMP_MODE(pri)) {
-		q921_setstate(pri, Q921_TEI_UNASSIGNED);
 		if (TE_MODE(pri)) {
+			q921_setstate(pri, Q921_ASSIGN_AWAITING_TEI);
 			q921_tei_request(pri);
+		} else {
+			q921_setstate(pri, Q921_TEI_UNASSIGNED);
 		}
 	} else {
 		/* PTP mode, no need for TEI management junk */
