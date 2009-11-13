@@ -47,6 +47,7 @@ const char *pri_facility_error2str(int facility_error_code)
 
 static short get_invokeid(struct pri *ctrl)
 {
+	ctrl = PRI_MASTER(ctrl);
 	return ++ctrl->last_invoke;
 }
 
