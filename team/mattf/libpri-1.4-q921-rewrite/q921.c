@@ -139,11 +139,6 @@ static void q921_send_tei(struct pri *pri, int message, int ri, int ai, int isco
 static void q921_tei_request(void *vpri)
 {
 	struct pri *pri = (struct pri *)vpri;
-
-	if (pri->subchannel) {
-		pri_error(pri, "Cannot request TEI while its already assigned\n");
-		return;
-	}
 	pri->n202_counter++;
 	if (pri->n202_counter > pri->timers[PRI_TIMER_N202]) {
 		pri_error(pri, "Unable to receive TEI from network!\n");
@@ -776,20 +771,16 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 		}
 	} else if (BRI_TE_PTMP(vpri)) {
 		/* We don't care what the tei is, since we only support one sub and one TEI */
-		pri = PRI_MASTER(vpri)->subchannel;
+		pri = vpri;
 
-		if (!pri) {
-			pri = PRI_MASTER(vpri);
-			if (pri->q921_state == Q921_TEI_UNASSIGNED) {
-				q921_tei_request(vpri);
-				/* We don't setstate here because the pri with the TEI we need hasn't been created */
-				q921_setstate(vpri, Q921_ESTABLISH_AWAITING_TEI);
-			}
+		if (pri->q921_state == Q921_TEI_UNASSIGNED) {
+			q921_tei_request(vpri);
+			/* We don't setstate here because the pri with the TEI we need hasn't been created */
+			q921_setstate(vpri, Q921_ESTABLISH_AWAITING_TEI);
 		}
-
 	} else {
 		/* Should just be PTP modes, which shouldn't have subs, but just in case, we'll do this */
-		pri = PRI_MASTER(vpri);
+		pri = vpri;
 	}
 
 	/* Figure B.7/Q.921 Page 70 */
@@ -1303,6 +1294,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	}
 	ri = (h->data[1] << 8) | h->data[2];
 	tei = (h->data[4] >> 1);
+
 	switch(h->data[3]) {
 	case Q921_TEI_IDENTITY_REQUEST:
 		if (!BRI_NT_PTMP(pri)) {
@@ -1336,13 +1328,40 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	case Q921_TEI_IDENTITY_ASSIGNED:
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
+		
+		switch (pri->q921_state) {
+		case Q921_ASSIGN_AWAITING_TEI:
+		case Q921_ESTABLISH_AWAITING_TEI:
+			break;
+		default:
+			pri_message(pri, "Ignoring unrequested TEI assign message\n");
+			return NULL;
+		}
 
 		if (ri != pri->ri) {
 			pri_message(pri, "TEI assignment received for invalid Ri %02x (our is %02x)\n", ri, pri->ri);
 			return NULL;
 		}
+
 		pri_schedule_del(pri, pri->t202_timer);
 		pri->t202_timer = 0;
+		pri->tei = tei;
+
+		switch (pri->q921_state) {
+		case Q921_ESTABLISH_AWAITING_TEI:
+			q921_setstate(pri, Q921_TEI_ASSIGNED);
+			break;
+		case Q921_ASSIGN_AWAITING_TEI:
+			q921_establish_data_link(pri);
+			pri->l3initiated = 1;
+			q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+			break;
+		default:
+			pri_error(pri, "Error 3\n");
+			return NULL;
+		}
+
+#if 0
 		if (pri->subchannel && (pri->subchannel->tei == tei)) {
 			pri_error(pri, "TEI already assigned (new is %d, current is %d)\n", tei, pri->subchannel->tei);
 			q921_tei_release_and_reacquire(pri);
@@ -1378,15 +1397,13 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			pri_error(pri, "Don't know what to do with subchannel in state %d after receiving TEI\n", pri->subchannel->q921_state);
 			return NULL;
 		}
-
+#endif
 		break;
 	case Q921_TEI_IDENTITY_CHECK_REQUEST:
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
-		/* We're assuming one TEI per PRI in TE PTMP mode */
 
-		/* If no subchannel (TEI) ignore */
-		if (!pri->subchannel)
+		if (pri->q921_state < Q921_TEI_ASSIGNED)
 			return NULL;
 
 		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
@@ -1395,6 +1412,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
+		pri_error(pri, "Fix me\n");
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
 		/* XXX: Assuming multiframe mode has been disconnected already */
@@ -2211,13 +2229,20 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 	if (h->h.ea1 || !(h->h.ea2))
 		return NULL;
 
-	if (!((h->h.sapi == pri->sapi) && ((h->h.tei == pri->tei) || (h->h.tei == Q921_TEI_GROUP)))) {
+	if ((h->h.sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (h->h.tei == Q921_TEI_GROUP)) {
+		if (BRI_NT_PTMP(pri))
+			return q921_receive_MDL(pri, (q921_u *)h, len);
+		else if (BRI_TE_PTMP(pri))
+			return q921_receive_MDL(pri->subchannel, (q921_u *)h, len);
+	}
+
+	if (!((h->h.sapi == pri->sapi) && (h->h.tei == pri->tei))) {
 		/* Check for SAPIs we don't yet handle */
 		/* If it's not us, try any subchannels we have */
 		if (pri->subchannel)
 			return q921_receive(pri->subchannel, h, len + 2);
 		else {
-			/* This means we couldn't find a candidate subchannel for it...
+			/* This means we couldn't find a candidate TEI/subchannel for it...
 			 * Time for some corrective action */
 
 			return q921_handle_unmatched_frame(pri, h, len);
@@ -2274,11 +2299,9 @@ void q921_start(struct pri *pri)
 {
 	if (PTMP_MODE(pri)) {
 		q921_setstate(pri, Q921_TEI_UNASSIGNED);
-#if 0
 		if (TE_MODE(pri)) {
 			q921_tei_request(pri);
 		}
-#endif
 	} else {
 		/* PTP mode, no need for TEI management junk */
 		q921_establish_data_link(pri);
