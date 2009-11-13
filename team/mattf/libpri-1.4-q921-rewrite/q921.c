@@ -1275,6 +1275,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 {
 	int ri;
 	struct pri *sub = pri;
+	pri_event *res = NULL;
 	int tei;
 
 	if (!BRI_NT_PTMP(pri) && !BRI_TE_PTMP(pri)) {
@@ -1350,6 +1351,8 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		switch (pri->q921_state) {
 		case Q921_ASSIGN_AWAITING_TEI:
 			q921_setstate(pri, Q921_TEI_ASSIGNED);
+			pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
+			res = &pri->ev;
 			break;
 		case Q921_ESTABLISH_AWAITING_TEI:
 			q921_establish_data_link(pri);
@@ -1385,10 +1388,10 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		pri->txqueue = NULL;
 
 		switch (pri->subchannel->q921_state) {
-		case Q921_ESTABLISH_AWAITING_TEI:
+		case Q921_ASSIGN_AWAITING_TEI:
 			q921_setstate(pri->subchannel, Q921_TEI_ASSIGNED);
 			break;
-		case Q921_ASSIGN_AWAITING_TEI:
+		case Q921_ESTABLISH_AWAITING_TEI:
 			q921_establish_data_link(pri->subchannel);
 			pri->subchannel->l3initiated = 1;
 			q921_setstate(pri->subchannel, Q921_AWAITING_ESTABLISHMENT);
@@ -1423,7 +1426,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			q921_tei_release_and_reacquire(pri);
 		}
 	}
-	return NULL;	/* Do we need to return something??? */
+	return res;	/* Do we need to return something??? */
 }
 
 static int is_command(struct pri *pri, q921_h *h)
@@ -2201,16 +2204,19 @@ static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int le
 		return NULL;
 	}
 
-	if (pri->debug & PRI_DEBUG_Q921_DUMP) {
-		pri_message(pri,
-			"Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n",
-			h->h.sapi, h->h.tei);
-		pri_message(pri, "Sending TEI release, in order to re-establish TEI state\n");
+	/* If we're NT-PTMP, this means an unrecognized TEI that we'll kill */
+	if (BRI_NT_PTMP(pri)) {
+		if (pri->debug & PRI_DEBUG_Q921_DUMP) {
+			pri_message(pri,
+				"Could not find candidate subchannel for received frame with SAPI/TEI of %d/%d.\n",
+				h->h.sapi, h->h.tei);
+			pri_message(pri, "Sending TEI release, in order to re-establish TEI state\n");
+		}
+	
+		/* Q.921 says we should send the remove message twice, in case of link corruption */
+		q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
+		q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
 	}
-
-	/* Q.921 says we should send the remove message twice, in case of link corruption */
-	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
-	q921_send_tei(pri, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
 
 	return NULL;
 }
@@ -2235,7 +2241,7 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 			return q921_receive_MDL(pri->subchannel, (q921_u *)h, len);
 	}
 
-	if (!((h->h.sapi == pri->sapi) && (h->h.tei == pri->tei))) {
+	if (!((h->h.sapi == pri->sapi) && ((BRI_TE_PTMP(pri) && (h->h.tei == Q921_TEI_GROUP)) || (h->h.tei == pri->tei)))) {
 		/* Check for SAPIs we don't yet handle */
 		/* If it's not us, try any subchannels we have */
 		if (pri->subchannel)
