@@ -40,13 +40,15 @@
 #define DBGHEAD __FILE__ ":%d %s: "
 #define DBGINFO __LINE__,__PRETTY_FUNCTION__
 
+/* Forward declare some structs */
+struct apdu_event;
+struct pri_cc_record;
+
 struct pri_sched {
 	struct timeval when;
 	void (*callback)(void *data);
 	void *data;
 };
-
-struct pri_cc_record;
 
 /*
  * libpri needs to be able to allocate B channels to support Q.SIG path reservation.
@@ -343,13 +345,6 @@ struct pri_sr {
 #define PRI_SWITCH_GR303_TMC_SWITCHING	20
 
 #define Q931_MAX_TEI	8
-
-struct apdu_event {
-	struct apdu_event *next;	/* Linked list pointer */
-	int message;			/* What message to send the ADPU in */
-	int apdu_len; 			/* Length of ADPU */
-	unsigned char apdu[255];			/* ADPU to send */
-};
 
 /*! \brief Incoming call transfer states. */
 enum INCOMING_CT_STATE {
