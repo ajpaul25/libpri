@@ -89,6 +89,7 @@ static const struct pri_timer_table pri_timer[] = {
 	{ "T322",           PRI_TIMER_T322,             PRI_ALL_SWITCHES },
 	{ "T-HOLD",         PRI_TIMER_T_HOLD,           PRI_ALL_SWITCHES },
 	{ "T-RETRIEVE",     PRI_TIMER_T_RETRIEVE,       PRI_ALL_SWITCHES },
+	{ "T-RESPONSE",     PRI_TIMER_T_RESPONSE,       PRI_ALL_SWITCHES },
 	{ "T-STATUS",       PRI_TIMER_T_STATUS,         PRI_ETSI_SWITCHES },
 	{ "T-ACTIVATE",     PRI_TIMER_T_ACTIVATE,       PRI_ETSI_SWITCHES },
 	{ "T-DEACTIVATE",   PRI_TIMER_T_DEACTIVATE,     PRI_ETSI_SWITCHES },
@@ -178,6 +179,8 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 
 	ctrl->timers[PRI_TIMER_T_HOLD] = 4 * 1000;	/* Wait for HOLD request response. */
 	ctrl->timers[PRI_TIMER_T_RETRIEVE] = 4 * 1000;/* Wait for RETRIEVE request response. */
+
+	ctrl->timers[PRI_TIMER_T_RESPONSE] = 4 * 1000;	/* Maximum time to wait for a typical APDU response. */
 
 	/* ETSI timers */
 	ctrl->timers[PRI_TIMER_T_STATUS] = 4 * 1000;	/* Max time to wait for all replies to check for compatible terminals */

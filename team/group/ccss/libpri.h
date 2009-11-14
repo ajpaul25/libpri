@@ -1507,6 +1507,8 @@ enum PRI_TIMERS_AND_COUNTERS {
 	PRI_TIMER_T_HOLD,	/*!< Maximum time to wait for HOLD request response. */
 	PRI_TIMER_T_RETRIEVE,	/*!< Maximum time to wait for RETRIEVE request response. */
 
+	PRI_TIMER_T_RESPONSE,	/*!< Maximum time to wait for a typical APDU response. */
+
 	PRI_TIMER_T_STATUS,		/*!< Max time to wait for all replies to check for compatible terminals */
 
 	PRI_TIMER_T_ACTIVATE,	/*!< Request supervision timeout. */
