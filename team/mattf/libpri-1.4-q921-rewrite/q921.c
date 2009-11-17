@@ -2300,6 +2300,14 @@ static void q921_establish_data_link(struct pri *pri)
 	q921_send_sabme(pri);
 }
 
+static void nt_ptmp_dchannel_up(void *vpri)
+{
+	struct pri *pri = vpri;
+
+	pri->schedev = 1;
+	pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
+}
+
 void q921_start(struct pri *pri)
 {
 	if (PTMP_MODE(pri)) {
@@ -2308,6 +2316,7 @@ void q921_start(struct pri *pri)
 			q921_tei_request(pri);
 		} else {
 			q921_setstate(pri, Q921_TEI_UNASSIGNED);
+			pri_schedule_event(pri, 0, nt_ptmp_dchannel_up, pri);
 		}
 	} else {
 		/* PTP mode, no need for TEI management junk */
