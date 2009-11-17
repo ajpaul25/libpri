@@ -59,7 +59,7 @@
 //static void reschedule_t203(struct pri *pri);
 static void reschedule_t200(struct pri *pri);
 //static void q921_restart(struct pri *pri, int now);
-static void q921_tei_release_and_reacquire(struct pri *master);
+//static void q921_tei_release_and_reacquire(struct pri *master);
 static void q921_establish_data_link(struct pri *pri);
 
 static void q921_setstate(struct pri *pri, int newstate)
@@ -1260,6 +1260,7 @@ void q921_reset(struct pri *pri, int reset_iqueue)
 }
 #endif
 
+#if 0
 static void q921_tei_release_and_reacquire(struct pri *master)
 {
 	/* Make sure the master is passed into this function */
@@ -1270,6 +1271,7 @@ static void q921_tei_release_and_reacquire(struct pri *master)
 	master->schedev = 1;
 	q921_start(master);
 }
+#endif
 
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 {
@@ -1329,6 +1331,9 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 	case Q921_TEI_IDENTITY_ASSIGNED:
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
+
+		/* Assuming we're operating on the sub here */
+		pri = pri->subchannel;
 		
 		switch (pri->q921_state) {
 		case Q921_ASSIGN_AWAITING_TEI:
@@ -1364,43 +1369,6 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 		}
 
-#if 0
-		if (pri->subchannel && (pri->subchannel->tei == tei)) {
-			pri_error(pri, "TEI already assigned (new is %d, current is %d)\n", tei, pri->subchannel->tei);
-			q921_tei_release_and_reacquire(pri);
-			return NULL;
-		}
-
-		pri_message(pri, "TEI assiged to %d\n", tei);
-		pri->subchannel = __pri_new_tei(-1, pri->localtype, pri->switchtype, pri, NULL, NULL, NULL, tei, 1);
-		if (!pri->subchannel) {
-			pri_error(pri, "Unable to allocate D-channel for new TEI %d\n", tei);
-			return NULL;
-		}
-
-		/* Make sure we copy in the q921 state from the master before we reset it */
-		pri->subchannel->q921_state = pri->q921_state;
-		/* Also copy in any pending DL-DATA requests that we queued up */
-		pri->subchannel->txqueue = pri->txqueue;
-		
-		/* Restore master PRI to empty state */
-		pri->q921_state = Q921_TEI_UNASSIGNED;
-		pri->txqueue = NULL;
-
-		switch (pri->subchannel->q921_state) {
-		case Q921_ASSIGN_AWAITING_TEI:
-			q921_setstate(pri->subchannel, Q921_TEI_ASSIGNED);
-			break;
-		case Q921_ESTABLISH_AWAITING_TEI:
-			q921_establish_data_link(pri->subchannel);
-			pri->subchannel->l3initiated = 1;
-			q921_setstate(pri->subchannel, Q921_AWAITING_ESTABLISHMENT);
-			break;
-		default:
-			pri_error(pri, "Don't know what to do with subchannel in state %d after receiving TEI\n", pri->subchannel->q921_state);
-			return NULL;
-		}
-#endif
 		break;
 	case Q921_TEI_IDENTITY_CHECK_REQUEST:
 		if (!BRI_TE_PTMP(pri))
@@ -1418,12 +1386,10 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		pri_error(pri, "Fix me\n");
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
-		/* XXX: Assuming multiframe mode has been disconnected already */
-		if (!pri->subchannel)
-			return NULL;
 
 		if ((tei == Q921_TEI_GROUP) || (tei == pri->subchannel->tei)) {
-			q921_tei_release_and_reacquire(pri);
+			q921_setstate(pri->subchannel, Q921_TEI_UNASSIGNED);
+			q921_start(pri->subchannel);
 		}
 	}
 	return res;	/* Do we need to return something??? */
@@ -2234,11 +2200,8 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 	if (h->h.ea1 || !(h->h.ea2))
 		return NULL;
 
-	if ((h->h.sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (h->h.tei == Q921_TEI_GROUP)) {
-		if (BRI_NT_PTMP(pri))
-			return q921_receive_MDL(pri, (q921_u *)h, len);
-		else if (BRI_TE_PTMP(pri))
-			return q921_receive_MDL(pri->subchannel, (q921_u *)h, len);
+	if ((h->h.sapi == Q921_SAPI_LAYER2_MANAGEMENT)) {
+		return q921_receive_MDL(pri, (q921_u *)h, len);
 	}
 
 	if (!((h->h.sapi == pri->sapi) && ((BRI_TE_PTMP(pri) && (h->h.tei == Q921_TEI_GROUP)) || (h->h.tei == pri->tei)))) {
