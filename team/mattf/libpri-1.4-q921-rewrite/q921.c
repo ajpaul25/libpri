@@ -146,7 +146,7 @@ static void q921_tei_request(void *vpri)
 		return;
 	}
 	pri->ri = random() % 65535;
-	q921_send_tei(pri, Q921_TEI_IDENTITY_REQUEST, pri->ri, Q921_TEI_GROUP, 1);
+	q921_send_tei(PRI_MASTER(pri), Q921_TEI_IDENTITY_REQUEST, pri->ri, Q921_TEI_GROUP, 1);
 	pri_schedule_del(pri, pri->t202_timer);
 	pri->t202_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T202], q921_tei_request, pri);
 }
@@ -1374,7 +1374,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
 
-		if (pri->q921_state < Q921_TEI_ASSIGNED)
+		if (pri->subchannel->q921_state < Q921_TEI_ASSIGNED)
 			return NULL;
 
 		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
@@ -1383,7 +1383,6 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
-		pri_error(pri, "Fix me\n");
 		if (!BRI_TE_PTMP(pri))
 			return NULL;
 
@@ -2209,12 +2208,13 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 		/* If it's not us, try any subchannels we have */
 		if (pri->subchannel)
 			return q921_receive(pri->subchannel, h, len + 2);
-		else {
+		else if (BRI_NT_PTMP(pri)) {
 			/* This means we couldn't find a candidate TEI/subchannel for it...
 			 * Time for some corrective action */
 
 			return q921_handle_unmatched_frame(pri, h, len);
-		}
+		} else
+			return NULL;
 
 	}
 	if (pri->debug & PRI_DEBUG_Q921_DUMP)
