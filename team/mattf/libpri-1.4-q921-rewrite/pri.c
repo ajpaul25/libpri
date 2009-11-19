@@ -1245,12 +1245,14 @@ char *pri_dump_info_str(struct pri *ctrl)
 	}
 	used = pri_snprintf(buf, used, buf_size, "Q921 Outstanding: %u\n", q921outstanding);
 #endif
-	used = pri_snprintf(buf, used, buf_size, "Window Length: %d/%d\n", ctrl->windowlen,
+#if 0
+	used = pri_snprintf(buf, used, buf_size, "Window Length: %d/%d\n", ctrl->k,
 		ctrl->window);
 	used = pri_snprintf(buf, used, buf_size, "Sentrej: %d\n", ctrl->sentrej);
 	used = pri_snprintf(buf, used, buf_size, "SolicitFbit: %d\n", ctrl->solicitfbit);
 	used = pri_snprintf(buf, used, buf_size, "Retrans: %d\n", ctrl->retrans);
 	used = pri_snprintf(buf, used, buf_size, "Busy: %d\n", ctrl->busy);
+#endif
 	used = pri_snprintf(buf, used, buf_size, "Overlap Dial: %d\n", ctrl->overlapdial);
 	used = pri_snprintf(buf, used, buf_size, "Logical Channel Mapping: %d\n",
 		ctrl->chan_mapping_logical);
