@@ -175,52 +175,6 @@ static void q921_send_ua(struct pri *pri, int pfbit)
 	q921_transmit(pri, &h, 3);
 }
 
-#if 0
-static void q921_send_sabme_now(void *vpri);
-
-static void q921_send_sabme(void *vpri, int now)
-{
-	struct pri *pri = vpri;
-	q921_h h;
-
-	pri_schedule_del(pri, pri->sabme_timer);
-	pri->sabme_timer = pri_schedule_event(pri, pri->timers[PRI_TIMER_T200], q921_send_sabme_now, pri);
-	if (!now)
-		return;
-	Q921_INIT(pri, h);
-	h.u.m3 = 3;	/* M3 = 3 */
-	h.u.m2 = 3;	/* M2 = 3 */
-	h.u.p_f = 1;	/* Poll bit set */
-	h.u.ft = Q921_FRAMETYPE_U;
-	switch(pri->localtype) {
-	case PRI_NETWORK:
-		h.h.c_r = 1;
-		break;
-	case PRI_CPE:
-		h.h.c_r = 0;
-		break;
-	default:
-		pri_error(pri, "Don't know how to U/A on a type %d node\n", pri->localtype);
-		return;
-	}
-	if (pri->bri && (pri->state == Q921_AWAITING_ESTABLISH)) {
-		if (pri->sabme_count >= pri->timers[PRI_TIMER_N200]) {
-			pri_schedule_del(pri, pri->sabme_timer);
-			pri->sabme_timer = 0;
-			q921_tei_release_and_reacquire(pri->master);
-		} else {
-			pri->sabme_count++;
-		}
-	}
-	if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP))
-		pri_message(pri, "Sending Set Asynchronous Balanced Mode Extended\n");
-	q921_transmit(pri, &h, 3);
-	if (pri->debug & PRI_DEBUG_Q921_STATE && pri->q921_state != Q921_AWAITING_ESTABLISH)
-		pri_message(pri, DBGHEAD "q921_state now is Q921_AWAITING_ESTABLISH\n", DBGINFO);
-	q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
-}
-#endif
-
 static void q921_send_sabme(struct pri *pri)
 {
 	q921_h h;
@@ -353,12 +307,6 @@ static void start_t200(struct pri *pri)
 
 static void stop_t200(struct pri *pri)
 {
-#if 0
-	if (pri->sabme_timer) {
-		pri_schedule_del(pri, pri->sabme_timer);
-		pri->sabme_timer = 0;
-	}
-#endif
 	if (pri->t200_timer) {
 		if (pri->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(pri, "-- Stopping T200 timer\n");
@@ -387,7 +335,7 @@ static int q921_send_queued_iframes(struct pri *pri)
 		if (!f->transmitted) {
 			/* Send it now... */
 			if (pri->debug & PRI_DEBUG_Q921_DUMP)
-				pri_message(pri, "-- Finally transmitting %d, since window opened up (%d)\n", f->h.n_s, pri->windowlen);
+				pri_message(pri, "-- Finally transmitting %d, since window opened up (%d)\n", f->h.n_s, pri->k);
 			f->transmitted++;
 			f->h.n_s = pri->v_s;
 			f->h.n_r = pri->v_r;
@@ -912,7 +860,7 @@ static void q921_dump_pri(struct pri *pri)
 		pri_message(pri, "V(S) %d V(A) %d V(R) %d V(NA) %d\n", pri->v_s, pri->v_a, pri->v_r, pri->v_na);
 		pri_message(pri, "K %d, RC %d, l3initiated %d, reject_except %d ack_pend %d\n", pri->k, pri->RC, pri->l3initiated, pri->reject_exception, pri->acknowledge_pending);
 		//pri_message(pri, "Window %d Windowlen %d, sentrej %d solicitfbit %d busy %d\n", pri->window, pri->windowlen, pri->sentrej, pri->solicitfbit, pri->busy);
-		pri_message(pri, "T200 %d, N200 %d, T203 %d, Sabme timer %d\n", pri->t200_timer, 3, pri->t203_timer, pri->sabme_timer);
+		pri_message(pri, "T200 %d, N200 %d, T203 %d\n", pri->t200_timer, 3, pri->t203_timer);
 }
 
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
@@ -1051,8 +999,8 @@ static int is_command(struct pri *pri, q921_h *h)
 static void q921_clear_exception_conditions(struct pri *pri)
 {
 	pri->own_rx_busy = 0;
-	pri->peer_rx_busy = pri->busy = 0;
-	pri->reject_exception = pri->sentrej = 0;
+	pri->peer_rx_busy = 0;
+	pri->reject_exception = 0;
 	pri->acknowledge_pending = 0;
 }
 
@@ -1097,21 +1045,6 @@ static pri_event * q921_sabme_rx(struct pri *pri, q921_h *h)
 
 	return res;
 }
-
-#if 0
-static void stop_sabme_timer(struct pri *pri)
-{
-	if (pri->sabme_timer) {
-		if (pri->debug & PRI_DEBUG_Q921_DUMP)
-			pri_message(pri, "-- Stopping SABME timer\n");
-		pri_schedule_del(pri, pri->sabme_timer);
-		pri->sabme_timer = 0;
-	} else {
-		if (pri->debug & PRI_DEBUG_Q921_DUMP)
-			pri_message(pri, "-- Requested to stop already stopped SABME timer\n");
-	}
-}
-#endif
 
 static pri_event *q921_disc_rx(struct pri *pri, q921_h *h)
 {

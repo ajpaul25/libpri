@@ -82,24 +82,16 @@ struct pri {
 	int acknowledge_pending:1;
 	int reject_exception:1;
 
-	int window;			/* Max window size */
-	int windowlen;		/* Fullness of window */
 	int v_s;			/* Next N(S) for transmission */
 	int v_a;			/* Last acknowledged frame */
 	int v_r;			/* Next frame expected to be received */
 	int v_na;			/* What we've told our peer we've acknowledged */
-	int solicitfbit;	/* Have we sent an I or S frame with the F-bit set? */
-	int retrans;		/* Retransmissions */
-	int sentrej;		/* Are we in reject state */
 	
 	int cref;			/* Next call reference value */
 	
-	int busy;			/* Peer is busy */
 	int l3initiated;
 
 	/* Various timers */
-	int sabme_timer;	/* SABME retransmit */
-	int sabme_count;	/* SABME retransmit counter for BRI */
 	int t203_timer;		/* Max idle time */
 	int t202_timer;
 	int n202_counter;
