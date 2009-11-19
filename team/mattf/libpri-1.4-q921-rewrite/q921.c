@@ -1868,6 +1868,132 @@ static pri_event *q921_iframe_rx(struct pri *pri, q921_h *h, int len)
 	return eres;
 }
 
+static pri_event *q921_dm_rx(struct pri *pri, q921_h *h)
+{
+	pri_event * res = NULL;
+
+	switch (pri->q921_state) {
+	case Q921_TEI_ASSIGNED:
+		if (h->u.p_f)
+			break;
+		/* else */
+		q921_establish_data_link(pri);
+		pri->l3initiated = 1;
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		break;
+	case Q921_AWAITING_ESTABLISHMENT:
+		if (!h->u.p_f)
+			break;
+
+		q921_discard_iqueue(pri);
+		/* DL-RELEASE indication */
+		stop_t200(pri);
+		q921_setstate(pri, Q921_TEI_ASSIGNED);
+		break;
+	case Q921_AWAITING_RELEASE:
+		if (!h->u.p_f)
+			break;
+		/* DL-RELEASE confirm */
+		stop_t200(pri);
+		q921_setstate(pri, Q921_TEI_ASSIGNED);
+		break;
+	case Q921_MULTI_FRAME_ESTABLISHED:
+		if (h->u.p_f) {
+			/* MDL-ERROR (B) indication */
+			pri_error(pri, "MDL-ERROR (B)\n");
+			break;
+		}
+
+		/* MDL-ERROR (E) indication */
+		q921_establish_data_link(pri);
+		pri->l3initiated = 0;
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		break;
+	case Q921_TIMER_RECOVERY:
+		if (h->u.p_f) {
+			/* MDL-ERROR (B) indication */
+			pri_error(pri, "MDL-ERROR (B)\n");
+		} else {
+			/* MDL-ERROR (E) indication */
+			pri_error(pri, "MDL-ERROR (E)\n");
+		}
+		q921_establish_data_link(pri);
+		pri->l3initiated = 0;
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		break;
+	default:
+		pri_error(pri, "Don't know what to do with DM frame in state %d\n", pri->q921_state);
+		break;
+	}
+
+	return res;
+}
+
+static pri_event *q921_rnr_rx(struct pri *pri, q921_h *h)
+{
+	pri_event * res = NULL;
+
+	switch (pri->q921_state) {
+	case Q921_MULTI_FRAME_ESTABLISHED:
+		pri->peer_rx_busy = 1;
+		if (!is_command(pri, h)) {
+			if (h->s.p_f) {
+				/* MDL-ERROR (A) indication */
+				pri_error(pri, "MDL-ERROR(A)\n");
+			}
+		} else {
+			if (h->s.p_f) {
+				q921_enquiry_response(pri);
+			}
+		}
+
+		if (!n_r_is_valid(pri, h->s.n_r)) {
+			n_r_error_recovery(pri);
+			q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+		} else {
+			update_v_a(pri, h->s.n_r);
+			stop_t203(pri);
+			restart_t200(pri);
+		}
+		break;
+	case Q921_TIMER_RECOVERY:
+		pri->peer_rx_busy = 1;
+		if (is_command(pri, h)) {
+			if (h->s.p_f) {
+				q921_enquiry_response(pri);
+				if (n_r_is_valid(pri, h->s.n_r)) {
+					update_v_a(pri, h->s.n_r);
+					break;
+				} else {
+					n_r_error_recovery(pri);
+					q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+					break;
+				}
+			}
+		} else {
+			if (h->s.p_f) {
+				if (n_r_is_valid(pri, h->s.n_r)) {
+					update_v_a(pri, h->s.n_r);
+					restart_t200(pri);
+					q921_invoke_retransmission(pri, h->s.n_r);
+					q921_setstate(pri, Q921_MULTI_FRAME_ESTABLISHED);
+					break;
+				} else {
+					n_r_error_recovery(pri);
+					q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+					break;
+				}
+			}
+		}
+		break;
+	default:
+		pri_error(pri, "Don't know what to do with RNR in state %d\n", pri->q921_state);
+		break;
+	}
+
+	return res;
+}
+
 static void q921_acknowledge_pending_check(struct pri *pri)
 {
 	if (pri->acknowledge_pending) {
@@ -1900,6 +2026,7 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			break;
  		case 1:
 			pri_error(pri, "%s:%d FIXME!!!\n", __FUNCTION__, __LINE__);
+			ev = q921_rnr_rx(pri, h);
 
 			break;
 
@@ -1945,30 +2072,8 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 		switch(h->u.m3) {
 		case 0:
 			if (h->u.m2 == 3) {
-				pri_error(pri, "%s:%d FIXME!!!\n", __FUNCTION__, __LINE__);
-				return NULL;
-
-#if 0
-				if (h->u.p_f) {
-					/* Section 5.7.1 says we should restart on receiving a DM response with the f-bit set to
-					   one, but we wait T200 first */
-					if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP))
-						pri_message(pri, "-- Got DM Mode from peer.\n");
-					/* Disconnected mode, try again after T200 */
-					ev = q921_dchannel_down(pri);
-					q921_restart(pri, 0);
-					return ev;
-						
-				} else {
-					if (pri->debug & PRI_DEBUG_Q921_DUMP)
-						pri_message(pri, "-- Ignoring unsolicited DM with p/f set to 0\n");
-#if 0
-					/* Requesting that we start */
-					q921_restart(pri, 0);
-#endif					
-				}
+				ev = q921_dm_rx(pri, h);
 				break;
-#endif
 			} else if (!h->u.m2) {
 				if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
 
