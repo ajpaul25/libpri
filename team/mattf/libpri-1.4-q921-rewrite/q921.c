@@ -741,11 +741,11 @@ int q921_transmit_uiframe(struct pri *pri, void *buf, int len)
 	return 0;
 }
 
-static struct pri * pri_find_tei(struct pri *vpri, int tei)
+static struct pri * pri_find_tei(struct pri *vpri, int sapi, int tei)
 {
 	struct pri *pri;
 	for (pri = PRI_MASTER(vpri); pri; pri = pri->subchannel) {
-		if (pri->tei == tei)
+		if (pri->tei == tei && pri->sapi == sapi)
 			return pri;
 	}
 
@@ -764,7 +764,7 @@ int q921_transmit_iframe(struct pri *vpri, int tei, void *buf, int len, int cr)
 			return 0;
 		}
 
-		pri = pri_find_tei(vpri, tei);
+		pri = pri_find_tei(vpri, Q921_SAPI_CALL_CTRL, tei);
 		if (!pri) {
 			pri_error(vpri, "Huh?! Unable to locate PRI associated with TEI %d.  Did we have to ditch it due to error conditions?\n", tei);
 			return 0;
@@ -1868,72 +1868,40 @@ static pri_event *q921_iframe_rx(struct pri *pri, q921_h *h, int len)
 	return eres;
 }
 
+static void q921_acknowledge_pending_check(struct pri *pri)
+{
+	if (pri->acknowledge_pending) {
+		pri->acknowledge_pending = 0;
+		q921_rr(pri, 0, 0);
+	}
+}
+
+static void q921_statemachine_check(struct pri *pri)
+{
+	if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED) {
+		q921_send_queued_iframes(pri);
+		q921_acknowledge_pending_check(pri);
+	}
+}
+
 static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 {
-	//pri_event *ev;
+	pri_event *ev = NULL;
 
 	switch(h->h.data[0] & Q921_FRAMETYPE_MASK) {
 	case 0:
 	case 2:
-		return q921_iframe_rx(pri, h, len);
-#if 0
-		if (pri->q921_state != Q921_LINK_CONNECTION_ESTABLISHED) {
-			pri_error(pri, "!! Got I-frame while link state %d\n", pri->q921_state);
-			return NULL;
-		}
-		/* Informational frame */
-		if (len < 4) {
-			pri_error(pri, "!! Received short I-frame (expected 4, got %d)\n", len);
-			break;
-		}
-
-		/* T203 is rescheduled only on reception of I frames or S frames */
-		reschedule_t203(pri);
-
-		return q921_handle_iframe(pri, &h->i, len);	
+		ev = q921_iframe_rx(pri, h, len);
 		break;
-#endif
 	case 1:
-#if 0
-		if (pri->q921_state != Q921_LINK_CONNECTION_ESTABLISHED) {
-			pri_error(pri, "!! Got S-frame while link down\n");
-			return NULL;
-		}
-		if (len < 4) {
-			pri_error(pri, "!! Received short S-frame (expected 4, got %d)\n", len);
-			break;
-		}
-#endif
 		switch(h->s.ss) {
 		case 0:
-			return q921_rr_rx(pri, h);
-#if 0
-			/* Receiver Ready */
-			pri->busy = 0;
-			/* Acknowledge frames as necessary */
-			ev = q921_ack_rx(pri, h->s.n_r, 1);
-			if (ev)
-				return ev;
-			if (is_command(pri, h))
-				pri->solicitfbit = 0;
-			if (h->s.p_f) {
-				/* If it's a p/f one then send back a RR in return with the p/f bit set */
-				if (!is_command(pri, h)) {
-					if (pri->debug & PRI_DEBUG_Q921_DUMP)
-						pri_message(pri, "-- Got RR response to our frame\n");
-					pri->retrans = 0;
-				} else {
-					if (pri->debug & PRI_DEBUG_Q921_DUMP)
-						pri_message(pri, "-- Unsolicited RR with P/F bit, responding\n");
-						q921_rr(pri, 1, 0);
-				}
-			}
-#endif
+			ev =  q921_rr_rx(pri, h);
 			break;
  		case 1:
 			pri_error(pri, "%s:%d FIXME!!!\n", __FUNCTION__, __LINE__);
 
-			return NULL;
+			break;
 
 #if 0
  			/* Receiver not ready */
@@ -1962,57 +1930,8 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
  			/* Just retransmit */
  			if (pri->debug & PRI_DEBUG_Q921_STATE)
  				pri_message(pri, "-- Got reject requesting packet %d...  Retransmitting.\n", h->s.n_r);
-			return q921_rej_rx(pri, h);
-#if 0
-			if (pri->busy && !is_command(pri, h))
-				pri->solicitfbit = 0;
-			pri->busy = 0;
-			if (is_command(pri, h) && h->s.p_f)
-					q921_rr(pri, 1, 0);
-			q921_ack_rx(pri, h->s.n_r, 0);
-			/*Resend only if we are in the Multiple Frame Established state or when
-			  we are in the Time Recovery state and received responce with bit F=1*/
-			if ((pri->solicitfbit == 0) || (pri->solicitfbit && !is_command(pri, h) && h->s.p_f)) {
-				pri->solicitfbit = 0;
-				pri->retrans = 0;
-				sendnow = 0;
-				/* Resend I-frames starting from frame where f->h.n_s == h->s.n_r */
-				for (f = pri->txqueue; f && (f->h.n_s != h->s.n_r); f = f->next);
-				while (f) {
-					sendnow = 1;
-					if (f->transmitted || (!f->transmitted && (pri->windowlen < pri->window))) {
-			 			if (pri->debug & PRI_DEBUG_Q921_STATE)
-							pri_error(pri, "!! Got reject for frame %d, retransmitting frame %d now, updating n_r!\n", h->s.n_r, f->h.n_s);
-						f->h.n_r = pri->v_r;
-						f->h.p_f = 0;
-						if (!f->transmitted && (pri->windowlen < pri->window))
-							pri->windowlen++;
-						q921_transmit(pri, (q921_h *)(&f->h), f->len);
-					}
-					f = f->next; 
-				} 
-				if (!sendnow) {
-					if (pri->txqueue) {
-						/* This should never happen */
-						if (!h->s.p_f || h->s.n_r) {
-							pri_error(pri, "!! Got reject for frame %d, but we only have others!\n", h->s.n_r);
-						}
-					} else {
-						/* Hrm, we have nothing to send, but have been REJ'd.  Reset v_a, v_s, etc */
-						pri_error(pri, "!! Got reject for frame %d, but we have nothing -- resetting!\n", h->s.n_r);
-						q921_dump(pri, h, len, 0, 0);
-						pri->v_a = h->s.n_r;
-						pri->v_s = h->s.n_r;
-					}
-				}
-				/* Reset t200 timer if it was somehow going */
-				pri_schedule_del(pri, pri->t200_timer);
-				pri->t200_timer = 0;
-				/* Reset and restart t203 timer */
-				reschedule_t203(pri);
-			}
- 			break;
-#endif
+			ev = q921_rej_rx(pri, h);
+			break;
 		default:
 			pri_error(pri, "!! XXX Unknown Supervisory frame ss=0x%02x,pf=%02xnr=%02x vs=%02x, va=%02x XXX\n", h->s.ss, h->s.p_f, h->s.n_r,
 					pri->v_s, pri->v_a);
@@ -2053,6 +1972,7 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 			} else if (!h->u.m2) {
 				if ((pri->sapi == Q921_SAPI_LAYER2_MANAGEMENT) && (pri->tei == Q921_TEI_GROUP)) {
 
+					pri_error(pri, "I should never be called\n");
 					q921_receive_MDL(pri, (q921_u *)h, len);
 
 				} else {
@@ -2060,26 +1980,16 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 
 					res = q931_receive(pri, pri->tei, (q931_h *) h->u.data, len - 3);
 					if (res == -1) {
-						return NULL;
+						ev = NULL;
 					}
 					if (res & Q931_RES_HAVEEVENT)
-						return &pri->ev;
+						ev = &pri->ev;
 				}
 			}
 			break;
 		case 2:
-			return q921_disc_rx(pri, h);
-#if 0
-			if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP))
-				pri_message(pri, "-- Got Disconnect from peer.\n");
-			/* Acknowledge */
-			q921_send_ua(pri, h->u.p_f);
-			ev = q921_dchannel_down(pri);
-			if (BRI_TE_PTMP(pri) || PRI_PTP(pri)) {
-				q921_restart(pri, PRI_PTP(pri) ? 1 : 0);
-			}
-			return ev;
-#endif
+			ev = q921_disc_rx(pri, h);
+			break;
 		case 3:
 			if (h->u.m2 == 3) {
 				/* SABME */
@@ -2090,37 +2000,22 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 					pri->remotetype = PRI_NETWORK;
 					if (pri->localtype == PRI_NETWORK) {
 						/* We can't both be networks */
-						return pri_mkerror(pri, "We think we're the network, but they think they're the network, too.");
+						ev = pri_mkerror(pri, "We think we're the network, but they think they're the network, too.");
+						break;
 					}
 				} else {
 					pri->remotetype = PRI_CPE;
 					if (pri->localtype == PRI_CPE) {
 						/* We can't both be CPE */
-						return pri_mkerror(pri, "We think we're the CPE, but they think they're the CPE too.\n");
+						ev = pri_mkerror(pri, "We think we're the CPE, but they think they're the CPE too.\n");
+						break;
 					}
 				}
-				return q921_sabme_rx(pri, h);
+				ev = q921_sabme_rx(pri, h);
+				break;
 			} else if (h->u.m2 == 0) {
-				return q921_ua_rx(pri, h);
-#if 0
-					/* It's a UA */
-				if (pri->q921_state == Q921_AWAITING_ESTABLISH) {
-					if (pri->debug & (PRI_DEBUG_Q921_STATE | PRI_DEBUG_Q921_DUMP)) {
-						pri_message(pri, "-- Got UA from %s peer  Link up.\n", h->h.c_r ? "cpe" : "network");
-					}
-					return q921_dchannel_up(pri);
-				} else if ((pri->q921_state >= Q921_TEI_ASSIGNED) && pri->bri) {
-					/* Possible duplicate TEI assignment */
-					if (pri->master)
-						q921_tei_release_and_reacquire(pri->master);
-					else
-						pri_error(pri, "Huh!? no master found\n");
-				} else {
-					/* Since we're not in the AWAITING_ESTABLISH STATE, it's unsolicited */
-					pri_error(pri, "!! Got a UA, but i'm in state %d\n", pri->q921_state);
-
-				}
-#endif
+				ev = q921_ua_rx(pri, h);
+				break;
 			} else 
 				pri_error(pri, "!! Weird frame received (m3=3, m2 = %d)\n", h->u.m2);
 			break;
@@ -2136,23 +2031,10 @@ static pri_event *__q921_receive_qualified(struct pri *pri, q921_h *h, int len)
 		break;
 				
 	}
-	return NULL;
-}
 
-static void q921_acknowledge_pending_check(struct pri *pri)
-{
-	if (pri->acknowledge_pending) {
-		pri->acknowledge_pending = 0;
-		q921_rr(pri, 0, 0);
-	}
-}
+	q921_statemachine_check(pri);
 
-static void q921_statemachine_check(struct pri *pri)
-{
-	if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED) {
-		q921_send_queued_iframes(pri);
-		q921_acknowledge_pending_check(pri);
-	}
+	return ev;
 }
 
 static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int len)
@@ -2186,9 +2068,11 @@ static pri_event *q921_handle_unmatched_frame(struct pri *pri, q921_h *h, int le
 	return NULL;
 }
 
+/* This code assumes that the pri structure is the master pri */
 static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 {
-	pri_event *ev;
+	pri_event *ev = NULL;
+	struct pri *tei;
 	/* Discard FCS */
 	len -= 2;
 	
@@ -2203,24 +2087,34 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 		return q921_receive_MDL(pri, (q921_u *)h, len);
 	}
 
-	if (!((h->h.sapi == pri->sapi) && ((BRI_TE_PTMP(pri) && (h->h.tei == Q921_TEI_GROUP)) || (h->h.tei == pri->tei)))) {
-		/* Check for SAPIs we don't yet handle */
-		/* If it's not us, try any subchannels we have */
-		if (pri->subchannel)
-			return q921_receive(pri->subchannel, h, len + 2);
-		else if (BRI_NT_PTMP(pri)) {
-			/* This means we couldn't find a candidate TEI/subchannel for it...
-			 * Time for some corrective action */
-
-			return q921_handle_unmatched_frame(pri, h, len);
-		} else
-			return NULL;
-
+	if ((h->h.tei == Q921_TEI_GROUP) && (h->h.sapi != Q921_SAPI_CALL_CTRL)) {
+		pri_error(pri, "Do not handle group messages to services other than MDL or CALL CTRL\n");
+		return NULL;
 	}
+
+	if (BRI_TE_PTMP(pri)) {
+		if (((pri->subchannel->q921_state >= Q921_TEI_ASSIGNED) && (h->h.tei == pri->subchannel->tei))
+				|| (h->h.tei == Q921_TEI_GROUP)) {
+			ev = __q921_receive_qualified(pri->subchannel, h, len);
+		}
+		/* Only support reception on our single subchannel */
+	} else if (BRI_NT_PTMP(pri)) {
+		tei = pri_find_tei(pri, h->h.sapi, h->h.tei);
+
+		if (tei)
+			ev = __q921_receive_qualified(tei, h, len);
+		else
+			ev = q921_handle_unmatched_frame(pri, h, len);
+
+	} else if (PTP_MODE(pri) && (h->h.sapi == pri->sapi) && (h->h.tei == pri->tei)) {
+		ev = __q921_receive_qualified(pri, h, len);
+	} else {
+		ev = NULL;
+	}
+
 	if (pri->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(pri, "Handling message for SAPI/TEI=%d/%d\n", h->h.sapi, h->h.tei);
-	ev = __q921_receive_qualified(pri, h, len);
-	q921_statemachine_check(pri);
+
 	return ev;
 }
 
