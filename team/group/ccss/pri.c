@@ -40,8 +40,6 @@
 #include "libpri.h"
 #include "pri_internal.h"
 #include "pri_facility.h"
-#include "pri_q921.h"
-#include "pri_q931.h"
 
 #define PRI_BIT(a_bit)		(1UL << (a_bit))
 #define PRI_ALL_SWITCHES	0xFFFFFFFF

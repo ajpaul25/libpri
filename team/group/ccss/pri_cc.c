@@ -35,17 +35,14 @@
 #include "compat.h"
 #include "libpri.h"
 #include "pri_internal.h"
-#include "pri_q921.h"
-#include "pri_q931.h"
+#include "pri_facility.h"
 
 #include <stdlib.h>
 
 
 /* ------------------------------------------------------------------- */
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
- * \internal
  * \brief Find a cc_record by the PTMP reference_id.
  *
  * \param ctrl D channel controller.
@@ -54,7 +51,7 @@
  * \retval cc_record on success.
  * \retval NULL on error.
  */
-static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned reference_id)
+struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned reference_id)
 {
 	struct pri_cc_record *cc_record;
 
@@ -68,10 +65,8 @@ static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned
 
 	return cc_record;
 }
-#endif
 
 /*!
- * \internal
  * \brief Find a cc_record by the PTMP linkage_id.
  *
  * \param ctrl D channel controller.
@@ -80,7 +75,7 @@ static struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned
  * \retval cc_record on success.
  * \retval NULL on error.
  */
-static struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned linkage_id)
+struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned linkage_id)
 {
 	struct pri_cc_record *cc_record;
 
@@ -120,19 +115,17 @@ static struct pri_cc_record *pri_cc_find_by_id(struct pri *ctrl, long cc_id)
 	return cc_record;
 }
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
- * \internal
  * \brief Find a cc_record by an incoming call addressing data.
  *
  * \param ctrl D channel controller.
- * \param party_a Party A address. 
+ * \param party_a Party A address.
  * \param party_b Party B address.
  *
  * \retval cc_record on success.
  * \retval NULL on error.
  */
-static struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b)
+struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b)
 {
 	struct pri_cc_record *cc_record;
 
@@ -149,19 +142,16 @@ static struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const s
 
 	/*! \todo BUGBUG pri_cc_find_by_addressing() not written */
 }
-#endif
 
-#if defined(BUGBUG_NOT_USED_YET)
 /*!
- * \internal
  * \brief Allocate a new cc_record reference id.
  *
  * \param ctrl D channel controller.
  *
  * \retval reference_id on success.
- * \retval -1 on error.
+ * \retval CC_PTMP_INVALID_ID on error.
  */
-static int pri_cc_new_reference_id(struct pri *ctrl)
+int pri_cc_new_reference_id(struct pri *ctrl)
 {
 	long reference_id;
 	long first_id;
@@ -176,14 +166,13 @@ static int pri_cc_new_reference_id(struct pri *ctrl)
 		if (reference_id == first_id) {
 			/* We probably have a resource leak. */
 			pri_error(ctrl, "PTMP call completion reference id exhaustion!\n");
-			reference_id = -1;
+			reference_id = CC_PTMP_INVALID_ID;
 			break;
 		}
 	}
 
 	return reference_id;
 }
-#endif
 
 /*!
  * \internal
@@ -192,7 +181,7 @@ static int pri_cc_new_reference_id(struct pri *ctrl)
  * \param ctrl D channel controller.
  *
  * \retval linkage_id on success.
- * \retval -1 on error.
+ * \retval CC_PTMP_INVALID_ID on error.
  */
 static int pri_cc_new_linkage_id(struct pri *ctrl)
 {
@@ -209,7 +198,7 @@ static int pri_cc_new_linkage_id(struct pri *ctrl)
 		if (linkage_id == first_id) {
 			/* We probably have a resource leak. */
 			pri_error(ctrl, "PTMP call completion linkage id exhaustion!\n");
-			linkage_id = -1;
+			linkage_id = CC_PTMP_INVALID_ID;
 			break;
 		}
 	}
@@ -315,6 +304,110 @@ struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 	ctrl->cc.pool = cc_record;
 
 	return cc_record;
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI PTP call completion event operation message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param operation PTP call completion event operation to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptp_cc_operation(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, enum rose_operation operation)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = operation;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI PTMP call completion available message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param call Call leg from which to encode message.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptmp_cc_available(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, q931_call *call)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = ROSE_ETSI_CallInfoRetain;
+
+	msg.args.etsi.CallInfoRetain.call_linkage_id = call->cc.record->call_linkage_id;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Encode and queue a cc-available message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode call completion available.
+ * \param msgtype Q.931 message type to put facility ie in.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int rose_cc_available_encode(struct pri *ctrl, q931_call *call, int msgtype)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		if (q931_is_ptmp(ctrl)) {
+			end =
+				enc_etsi_ptmp_cc_available(ctrl, buffer, buffer + sizeof(buffer), call);
+		} else {
+			end =
+				enc_etsi_ptp_cc_operation(ctrl, buffer, buffer + sizeof(buffer),
+					ROSE_ETSI_CCBS_T_Available);
+		}
+		break;
+	case PRI_SWITCH_QSIG:
+		/* Q.SIG does not have a cc-available type message. */
+		return 0;
+	default:
+		return -1;
+	}
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL);
 }
 
 /*!
@@ -428,7 +521,7 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 			int linkage_id;
 
 			linkage_id = pri_cc_new_linkage_id(ctrl);
-			if (linkage_id < 0) {
+			if (linkage_id == CC_PTMP_INVALID_ID) {
 				break;
 			}
 			cc_record = pri_cc_new_record(ctrl, call);
@@ -522,23 +615,171 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 }
 
 /*!
+ * \internal
+ * \brief Encode a PTMP cc-request reply message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param operation CCBS/CCNR operation code.
+ * \param invoke_id Invoke id to put in error message response.
+ * \param recall_mode Configured PTMP recall mode.
+ * \param reference_id Active CC reference id.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_cc_etsi_ptmp_req_rsp(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, enum rose_operation operation, int invoke_id, int recall_mode,
+	int reference_id)
+{
+	struct rose_msg_result msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = invoke_id;
+	msg.operation = operation;
+
+	/* CCBS/CCNR reply */
+	msg.args.etsi.CCBSRequest.recall_mode = recall_mode;
+	msg.args.etsi.CCBSRequest.ccbs_reference = reference_id;
+
+	pos = rose_encode_result(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue PTMP a cc-request reply message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param msgtype Q.931 message type to put facility ie in.
+ * \param operation CCBS/CCNR operation code.
+ * \param invoke_id Invoke id to put in error message response.
+ * \param recall_mode Configured PTMP recall mode.
+ * \param reference_id Active CC reference id.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_cc_etsi_ptmp_req_rsp_encode(struct pri *ctrl, q931_call *call, int msgtype, enum rose_operation operation, int invoke_id, int recall_mode, int reference_id)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	end = enc_cc_etsi_ptmp_req_rsp(ctrl, buffer, buffer + sizeof(buffer), operation,
+		invoke_id, recall_mode, reference_id);
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Send the CC activation request result PTMP.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param operation CCBS/CCNR operation code.
+ * \param invoke_id Invoke id to put in error message response.
+ * \param recall_mode Configured PTMP recall mode.
+ * \param reference_id Active CC reference id.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int send_cc_etsi_ptmp_req_rsp(struct pri *ctrl, q931_call *call, enum rose_operation operation, int invoke_id, int recall_mode, int reference_id)
+{
+	if (rose_cc_etsi_ptmp_req_rsp_encode(ctrl, call, Q931_FACILITY, operation, invoke_id,
+		recall_mode, reference_id)
+		|| q931_facility(ctrl, call)) {
+		pri_message(ctrl,
+			"Could not schedule facility message for CC request result message.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+/*!
+ * \internal
+ * \brief Response to an incoming CC activation request PTMP.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ * \param status success(0)/timeout(1)/
+ *		short_term_denial(2)/long_term_denial(3)/not_subscribed(4)/queue_full(5)
+ *
+ * \return Nothing
+ */
+static void rose_cc_req_rsp_ptmp(struct pri *ctrl, struct pri_cc_record *cc_record, int status)
+{
+	if (status) {
+		enum rose_error_code code;
+
+		switch (status) {
+		default:
+		case 1:/* timeout */
+		case 2:/* short_term_denial */
+			code = ROSE_ERROR_CCBS_ShortTermDenial;
+			break;
+		case 3:/* long_term_denial */
+			code = ROSE_ERROR_CCBS_LongTermDenial;
+			break;
+		case 4:/* not_subscribed */
+			code = ROSE_ERROR_Gen_NotSubscribed;
+			break;
+		case 5:/* queue_full */
+			code = ROSE_ERROR_CCBS_OutgoingCCBSQueueFull;
+			break;
+		}
+		send_facility_error(ctrl, cc_record->response.signaling,
+			cc_record->response.invoke_id, code);
+		cc_record->state = CC_STATE_AVAILABLE;
+		cc_record->ccbs_reference_id = CC_PTMP_INVALID_ID;
+	} else {
+		/* Successful CC activation. */
+		send_cc_etsi_ptmp_req_rsp(ctrl, cc_record->response.signaling,
+			cc_record->response.invoke_operation, cc_record->response.invoke_id,
+			cc_record->option.recall_mode, cc_record->ccbs_reference_id);
+		cc_record->state = CC_STATE_ACTIVATED;
+	}
+}
+
+/*!
  * \brief Response to an incoming CC activation request.
  *
  * \param ctrl D channel controller.
  * \param cc_id CC record ID to activate.
  * \param status success(0)/timeout(1)/
- *		short_term_denial(2)/long_term_denial(3)/not_subscribed(4)
+ *		short_term_denial(2)/long_term_denial(3)/not_subscribed(4)/queue_full(5)
  *
  * \return Nothing
  */
 void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status)
 {
+	struct pri_cc_record *cc_record;
+
+	cc_record = pri_cc_find_by_id(ctrl, cc_id);
+	if (!cc_record) {
+		return;
+	}
+
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
 		break;
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
 		if (q931_is_ptmp(ctrl)) {
+			rose_cc_req_rsp_ptmp(ctrl, cc_record, status);
 		} else {
 		}
 		break;

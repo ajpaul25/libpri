@@ -583,6 +583,10 @@ enum CC_EVENTS {
 	CC_EVENT_CCBS_REQUEST,
 	/*! Requesting CCNR activation. */
 	CC_EVENT_CCNR_REQUEST,
+	/*! Requesting CCBS activation accepted. */
+	CC_EVENT_CCBS_REQUEST_ACCEPT,
+	/*! Requesting CCNR activation accepted. */
+	CC_EVENT_CCNR_REQUEST_ACCEPT,
 	/*! CC party B is available. */
 	CC_EVENT_REMOTE_USER_FREE,
 	/*! CC poll/prompt for party A status. */
@@ -632,7 +636,17 @@ struct pri_cc_record {
 	struct q931_party_address party_b;
 /* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 
-	/*! TRUE if the remote party is party B. */
+	/*! Pending response information. */
+	struct {
+		/*! Send response on this signaling link. */
+		struct q931_call *signaling;
+		/*! Invoke operation code */
+		int invoke_operation;
+		/*! Invoke id to use in the pending response. */
+		short invoke_id;
+	} response;
+
+	/*! TRUE if the remote party is party B. (We are a monitor./We are the originator.) */
 	unsigned char party_b_is_remote;
 	/*! TRUE if party_a_busy status is valid. (PTMP) */
 	unsigned char party_a_status_valid;
@@ -727,6 +741,10 @@ struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
 
+struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned reference_id);
+struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned linkage_id);
+struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b);
+int pri_cc_new_reference_id(struct pri *ctrl);
 void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
 int pri_cc_event_down(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
@@ -783,6 +801,12 @@ static inline int PRI_PTP(struct pri *mypri)
 static inline int q931_is_dummy_call(const q931_call *call)
 {
 	return (call->cr == Q931_DUMMY_CALL_REFERENCE) ? 1 : 0;
+}
+
+static inline short get_invokeid(struct pri *ctrl)
+{
+	ctrl = PRI_MASTER(ctrl);
+	return ++ctrl->last_invoke;
 }
 
 #endif

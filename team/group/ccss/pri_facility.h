@@ -30,13 +30,7 @@
 #ifndef _PRI_FACILITY_H
 #define _PRI_FACILITY_H
 #include "pri_q931.h"
-
-/* Forward declare some structs */
-struct fac_extension_header;
-struct rose_msg_invoke;
-struct rose_msg_result;
-struct rose_msg_error;
-struct rose_msg_reject;
+#include "rose.h"
 
 /* Protocol Profile field */
 #define Q932_PROTOCOL_MASK			0x1F
@@ -172,6 +166,27 @@ struct apdu_event {
 	/*! ADPU to send */
 	unsigned char apdu[255];
 };
+
+void rose_copy_number_to_q931(struct pri *ctrl, struct q931_party_number *q931_number, const struct rosePartyNumber *rose_number);
+void rose_copy_subaddress_to_q931(struct pri *ctrl, struct q931_party_subaddress *q931_subaddress, const struct rosePartySubaddress *rose_subaddress);
+void rose_copy_address_to_q931(struct pri *ctrl, struct q931_party_id *q931_address, const struct roseAddress *rose_address);
+void rose_copy_presented_number_screened_to_q931(struct pri *ctrl, struct q931_party_number *q931_number, const struct rosePresentedNumberScreened *rose_presented);
+void rose_copy_presented_number_unscreened_to_q931(struct pri *ctrl, struct q931_party_number *q931_number, const struct rosePresentedNumberUnscreened *rose_presented);
+void rose_copy_presented_address_screened_to_q931(struct pri *ctrl, struct q931_party_id *q931_address, const struct rosePresentedAddressScreened *rose_presented);
+void rose_copy_name_to_q931(struct pri *ctrl, struct q931_party_name *qsig_name, const struct roseQsigName *rose_name);
+
+void q931_copy_number_to_rose(struct pri *ctrl, struct rosePartyNumber *rose_number, const struct q931_party_number *q931_number);
+void q931_copy_subaddress_to_rose(struct pri *ctrl, struct rosePartySubaddress *rose_subaddress, const struct q931_party_subaddress *q931_subaddress);
+void q931_copy_address_to_rose(struct pri *ctrl, struct roseAddress *rose_address, const struct q931_party_id *q931_address);
+void q931_copy_presented_number_screened_to_rose(struct pri *ctrl, struct rosePresentedNumberScreened *rose_presented, const struct q931_party_number *q931_number);
+void q931_copy_presented_number_unscreened_to_rose(struct pri *ctrl, struct rosePresentedNumberUnscreened *rose_presented, const struct q931_party_number *q931_number);
+void q931_copy_presented_address_screened_to_rose(struct pri *ctrl, struct rosePresentedAddressScreened *rose_presented, const struct q931_party_id *q931_address);
+void q931_copy_name_to_rose(struct pri *ctrl, struct roseQsigName *rose_name, const struct q931_party_name *qsig_name);
+
+int rose_error_msg_encode(struct pri *ctrl, q931_call *call, int msgtype, int invoke_id, enum rose_error_code code);
+int send_facility_error(struct pri *ctrl, q931_call *call, int invoke_id, enum rose_error_code code);
+int rose_result_ok_encode(struct pri *ctrl, q931_call *call, int msgtype, int invoke_id);
+int send_facility_result_ok(struct pri *ctrl, q931_call *call, int invoke_id);
 
 /* Queues an MWI apdu on a the given call */
 int mwi_message_send(struct pri *pri, q931_call *call, struct pri_sr *req, int activate);

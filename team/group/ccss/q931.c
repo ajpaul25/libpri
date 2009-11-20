@@ -30,10 +30,7 @@
 #include "compat.h"
 #include "libpri.h"
 #include "pri_internal.h"
-#include "pri_q921.h"
-#include "pri_q931.h"
 #include "pri_facility.h"
-#include "rose.h"
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -306,16 +303,18 @@ static int q931_encode_channel(const q931_call *call)
 	case Q931_HOLD_STATE_RETRIEVE_REQ:
 	case Q931_HOLD_STATE_RETRIEVE_IND:
 		held_call = 1 << 18;
-
-		/* So a -1 does not wipe out the held_call flag. */
-		channelno = call->channelno & 0xFF;
-		ds1no = call->ds1no & 0xFF;
 		break;
 	default:
 		held_call = 0;
+		break;
+	}
+	if (held_call || call->cis_call) {
+		/* So a -1 does not wipe out the held_call or cis_call flags. */
+		channelno = call->channelno & 0xFF;
+		ds1no = call->ds1no & 0xFF;
+	} else {
 		channelno = call->channelno;
 		ds1no = call->ds1no;
-		break;
 	}
 	return channelno | (ds1no << 8) | (call->ds1explicit << 16) | (call->cis_call << 17)
 		| held_call;
@@ -6088,7 +6087,6 @@ int q931_receive(struct pri *ctrl, q931_h *h, int len)
 
 		if (allow_posthandle) {
 			res = post_handle_q931_message(ctrl, mh, c, missingmand);
-
 			if (res == Q931_RES_HAVEEVENT && !allow_event) {
 				res = 0;
 			}
@@ -6564,7 +6562,11 @@ static void q931_fill_facility_event(struct pri *ctrl, struct q931_call *call)
 	ctrl->ev.facility.subcmds = &ctrl->subcmds;
 	ctrl->ev.facility.channel = q931_encode_channel(call);
 	ctrl->ev.facility.cref = call->cr;
-	ctrl->ev.facility.call = call->master_call;
+	if (q931_is_dummy_call(call)) {
+		ctrl->ev.facility.call = NULL;
+	} else {
+		ctrl->ev.facility.call = call->master_call;
+	}
 	ctrl->ev.facility.subcall = call;
 
 	/* Need to do this for backward compatibility with struct pri_event_facname */
