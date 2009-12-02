@@ -73,6 +73,11 @@ struct pri {
 	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
 	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
 
+	/* MDL variables */
+	int mdl_error;
+	int mdl_error_state;
+	int mdl_timer;
+
 	/* Q.921 State */
 	int q921_state;	
 	int k;
