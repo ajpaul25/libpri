@@ -1296,9 +1296,10 @@ enum PRI_TIMERS_AND_COUNTERS {
 	PRI_TIMER_T_HOLD,	/*!< Maximum time to wait for HOLD request response. */
 	PRI_TIMER_T_RETRIEVE,	/*!< Maximum time to wait for RETRIEVE request response. */
 
+	PRI_TIMER_T_RESPONSE,	/*!< Maximum time to wait for a typical APDU response. */
+
 	/* Must be last in the enum list */
-	_PRI_MAX_TIMERS,
-	PRI_MAX_TIMERS = (_PRI_MAX_TIMERS < 32) ? 32 : _PRI_MAX_TIMERS
+	PRI_MAX_TIMERS
 };
 
 /* Get PRI version */

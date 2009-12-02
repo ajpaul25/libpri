@@ -40,6 +40,9 @@
 #define DBGHEAD __FILE__ ":%d %s: "
 #define DBGINFO __LINE__,__PRETTY_FUNCTION__
 
+/* Forward declare some structs */
+struct apdu_event;
+
 struct pri_sched {
 	struct timeval when;
 	void (*callback)(void *data);
@@ -49,12 +52,25 @@ struct pri_sched {
 /*! Maximum number of scheduled events active at the same time. */
 #define MAX_SCHED 128
 
+/*! Maximum number of facility ie's to handle per incoming message. */
+#define MAX_FACILITY_IES	8
+
+/*! Accumulated pri_message() line until a '\n' is seen on the end. */
+struct pri_msg_line {
+	/*! Accumulated buffer used. */
+	unsigned length;
+	/*! Accumulated pri_message() contents. */
+	char str[2048];
+};
+
 /*! \brief D channel controller structure */
 struct pri {
 	int fd;				/* File descriptor for D-Channel */
 	pri_io_cb read_func;		/* Read data callback */
 	pri_io_cb write_func;		/* Write data callback */
 	void *userdata;
+	/*! Accumulated pri_message() line. (Valid in master record only) */
+	struct pri_msg_line *msg_line;
 	struct pri *subchannel;	/* Sub-channel if appropriate */
 	struct pri *master;		/* Master channel if appropriate */
 	struct pri_sched pri_sched[MAX_SCHED];	/* Scheduled events */
@@ -143,8 +159,18 @@ struct pri {
 	unsigned int q931_rxcount;
 #endif
 
-	short last_invoke;	/* Last ROSE invoke ID */
+	short last_invoke;	/* Last ROSE invoke ID (Valid in master record only) */
 	unsigned char sendfacility;
+
+	/*! For delayed processing of facility ie's. */
+	struct {
+		/*! Array of facility ie locations in the current received message. */
+		q931_ie *ie[MAX_FACILITY_IES];
+		/*! Codeset facility ie found within. */
+		unsigned char codeset[MAX_FACILITY_IES];
+		/*! Number of facility ie's in the array from the current received message. */
+		unsigned char count;
+	} facility;
 };
 
 /*! \brief Maximum name length plus null terminator (From ECMA-164) */
@@ -312,13 +338,6 @@ struct pri_sr {
 
 #define Q931_MAX_TEI	8
 
-struct apdu_event {
-	struct apdu_event *next;	/* Linked list pointer */
-	int message;			/* What message to send the ADPU in */
-	int apdu_len; 			/* Length of ADPU */
-	unsigned char apdu[255];			/* ADPU to send */
-};
-
 /*! \brief Incoming call transfer states. */
 enum INCOMING_CT_STATE {
 	/*!
@@ -478,6 +497,10 @@ struct q931_call {
 	int hold_timer;
 
 	int deflection_in_progress;	/*!< CallDeflection for NT PTMP in progress. */
+	/*! TRUE if the connected number ie was in the current received message. */
+	int connected_number_in_message;
+	/*! TRUE if the redirecting number ie was in the current received message. */
+	int redirecting_number_in_message;
 
 	int useruserprotocoldisc;
 	char useruserinfo[256];
@@ -519,7 +542,7 @@ struct q931_call {
 
 /*! D channel control structure with associated dummy call reference record. */
 struct d_ctrl_dummy {
-	/*! D channel control structure. */
+	/*! D channel control structure. Must be first in the structure. */
 	struct pri ctrl;
 	/*! Dummy call reference call record. */
 	struct q931_call dummy_call;
@@ -533,8 +556,8 @@ extern void pri_schedule_del(struct pri *pri, int ev);
 
 extern pri_event *pri_mkerror(struct pri *pri, char *errstr);
 
-void pri_message(struct pri *ctrl, char *fmt, ...) __attribute__((format(printf, 2, 3)));
-void pri_error(struct pri *ctrl, char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void pri_message(struct pri *ctrl, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void pri_error(struct pri *ctrl, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 void libpri_copy_string(char *dst, const char *src, size_t size);
 
