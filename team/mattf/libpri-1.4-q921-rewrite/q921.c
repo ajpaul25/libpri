@@ -61,6 +61,8 @@ static void reschedule_t200(struct pri *pri);
 //static void q921_restart(struct pri *pri, int now);
 //static void q921_tei_release_and_reacquire(struct pri *master);
 static void q921_establish_data_link(struct pri *pri);
+static void q921_mdl_error(struct pri *pri, char error);
+static void q921_mdl_remove(struct pri *pri);
 
 static void q921_setstate(struct pri *pri, int newstate)
 {
@@ -450,7 +452,8 @@ static void t200_expire(void *vpri)
 			}
 			pri->RC++;
 		} else {
-			pri_error(pri, "MDL-ERROR (I): T200 = N200 in timer recovery state\n");
+			//pri_error(pri, "MDL-ERROR (I): T200 = N200 in timer recovery state\n");
+			q921_mdl_error(pri, 'I');
 			q921_establish_data_link(pri);
 			pri->l3initiated = 0;
 			q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
@@ -463,21 +466,11 @@ static void t200_expire(void *vpri)
 			start_t200(pri);
 		} else {
 			q921_discard_iqueue(pri);
-			pri_error(pri, "MDL-ERROR (G) : T200 expired N200 times in state %d\n", pri->q921_state);
-			if (PTP_MODE(pri)) {
-				/* This branch is a deviation from SDL - We're still going to try to go back to multiframe established */
-				pri->RC = 0;
-				start_t200(pri);
-			} else {
-				/* This branch is according to SDL, Figure B.5/Q.921 on page 67 */
-				q921_setstate(pri, Q921_TEI_ASSIGNED);
-			}
+			//pri_error(pri, "MDL-ERROR (G) : T200 expired N200 times in state %d\n", pri->q921_state);
+			q921_mdl_error(pri, 'G');
+			q921_setstate(pri, Q921_TEI_ASSIGNED);
+			/* DL-RELEASE indication */
 			q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
-#if 0
-			pri->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
-			pri->schedev = 1;
-#endif
-			/* XXX: We need to add some MDL functions to cover deviations from the SDL, but for now, this is how we'll do it */
 		}
 		break;
 	default:
@@ -1015,11 +1008,12 @@ static pri_event * q921_sabme_rx(struct pri *pri, q921_h *h)
 		/* Send Unnumbered Acknowledgement */
 		q921_send_ua(pri, h->u.p_f);
 		q921_clear_exception_conditions(pri);
-		pri_error(pri, "MDL-ERROR (F), SABME in state %d\n", pri->q921_state);
+		//pri_error(pri, "MDL-ERROR (F), SABME in state %d\n", pri->q921_state);
+		q921_mdl_error(pri, 'F');
 		if (pri->v_s != pri->v_a) {
 			q921_discard_iqueue(pri);
-			pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
-			res = &pri->ev;
+			/* DL-ESTABLISH indication */
+			q931_dl_indication(pri, PRI_EVENT_DCHAN_UP);
 		}
 		stop_t200(pri);
 		start_t203(pri);
@@ -1030,7 +1024,12 @@ static pri_event * q921_sabme_rx(struct pri *pri, q921_h *h)
 		q921_send_ua(pri, h->u.p_f);
 		q921_clear_exception_conditions(pri);
 		pri->v_s = pri->v_a = pri->v_r = 0;
-		pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
+		/* DL-ESTABLISH indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_UP);
+		if (PTP_MODE(pri)) {
+			pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
+			res = &pri->ev;
+		}
 		res = &pri->ev;
 		start_t203(pri);
 		q921_setstate(pri, Q921_MULTI_FRAME_ESTABLISHED);
@@ -1059,6 +1058,8 @@ static pri_event *q921_disc_rx(struct pri *pri, q921_h *h)
 		q921_discard_iqueue(pri);
 		q921_send_ua(pri, h->u.p_f);
 		/* DL-RELEASE Indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
+
 		stop_t200(pri);
 		if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED)
 			stop_t203(pri);
@@ -1073,13 +1074,190 @@ static pri_event *q921_disc_rx(struct pri *pri, q921_h *h)
 	return res;
 }
 
+static void q921_mdl_remove(struct pri *pri)
+{
+	switch (pri->q921_state) {
+	case Q921_TEI_ASSIGNED:
+		/* XXX: deviation! Since we don't have a UI queue, we just discard our I-queue */
+		q921_discard_iqueue(pri);
+		q921_setstate(pri, Q921_TEI_UNASSIGNED);
+		break;
+	case Q921_AWAITING_ESTABLISHMENT:
+		q921_discard_iqueue(pri);
+		/* DL-RELEASE indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
+
+		stop_t200(pri);
+		q921_setstate(pri, Q921_TEI_UNASSIGNED);
+		break;
+	case Q921_AWAITING_RELEASE:
+		q921_discard_iqueue(pri);
+		/* DL-RELEASE confirm */
+		stop_t200(pri);
+		break;
+	case Q921_MULTI_FRAME_ESTABLISHED:
+		q921_discard_iqueue(pri);
+		/* DL-RELEASE indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
+		stop_t200(pri);
+		stop_t203(pri);
+		q921_setstate(pri, Q921_TEI_UNASSIGNED);
+		break;
+	case Q921_TIMER_RECOVERY:
+		q921_discard_iqueue(pri);
+		/* DL-RELEASE indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
+		stop_t200(pri);
+		q921_setstate(pri, Q921_TEI_UNASSIGNED);
+	default:
+		pri_error(pri, "Cannot handle MDL remove when PRI is in state %d\n", pri->q921_state);
+		break;
+	}
+}
+
+static int q921_mdl_handle_network_error(struct pri *pri, char error)
+{
+	int handled = 0;
+	switch (error) {
+	case 'C':
+	case 'D':
+	case 'G':
+	case 'H':
+	case 'A':
+	case 'B':
+	case 'E':
+	case 'F':
+	case 'I':
+	default:
+		pri_error(pri, "Network MDL can't handle error of type %c\n", error);
+		break;
+	}
+
+	return handled;
+}
+
+static int q921_mdl_handle_cpe_error(struct pri *pri, char error)
+{
+	int handled = 0;
+
+	switch (error) {
+	case 'C':
+	case 'D':
+	case 'G':
+	case 'H':
+		q921_mdl_remove(pri);
+		handled = 1;
+		break;
+	case 'A':
+	case 'B':
+	case 'E':
+	case 'F':
+	case 'I':
+		break;
+	default:
+		pri_error(pri, "CPE MDL can't handle error of type %c\n", error);
+		break;
+	}
+
+	return handled;
+}
+
+static int q921_mdl_handle_ptp_error(struct pri *pri, char error)
+{
+	int handled = 0;
+	/* This is where we act a bit like L3 instead of L2, since we've got an L3 that depends on us
+	 * keeping L2 automatically alive and happy for point to point links */
+	switch (error) {
+	case 'G':
+		/* We pick it back up and put it back together for this case */
+		q921_discard_iqueue(pri);
+		q921_establish_data_link(pri);
+		handled = 1;
+		break;
+	default:
+		pri_error(pri, "PTP MDL can't handle error of type %c\n", error);
+	}
+
+	return handled;
+}
+
+static void q921_mdl_handle_error(struct pri *pri, char error, int errored_state)
+{
+	int handled = 0;
+	if (PTP_MODE(pri)) {
+		handled = q921_mdl_handle_ptp_error(pri, error);
+	} else {
+		if (pri->localtype == PRI_NETWORK) {
+			handled = q921_mdl_handle_network_error(pri, error);
+		} else {
+			handled = q921_mdl_handle_cpe_error(pri, error);
+		}
+	}
+
+	if (handled)
+		return;
+
+	switch (error) {
+	case 'C':
+		pri_error(pri, "MDL-ERROR (C): UA in state %d\n", errored_state);
+		break;
+	case 'D':
+		pri_error(pri, "MDL-ERROR (D): UA in state %d\n", errored_state);
+		break;
+	case 'A':
+		pri_error(pri, "MDL-ERROR (A): Got supervisory frame with p_f bit set to 1 in state %d\n", errored_state);
+		break;
+	case 'I':
+		pri_error(pri, "MDL-ERROR (I): T200 = N200 in timer recovery state %d\n", errored_state);
+		break;
+	case 'G':
+		pri_error(pri, "MDL-ERROR (G) : T200 expired N200 times in state %d\n", errored_state);
+		break;
+	case 'F':
+		pri_error(pri, "MDL-ERROR (F), SABME in state %d\n", errored_state);
+		break;
+	case 'H':
+	case 'B':
+	case 'E':
+	case 'J':
+	default:
+		pri_error(pri, "MDL-ERROR (%c) in state %d\n", error, errored_state);
+	
+	}
+}
+
+static void q921_mdl_handle_error_callback(void *vpri)
+{
+	struct pri *pri = vpri;
+
+	q921_mdl_handle_error(pri, pri->mdl_error, pri->mdl_error_state);
+
+	pri->mdl_error = 0;
+	pri->mdl_timer = 0;
+}
+
+static void q921_mdl_error(struct pri *pri, char error)
+{
+	if (pri->mdl_error) {
+		pri_error(pri, "Trying to queue an MDL error when one is already scheduled\n");
+		return;
+	}
+	pri->mdl_error = error;
+	pri->mdl_error_state = pri->q921_state;
+	pri->mdl_timer = pri_schedule_event(pri, 0, q921_mdl_handle_error_callback, pri);
+}
+
 static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 {
 	pri_event * res = NULL;
 
 	switch (pri->q921_state) {
 	case Q921_TEI_ASSIGNED:
-		pri_error(pri, "MDL-ERROR (C, D): UA received in state %d\n", pri->q921_state);
+		//pri_error(pri, "MDL-ERROR (C, D): UA received in state %d\n", pri->q921_state);
+		if (h->u.p_f)
+			q921_mdl_error(pri, 'C');
+		else
+			q921_mdl_error(pri, 'D');
 		break;
 	case Q921_AWAITING_ESTABLISHMENT:
 		if (!h->u.p_f) {
@@ -1091,6 +1269,7 @@ static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 			if (pri->v_s != pri->v_a) {
 				q921_discard_iqueue(pri);
 				/* return DL-ESTABLISH-INDICATION */
+				q931_dl_indication(pri, PRI_EVENT_DCHAN_UP);
 			}
 		} else {
 			/* Might not want this... */
@@ -1100,8 +1279,10 @@ static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 			/* return DL-ESTABLISH-CONFIRM */
 		}
 
-		pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
-		res = &pri->ev;
+		if (PTP_MODE(pri)) {
+			pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
+			res = &pri->ev;
+		}
 
 		stop_t200(pri);
 		start_t203(pri);
@@ -1112,7 +1293,8 @@ static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 		break;
 	case Q921_AWAITING_RELEASE:
 		if (!h->u.p_f) {
-			pri_error(pri, "MDL-ERROR (D): UA in state %d w with P_F bit 0\n", pri->q921_state);
+			//pri_error(pri, "MDL-ERROR (D): UA in state %d w with P_F bit 0\n", pri->q921_state);
+			q921_mdl_error(pri, 'D');
 		} else {
 			/* return DL-RELEASE-CONFIRM */
 			stop_t200(pri);
@@ -1121,7 +1303,8 @@ static pri_event *q921_ua_rx(struct pri *pri, q921_h *h)
 		break;
 	case Q921_MULTI_FRAME_ESTABLISHED:
 	case Q921_TIMER_RECOVERY:
-		pri_error(pri, "MDL-ERROR (C, D) UA in state %d\n", pri->q921_state);
+		//pri_error(pri, "MDL-ERROR (C, D) UA in state %d\n", pri->q921_state);
+		q921_mdl_error(pri, 'C');
 		break;
 	default:
 		pri_error(pri, "Don't know what to do with UA in state %d\n", pri->q921_state);
@@ -1147,7 +1330,7 @@ static void q921_enquiry_response(struct pri *pri)
 
 static void n_r_error_recovery(struct pri *pri)
 {
-	pri_error(pri, "MDL-ERROR (J)\n");
+	q921_mdl_error(pri, 'J');
 
 	q921_establish_data_link(pri);
 
@@ -1250,7 +1433,8 @@ static pri_event *q921_rr_rx(struct pri *pri, q921_h *h)
 			}
 		} else {
 			if (h->s.p_f) {
-				pri_message(pri, "MDL-ERROR (A): Got RR response with p_f bit set to 1 in state %d\n", pri->q921_state);
+				//pri_message(pri, "MDL-ERROR (A): Got RR response with p_f bit set to 1 in state %d\n", pri->q921_state);
+				q921_mdl_error(pri, 'A');
 			}
 		}
 
@@ -1334,7 +1518,8 @@ static pri_event *q921_rej_rx(struct pri *pri, q921_h *h)
 			}
 		} else {
 			if (h->s.p_f) {
-				pri_message(pri, "MDL-ERROR (A): Got REJ response with p_f bit set to 1 in state %d\n", pri->q921_state);
+				//pri_message(pri, "MDL-ERROR (A): Got REJ response with p_f bit set to 1 in state %d\n", pri->q921_state);
+				q921_mdl_error(pri, 'A');
 			}
 		}
 
@@ -1463,6 +1648,7 @@ static pri_event *q921_dm_rx(struct pri *pri, q921_h *h)
 
 		q921_discard_iqueue(pri);
 		/* DL-RELEASE indication */
+		q931_dl_indication(pri, PRI_EVENT_DCHAN_DOWN);
 		stop_t200(pri);
 		q921_setstate(pri, Q921_TEI_ASSIGNED);
 		break;
@@ -1476,11 +1662,11 @@ static pri_event *q921_dm_rx(struct pri *pri, q921_h *h)
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		if (h->u.p_f) {
 			/* MDL-ERROR (B) indication */
-			pri_error(pri, "MDL-ERROR (B)\n");
+			q921_mdl_error(pri, 'B');
 			break;
 		}
 
-		/* MDL-ERROR (E) indication */
+		q921_mdl_error(pri, 'E');
 		q921_establish_data_link(pri);
 		pri->l3initiated = 0;
 		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
@@ -1488,10 +1674,10 @@ static pri_event *q921_dm_rx(struct pri *pri, q921_h *h)
 	case Q921_TIMER_RECOVERY:
 		if (h->u.p_f) {
 			/* MDL-ERROR (B) indication */
-			pri_error(pri, "MDL-ERROR (B)\n");
+			q921_mdl_error(pri, 'B');
 		} else {
 			/* MDL-ERROR (E) indication */
-			pri_error(pri, "MDL-ERROR (E)\n");
+			q921_mdl_error(pri, 'E');
 		}
 		q921_establish_data_link(pri);
 		pri->l3initiated = 0;
@@ -1515,7 +1701,7 @@ static pri_event *q921_rnr_rx(struct pri *pri, q921_h *h)
 		if (!is_command(pri, h)) {
 			if (h->s.p_f) {
 				/* MDL-ERROR (A) indication */
-				pri_error(pri, "MDL-ERROR(A)\n");
+				q921_mdl_error(pri, 'A');
 			}
 		} else {
 			if (h->s.p_f) {
