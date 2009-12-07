@@ -1269,12 +1269,12 @@ static void q921_mdl_handle_error_callback(void *vpri)
 			cur = cur->subchannel;
 		}
 
-		if (free == NULL) {
+		if (freep == NULL) {
 			pri_error(pri, "Huh!? no match found in list for TEI %d\n", pri->tei);
 			return;
 		}
 
-		free(free);
+		free(freep);
 	}
 
 	return;
