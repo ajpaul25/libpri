@@ -665,7 +665,7 @@ static void q921_dump_iqueue_info(struct pri *pri, int force)
 	return;
 }
 
-static void q921_dump_pri(struct pri *pri);
+static void q921_dump_pri(struct pri *pri, q921_h *h);
 
 void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
 {
@@ -673,7 +673,7 @@ void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
         char *type;
 	char direction_tag;
 	
-	q921_dump_pri(pri);
+	q921_dump_pri(pri, h);
 
 	direction_tag = txrx ? '>' : '<';
 	if (showraw) {
@@ -847,13 +847,25 @@ void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
 	}
 }
 
-static void q921_dump_pri(struct pri *pri)
+static void q921_dump_pri(struct pri *vpri, q921_h *h)
 {
+	struct pri *pri = NULL;
+
+	if (BRI_NT_PTMP(vpri)) {
+		pri = pri_find_tei(vpri, h->h.sapi, h->h.tei);
+	} else if (BRI_TE_PTMP(vpri)) {
+		pri = PRI_MASTER(vpri)->subchannel;
+	} else 
+		pri = vpri;
+	if (pri) {
 		pri_message(pri, "State %d\n", pri->q921_state);
 		pri_message(pri, "V(S) %d V(A) %d V(R) %d V(NA) %d\n", pri->v_s, pri->v_a, pri->v_r, pri->v_na);
 		pri_message(pri, "K %d, RC %d, l3initiated %d, reject_except %d ack_pend %d\n", pri->k, pri->RC, pri->l3initiated, pri->reject_exception, pri->acknowledge_pending);
 		//pri_message(pri, "Window %d Windowlen %d, sentrej %d solicitfbit %d busy %d\n", pri->window, pri->windowlen, pri->sentrej, pri->solicitfbit, pri->busy);
 		pri_message(pri, "T200 %d, N200 %d, T203 %d\n", pri->t200_timer, 3, pri->t203_timer);
+	} else if (!PTMP_MODE(vpri)) {
+		pri_error(vpri, "Huh.... no pri found to dump\n");
+	}
 }
 
 static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
@@ -1961,7 +1973,7 @@ static pri_event *__q921_receive(struct pri *pri, q921_h *h, int len)
 	/* Discard FCS */
 	len -= 2;
 	
-	if (!pri->master && pri->debug & (PRI_DEBUG_Q921_DUMP | PRI_DEBUG_Q921_RAW))
+	if (pri->debug & (PRI_DEBUG_Q921_DUMP | PRI_DEBUG_Q921_RAW))
 		q921_dump(pri, h, len, pri->debug & PRI_DEBUG_Q921_RAW, 0);
 
 	/* Check some reject conditions -- Start by rejecting improper ea's */
