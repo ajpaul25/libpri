@@ -93,6 +93,7 @@ struct pri {
 	int mdl_error;
 	int mdl_error_state;
 	int mdl_timer;
+	int mdl_free_me;
 
 	/* Q.921 State */
 	int q921_state;	

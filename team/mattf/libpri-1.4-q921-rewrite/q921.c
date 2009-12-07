@@ -1113,6 +1113,14 @@ static void q921_mdl_remove(struct pri *pri)
 		pri_error(pri, "Cannot handle MDL remove when PRI is in state %d\n", pri->q921_state);
 		break;
 	}
+
+	if (BRI_NT_PTMP(pri) && pri->q921_state == Q921_TEI_UNASSIGNED) {
+		if (pri == PRI_MASTER(pri)) {
+			pri_error(pri, "Bad bad bad!  Asked to free master\n");
+			return;
+		}
+		pri->mdl_free_me = 1;
+	}
 }
 
 static int q921_mdl_handle_network_error(struct pri *pri, char error)
@@ -1123,6 +1131,9 @@ static int q921_mdl_handle_network_error(struct pri *pri, char error)
 	case 'D':
 	case 'G':
 	case 'H':
+		q921_mdl_remove(pri);
+		handled = 1;
+		break;
 	case 'A':
 	case 'B':
 	case 'E':
@@ -1172,6 +1183,11 @@ static int q921_mdl_handle_ptp_error(struct pri *pri, char error)
 		/* We pick it back up and put it back together for this case */
 		q921_discard_iqueue(pri);
 		q921_establish_data_link(pri);
+		q921_setstate(pri, Q921_AWAITING_ESTABLISHMENT);
+
+		pri->schedev = 1;
+		pri->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
+
 		handled = 1;
 		break;
 	default:
@@ -1224,6 +1240,8 @@ static void q921_mdl_handle_error(struct pri *pri, char error, int errored_state
 		pri_error(pri, "MDL-ERROR (%c) in state %d\n", error, errored_state);
 	
 	}
+
+	return;
 }
 
 static void q921_mdl_handle_error_callback(void *vpri)
@@ -1234,6 +1252,32 @@ static void q921_mdl_handle_error_callback(void *vpri)
 
 	pri->mdl_error = 0;
 	pri->mdl_timer = 0;
+
+	if (pri->mdl_free_me) {
+		struct pri *master = PRI_MASTER(pri);
+		struct pri *freep = NULL, *prev, *cur;
+		prev = master;
+		cur = master->subchannel;
+
+		while (cur) {
+			if (cur == pri) {
+				prev->subchannel = cur->subchannel;
+				freep = cur;
+				break;
+			}
+			prev = cur;
+			cur = cur->subchannel;
+		}
+
+		if (free == NULL) {
+			pri_error(pri, "Huh!? no match found in list for TEI %d\n", pri->tei);
+			return;
+		}
+
+		free(free);
+	}
+
+	return;
 }
 
 static void q921_mdl_error(struct pri *pri, char error)
