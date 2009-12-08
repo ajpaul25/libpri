@@ -60,6 +60,7 @@
 static void reschedule_t200(struct pri *pri);
 //static void q921_restart(struct pri *pri, int now);
 //static void q921_tei_release_and_reacquire(struct pri *master);
+static void q921_dump_pri(struct pri *pri);
 static void q921_establish_data_link(struct pri *pri);
 static void q921_mdl_error(struct pri *pri, char error);
 static void q921_mdl_remove(struct pri *pri);
@@ -436,6 +437,8 @@ static void t200_expire(void *vpri)
 	if (pri->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(pri, "%s\n", __FUNCTION__);
 
+	q921_dump_pri(pri);
+
 	pri->t200_timer = 0;
 
 	switch (pri->q921_state) {
@@ -446,10 +449,17 @@ static void t200_expire(void *vpri)
 		q921_setstate(pri, Q921_TIMER_RECOVERY);
 		break;
 	case Q921_TIMER_RECOVERY:
+		/* SDL Flow Figure B.8/Q.921 Page 81 */
 		if (pri->RC != pri->timers[PRI_TIMER_N200]) {
+#if 0
 			if (pri->v_s == pri->v_a) {
 				transmit_enquiry(pri);
 			}
+#else
+			/* We are chosing to enquiry by default (to reduce risk of T200 timer errors at the other
+			 * side, instead of retransmission of the last I frame we sent */
+			transmit_enquiry(pri);
+#endif
 			pri->RC++;
 		} else {
 			//pri_error(pri, "MDL-ERROR (I): T200 = N200 in timer recovery state\n");
@@ -665,7 +675,7 @@ static void q921_dump_iqueue_info(struct pri *pri, int force)
 	return;
 }
 
-static void q921_dump_pri(struct pri *pri, q921_h *h);
+static void q921_dump_pri_by_h(struct pri *pri, q921_h *h);
 
 void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
 {
@@ -673,7 +683,7 @@ void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
         char *type;
 	char direction_tag;
 	
-	q921_dump_pri(pri, h);
+	q921_dump_pri_by_h(pri, h);
 
 	direction_tag = txrx ? '>' : '<';
 	if (showraw) {
@@ -847,7 +857,16 @@ void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
 	}
 }
 
-static void q921_dump_pri(struct pri *vpri, q921_h *h)
+static void q921_dump_pri(struct pri *pri)
+{
+	pri_message(pri, "TEI: %d State %d\n", pri->tei, pri->q921_state);
+	pri_message(pri, "V(S) %d V(A) %d V(R) %d V(NA) %d\n", pri->v_s, pri->v_a, pri->v_r, pri->v_na);
+	pri_message(pri, "K %d, RC %d, l3initiated %d, reject_except %d ack_pend %d\n", pri->k, pri->RC, pri->l3initiated, pri->reject_exception, pri->acknowledge_pending);
+	//pri_message(pri, "Window %d Windowlen %d, sentrej %d solicitfbit %d busy %d\n", pri->window, pri->windowlen, pri->sentrej, pri->solicitfbit, pri->busy);
+	pri_message(pri, "T200 %d, N200 %d, T203 %d\n", pri->t200_timer, 3, pri->t203_timer);
+}
+
+static void q921_dump_pri_by_h(struct pri *vpri, q921_h *h)
 {
 	struct pri *pri = NULL;
 
@@ -858,11 +877,7 @@ static void q921_dump_pri(struct pri *vpri, q921_h *h)
 	} else 
 		pri = vpri;
 	if (pri) {
-		pri_message(pri, "State %d\n", pri->q921_state);
-		pri_message(pri, "V(S) %d V(A) %d V(R) %d V(NA) %d\n", pri->v_s, pri->v_a, pri->v_r, pri->v_na);
-		pri_message(pri, "K %d, RC %d, l3initiated %d, reject_except %d ack_pend %d\n", pri->k, pri->RC, pri->l3initiated, pri->reject_exception, pri->acknowledge_pending);
-		//pri_message(pri, "Window %d Windowlen %d, sentrej %d solicitfbit %d busy %d\n", pri->window, pri->windowlen, pri->sentrej, pri->solicitfbit, pri->busy);
-		pri_message(pri, "T200 %d, N200 %d, T203 %d\n", pri->t200_timer, 3, pri->t203_timer);
+		q921_dump_pri(pri);
 	} else if (!PTMP_MODE(vpri)) {
 		pri_error(vpri, "Huh.... no pri found to dump\n");
 	}
