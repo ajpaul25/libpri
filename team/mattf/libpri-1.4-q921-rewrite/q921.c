@@ -921,6 +921,7 @@ static pri_event *q921_receive_MDL(struct pri *pri, q921_u *h, int len)
 			return NULL;
 		}
 		q921_setstate(sub->subchannel, Q921_TEI_ASSIGNED);
+		pri_error(pri, "Allocating new TEI %d\n", tei);
 		q921_send_tei(pri, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 1);
 		break;
 	case Q921_TEI_IDENTITY_ASSIGNED:
@@ -1285,6 +1286,8 @@ static void q921_mdl_handle_error_callback(void *vpri)
 			pri_error(pri, "Huh!? no match found in list for TEI %d\n", pri->tei);
 			return;
 		}
+
+		pri_error(pri, "Freeing TEI of %d\n", freep->tei);
 
 		free(freep);
 	}
@@ -1822,9 +1825,16 @@ static void q921_acknowledge_pending_check(struct pri *pri)
 
 static void q921_statemachine_check(struct pri *pri)
 {
-	if (pri->q921_state == Q921_MULTI_FRAME_ESTABLISHED) {
+	switch (pri->q921_state) {
+	case Q921_MULTI_FRAME_ESTABLISHED:
 		q921_send_queued_iframes(pri);
 		q921_acknowledge_pending_check(pri);
+		break;
+	case Q921_TIMER_RECOVERY:
+		q921_acknowledge_pending_check(pri);
+		break;
+	default:
+		break;
 	}
 }
 
