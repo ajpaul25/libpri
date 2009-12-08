@@ -342,7 +342,6 @@ static int q921_send_queued_iframes(struct pri *pri)
 			f->transmitted++;
 			f->h.n_s = pri->v_s;
 			f->h.n_r = pri->v_r;
-//			pri->v_na = pri->v_r;
 			f->h.ft = 0;
 			f->h.p_f = 0;
 			q921_transmit(pri, (q921_h *)(&f->h), f->len);
@@ -413,7 +412,6 @@ static void q921_rr(struct pri *pri, int pbit, int cmd) {
 		pri_error(pri, "Don't know how to U/A on a type %d node\n", pri->localtype);
 		return;
 	}
-	//pri->v_na = pri->v_r;	/* Make a note that we've already acked this */
 	if (pri->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(pri, "Sending Receiver Ready (%d)\n", pri->v_r);
 	q921_transmit(pri, &h, 4);
@@ -860,9 +858,8 @@ void q921_dump(struct pri *pri, q921_h *h, int len, int showraw, int txrx)
 static void q921_dump_pri(struct pri *pri)
 {
 	pri_message(pri, "TEI: %d State %d\n", pri->tei, pri->q921_state);
-	pri_message(pri, "V(S) %d V(A) %d V(R) %d V(NA) %d\n", pri->v_s, pri->v_a, pri->v_r, pri->v_na);
+	pri_message(pri, "V(S) %d V(A) %d V(R) %d\n", pri->v_s, pri->v_a, pri->v_r);
 	pri_message(pri, "K %d, RC %d, l3initiated %d, reject_except %d ack_pend %d\n", pri->k, pri->RC, pri->l3initiated, pri->reject_exception, pri->acknowledge_pending);
-	//pri_message(pri, "Window %d Windowlen %d, sentrej %d solicitfbit %d busy %d\n", pri->window, pri->windowlen, pri->sentrej, pri->solicitfbit, pri->busy);
 	pri_message(pri, "T200 %d, N200 %d, T203 %d\n", pri->t200_timer, 3, pri->t203_timer);
 }
 
