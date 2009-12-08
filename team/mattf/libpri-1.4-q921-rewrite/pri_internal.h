@@ -107,7 +107,6 @@ struct pri {
 	int v_s;			/* Next N(S) for transmission */
 	int v_a;			/* Last acknowledged frame */
 	int v_r;			/* Next frame expected to be received */
-	int v_na;			/* What we've told our peer we've acknowledged */
 	
 	int cref;			/* Next call reference value */
 	

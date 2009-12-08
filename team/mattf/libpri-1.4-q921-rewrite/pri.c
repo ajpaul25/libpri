@@ -159,7 +159,7 @@ static void pri_default_timers(struct pri *ctrl, int switchtype)
 	ctrl->timers[PRI_TIMER_TM20] = 2500;		/* Max time awaiting XID response - Q.921 Appendix IV */
 	ctrl->timers[PRI_TIMER_NM20] = 3;			/* Number of XID retransmits - Q.921 Appendix IV */
 	ctrl->timers[PRI_TIMER_T303] = 4 * 1000;			/* Length between SETUP retransmissions and timeout */
-	//ctrl->timers[PRI_TIMER_T309] = 6000;		/* Time to wait before clearing calls in case of D-channel transient event.  Q.931 specifies 6-90 seconds */
+	ctrl->timers[PRI_TIMER_T309] = 6000;		/* Time to wait before clearing calls in case of D-channel transient event.  Q.931 specifies 6-90 seconds */
 
 	ctrl->timers[PRI_TIMER_T_HOLD] = 4 * 1000;	/* Wait for HOLD request response. */
 	ctrl->timers[PRI_TIMER_T_RETRIEVE] = 4 * 1000;/* Wait for RETRIEVE request response. */
