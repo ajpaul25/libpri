@@ -1013,7 +1013,7 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 		return -1;
 
 	/* Check for bearer capability */
-	if (call1->transcapability != call2->transcapability)
+	if (call1->bc.transcapability != call2->bc.transcapability)
 		return -1;
 
 	/* Check to see if we're on the same PRI */

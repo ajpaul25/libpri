@@ -140,6 +140,7 @@ struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q
 
 	return cc_record;
 
+	/* BUGBUG Probably need to add BC, HLC, and LLC comparison as well. */
 	/*! \todo BUGBUG pri_cc_find_by_addressing() not written */
 }
 
@@ -296,7 +297,8 @@ struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 	cc_record->party_a = call->cc.party_a;
 	cc_record->party_b = call->called;
 	cc_record->party_b_is_remote = call->cc.party_b_is_remote;
-/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
+	cc_record->saved_ie_contents = call->cc.saved_ie_contents;
+	cc_record->bc = call->bc;
 /*! \todo BUGBUG need more initialization?? */
 
 	/* Insert the new record into the database */
@@ -523,9 +525,15 @@ static unsigned char *enc_etsi_ptmp_ccbs_erase(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.operation = ROSE_ETSI_CCBSErase;
 
-/* BUGBUG need BC, HLC, and LLC from initial SETUP */
-	//msg.args.etsi.CCBSErase.q931ie.contents
-	//msg.args.etsi.CCBSErase.q931ie.length = ;
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(msg.args.etsi.CCBSErase.q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		msg.args.etsi.CCBSErase.q931ie.length = cc_record->saved_ie_contents.length;
+		memcpy(msg.args.etsi.CCBSErase.q931ie.contents, cc_record->saved_ie_contents.data,
+			cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "CCBSErase q931 ie contents did not fit.\n");
+	}
 
 	q931_copy_address_to_rose(ctrl, &msg.args.etsi.CCBSErase.address_of_b,
 		&cc_record->party_b);
@@ -617,9 +625,16 @@ static unsigned char *enc_etsi_ptmp_ccbs_status_request(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.operation = ROSE_ETSI_CCBSStatusRequest;
 
-/* BUGBUG need BC, HLC, and LLC from initial SETUP */
-	//msg.args.etsi.CCBSStatusRequest.q931ie.contents
-	//msg.args.etsi.CCBSStatusRequest.q931ie.length = ;
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(msg.args.etsi.CCBSStatusRequest.q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		msg.args.etsi.CCBSStatusRequest.q931ie.length =
+			cc_record->saved_ie_contents.length;
+		memcpy(msg.args.etsi.CCBSStatusRequest.q931ie.contents,
+			cc_record->saved_ie_contents.data, cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "CCBSStatusRequest q931 ie contents did not fit.\n");
+	}
 
 	msg.args.etsi.CCBSStatusRequest.recall_mode = cc_record->option.recall_mode;
 	msg.args.etsi.CCBSStatusRequest.ccbs_reference = cc_record->ccbs_reference_id;
@@ -655,9 +670,15 @@ static unsigned char *enc_etsi_ptmp_ccbs_b_free(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.operation = ROSE_ETSI_CCBSBFree;
 
-/* BUGBUG need BC, HLC, and LLC from initial SETUP */
-	//msg.args.etsi.CCBSBFree.q931ie.contents
-	//msg.args.etsi.CCBSBFree.q931ie.length = ;
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(msg.args.etsi.CCBSBFree.q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		msg.args.etsi.CCBSBFree.q931ie.length = cc_record->saved_ie_contents.length;
+		memcpy(msg.args.etsi.CCBSBFree.q931ie.contents, cc_record->saved_ie_contents.data,
+			cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "CCBSBFree q931 ie contents did not fit.\n");
+	}
 
 	q931_copy_address_to_rose(ctrl, &msg.args.etsi.CCBSBFree.address_of_b,
 		&cc_record->party_b);
@@ -743,9 +764,16 @@ static unsigned char *enc_etsi_ptmp_remote_user_free(struct pri *ctrl,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.operation = ROSE_ETSI_CCBSRemoteUserFree;
 
-/* BUGBUG need BC, HLC, and LLC from initial SETUP */
-	//msg.args.etsi.CCBSRemoteUserFree.q931ie.contents
-	//msg.args.etsi.CCBSRemoteUserFree.q931ie.length = ;
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(msg.args.etsi.CCBSRemoteUserFree.q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		msg.args.etsi.CCBSRemoteUserFree.q931ie.length =
+			cc_record->saved_ie_contents.length;
+		memcpy(msg.args.etsi.CCBSRemoteUserFree.q931ie.contents,
+			cc_record->saved_ie_contents.data, cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "CCBSRemoteUserFree q931 ie contents did not fit.\n");
+	}
 
 	q931_copy_address_to_rose(ctrl, &msg.args.etsi.CCBSRemoteUserFree.address_of_b,
 		&cc_record->party_b);
@@ -1812,7 +1840,8 @@ static void pri_cc_act_set_original_call_parameters(struct pri *ctrl, q931_call 
 {
 	call->called = cc_record->party_b;
 	call->remote_id = cc_record->party_a;
-/* BUGBUG need to restore BC, HLC, and LLC from initial SETUP */
+	call->cc.saved_ie_contents = cc_record->saved_ie_contents;
+	call->bc = cc_record->bc;
 }
 
 /*!
