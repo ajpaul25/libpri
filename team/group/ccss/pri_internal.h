@@ -570,12 +570,18 @@ struct q931_call {
 
 	/* Call completion */
 	struct {
-		/*! CC record associated with this call. */
+		/*!
+		 * \brief CC record associated with this call.
+		 * \note
+		 * CC signaling link or original call when cc-available indicated.
+		 */
 		struct pri_cc_record *record;
 		/*! Original calling party. */
 		struct q931_party_id party_a;
 		/*! TRUE if the remote party is party B. */
 		unsigned char party_b_is_remote;
+		/*! TRUE if call needs to be hung up. */
+		unsigned char hangup_call;
 /* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 	} cc;
 };
@@ -599,21 +605,22 @@ enum CC_STATES {
 	CC_STATE_SUSPENDED,
 	/*! CC is waiting for party A to initiate CC callback. */
 	CC_STATE_WAIT_CALLBACK,
+	/*! CC callback in progress. */
+	CC_STATE_CALLBACK,
 	/*! CC is waiting for signaling link to be cleared before destruction. */
 	CC_STATE_WAIT_DESTRUCTION,
+
+	/*! Number of CC states.  Must be last in enum. */
+	CC_STATE_NUM
 };
 
 enum CC_EVENTS {
 	/*! CC is available for the current call. */
 	CC_EVENT_AVAILABLE,
-	/*! Requesting CCBS activation. */
-	CC_EVENT_CCBS_REQUEST,
-	/*! Requesting CCNR activation. */
-	CC_EVENT_CCNR_REQUEST,
-	/*! Requesting CCBS activation accepted. */
-	CC_EVENT_CCBS_REQUEST_ACCEPT,
-	/*! Requesting CCNR activation accepted. */
-	CC_EVENT_CCNR_REQUEST_ACCEPT,
+	/*! Requesting CC activation. */
+	CC_EVENT_CC_REQUEST,
+	/*! Requesting CC activation accepted. */
+	CC_EVENT_CC_REQUEST_ACCEPT,
 	/*! CC party B is available. */
 	CC_EVENT_REMOTE_USER_FREE,
 	/*! CC poll/prompt for party A status. */
@@ -626,12 +633,38 @@ enum CC_EVENTS {
 	CC_EVENT_SUSPEND,
 	/*! Resume monitoring party B because party A is now available. */
 	CC_EVENT_RESUME,
-	/*! This is the call completion recall call attempt. */
+	/*! This is the CC recall call attempt. */
 	CC_EVENT_RECALL,
-	/*! Tear down call completion request. */
+	/*! Link request to cancel/deactivate CC received. */
+	CC_EVENT_LINK_CANCEL,
+	/*! Tear down CC request from upper layer. */
 	CC_EVENT_CANCEL,
-	/*! Tear down of call completion completed. */
-	CC_EVENT_CANCEL_COMPLETE,
+	/*! Tear down of CC signaling link completed. */
+	CC_EVENT_SIGNALING_GONE,
+	/*! Sent ALERTING message. */
+	CC_EVENT_MSG_ALERTING,
+	/*! Sent DISCONNECT message. */
+	CC_EVENT_MSG_DISCONNECT,
+	/*! Sent RELEASE message. */
+	CC_EVENT_MSG_RELEASE,
+	/*! Sent RELEASE_COMPLETE message. */
+	CC_EVENT_MSG_RELEASE_COMPLETE,
+	/*! T_RETENTION timer timed out. */
+	CC_EVENT_TIMEOUT_T_RETENTION,
+	/*! T-STATUS timer equivalent for CC user A status timed out. */
+	CC_EVENT_TIMEOUT_T_CCBS1,
+	/*! Timeout for valid party A status. */
+	CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1,
+	/*! Max time the CCBS/CCNR service will be active. */
+	CC_EVENT_TIMEOUT_T_CCBS2,
+	/*! Max time to wait for user A to respond to user B availability. */
+	CC_EVENT_TIMEOUT_T_CCBS3,
+};
+
+enum CC_PARTY_A_AVAILABILITY {
+	CC_PARTY_A_AVAILABILITY_INVALID,
+	CC_PARTY_A_AVAILABILITY_BUSY,
+	CC_PARTY_A_AVAILABILITY_FREE,
 };
 
 /* Invalid PTMP call completion reference and linkage id value. */
@@ -663,6 +696,33 @@ struct pri_cc_record {
 	struct q931_party_address party_b;
 /* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 
+	/*! FSM parameters. */
+	union {
+		/*! PTMP FSM parameters. */
+		struct {
+			/*! T_RETENTION timer id. */
+			int t_retention;
+			/*! Extended T_CCBS1 timer id for CCBSStatusRequest handling. */
+			int extended_t_ccbs1;
+			/*! T_CCBS2/T_CCNR2 timer id.  CC service supervision timer. */
+			int t_ccbs2;
+			/*! T_CCBS3 timer id. A response to B available timer. */
+			int t_ccbs3;
+			/*! Invoke id for the CCBSStatusRequest message to find if T_CCBS1 still running. */
+			int t_ccbs1_invoke_id;
+			/*! Accumulating party A availability status */
+			enum CC_PARTY_A_AVAILABILITY party_a_status_acc;
+			/*! Party A availability status */
+			enum CC_PARTY_A_AVAILABILITY party_a_status;
+			/*! TRUE if no B channels available for recall call. */
+			unsigned char is_ccbs_busy;
+		} ptmp;
+		/*! PTP FSM parameters. */
+		struct {
+			/*! T_CCBS5/T_CCBS6/T_CCNR5/T_CCNR6 timer id.  CC service supervision timer. */
+			int t_supervision;
+		} ptp;
+	} fsm;
 	/*! Pending response information. */
 	struct {
 		/*! Send response on this signaling link. */
@@ -673,12 +733,14 @@ struct pri_cc_record {
 		short invoke_id;
 	} response;
 
+	/*! TRUE if the call-completion FSM has completed and this record needs to be destroyed. */
+	unsigned char fsm_complete;
+	/*! TRUE if we are a call completion agent. */
+	unsigned char is_agent;
 	/*! TRUE if the remote party is party B. (We are a monitor./We are the originator.) */
 	unsigned char party_b_is_remote;
-	/*! TRUE if party_a_busy status is valid. (PTMP) */
-	unsigned char party_a_status_valid;
-	/*! TRUE if the status of party A is busy. (PTMP) */
-	unsigned char party_a_busy;
+	/*! TRUE if active cc mode is CCNR. */
+	unsigned char is_ccnr;
 	/*! PTMP pre-activation reference id. (0-127) */
 	unsigned char call_linkage_id;
 	/*! PTMP active CCBS reference id. (0-127) */
@@ -774,8 +836,9 @@ struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q
 int pri_cc_new_reference_id(struct pri *ctrl);
 void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
-int pri_cc_event_down(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
-int pri_cc_event_up(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
+int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
+int q931_cc_timeout(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
+void q931_cc_indirect(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
 static inline struct pri * PRI_MASTER(struct pri *mypri)
 {

@@ -88,6 +88,8 @@ static struct msgtype msgs[] = {
 	{ Q931_SUSPEND, "SUSPEND" },
 	{ Q931_SUSPEND_ACKNOWLEDGE, "SUSPEND ACKNOWLEDGE" },
 	{ Q931_SUSPEND_REJECT, "SUSPEND REJECT" },
+
+	{ Q931_ANY_MESSAGE, "ANY MESSAGE" },
 };
 
 static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand);
@@ -2373,7 +2375,7 @@ static int transmit_facility(int full_ie, struct pri *ctrl, q931_call *call, int
 	for (prev = &call->apdus, cur = call->apdus;
 		cur;
 		prev = &cur->next, cur = cur->next) {
-		if (!cur->sent && cur->message == msgtype) {
+		if (!cur->sent && (cur->message == msgtype || cur->message == Q931_ANY_MESSAGE)) {
 			break;
 		}
 	}
@@ -4482,14 +4484,7 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	}
 
 	if (c->cc.record) {
-		switch (c->cc.record->state) {
-		case CC_STATE_PENDING_AVAILABLE:
-			c->cc.record->state = CC_STATE_AVAILABLE;
-			rose_cc_available_encode(ctrl, c, Q931_ALERTING);
-			break;
-		default:
-			break;
-		}
+		pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_MSG_ALERTING);
 	}
 
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
@@ -4668,9 +4663,16 @@ int q931_release(struct pri *ctrl, q931_call *c, int cause)
 			} else {
 				c->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T308], pri_release_finaltimeout, c);
 			}
+			if (c->cc.record) {
+				pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_MSG_RELEASE);
+			}
 			return send_message(ctrl, c, Q931_RELEASE, release_ies);
-		} else
+		} else {
+			if (c->cc.record) {
+				pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_MSG_RELEASE_COMPLETE);
+			}
 			return send_message(ctrl, c, Q931_RELEASE_COMPLETE, release_ies); /* Yes, release_ies, not release_complete_ies */
+		}
 	} else
 		return 0;
 }
@@ -4711,14 +4713,7 @@ int q931_disconnect(struct pri *ctrl, q931_call *c, int cause)
 		c->sendhangupack = 1;
 
 		if (c->cc.record) {
-			switch (c->cc.record->state) {
-			case CC_STATE_PENDING_AVAILABLE:
-				c->cc.record->state = CC_STATE_AVAILABLE;
-				rose_cc_available_encode(ctrl, c, Q931_DISCONNECT);
-				break;
-			default:
-				break;
-			}
+			pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_MSG_DISCONNECT);
 		}
 
 		pri_schedule_del(ctrl, c->retranstimer);
@@ -4959,6 +4954,9 @@ static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 	int res = 0;
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 	c->peercallstate = Q931_CALL_STATE_NULL;
+	if (c->cc.record) {
+		pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_MSG_RELEASE_COMPLETE);
+	}
 	if (cause > -1) {
 		c->cause = cause;
 		c->causecode = CODE_CCITT;
@@ -6636,10 +6634,17 @@ static void q931_apdu_timeout(void *data)
 	struct apdu_event *apdu;
 	struct pri *ctrl;
 	struct q931_call *call;
+	int free_it;
 
 	apdu = data;
 	call = apdu->call;
 	ctrl = call->pri;
+
+	/*
+	 * Extract the APDU from the list so it cannot be
+	 * deleted from under us by the callback.
+	 */
+	free_it = pri_call_apdu_extract(call, apdu);
 
 	q931_clr_subcommands(ctrl);
 	apdu->response.callback(APDU_CALLBACK_REASON_TIMEOUT, ctrl, call, apdu, NULL);
@@ -6648,7 +6653,52 @@ static void q931_apdu_timeout(void *data)
 		ctrl->schedev = 1;
 	}
 
-	pri_call_apdu_delete(call, apdu);
+	if (free_it) {
+		free(apdu);
+	}
+}
+
+/*!
+ * \brief Generic call-completion timeout event handler.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \retval nonzero if cc record destroyed because FSM completed.
+ */
+int q931_cc_timeout(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	int fsm_complete;
+
+	q931_clr_subcommands(ctrl);
+	fsm_complete = pri_cc_event(ctrl, call, cc_record, event);
+	if (ctrl->subcmds.counter_subcmd) {
+		q931_fill_facility_event(ctrl, call);
+		ctrl->schedev = 1;
+	}
+	return fsm_complete;
+}
+
+/*!
+ * \brief Generic call-completion indirect event creation.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param func Function to call that will generate a libpri event.
+ *
+ * \return Nothing
+ */
+void q931_cc_indirect(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record))
+{
+	q931_clr_subcommands(ctrl);
+	func(ctrl, call, cc_record);
+	if (ctrl->subcmds.counter_subcmd) {
+		q931_fill_facility_event(ctrl, call);
+		ctrl->schedev = 1;
+	}
 }
 
 /*!
@@ -6810,6 +6860,11 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE);
 		c->peercallstate = Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE;
 
+		if (c->cc.hangup_call) {
+			q931_release_complete(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
+			break;
+		}
+
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;
 	case Q931_SETUP:
@@ -6830,6 +6885,10 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		c->alive = 0;
 		if (c->transmoderate != TRANS_MODE_64_CIRCUIT) {
 			q931_release_complete(ctrl, c, PRI_CAUSE_BEARERCAPABILITY_NOTIMPL);
+			break;
+		}
+		if (c->cc.hangup_call) {
+			q931_release_complete(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
 			break;
 		}
 
