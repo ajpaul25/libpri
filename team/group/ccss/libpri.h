@@ -602,6 +602,16 @@ struct pri_subcmd_cc_request_rsp {
 	int retain_service;
 };
 
+struct pri_subcmd_cc_b_free {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief TRUE if Party A is CCBS busy.
+	 * \note PTMP received CCBSBFree message because party A was busy or CCBS busy.
+	 */
+	int busy;
+};
+
 struct pri_subcmd_cc_status {
 	/*! \brief Call-Completion record id */
 	long cc_id;
@@ -648,7 +658,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_id cc_available;
 		struct pri_subcmd_cc_request cc_request;
 		struct pri_subcmd_cc_request_rsp cc_request_rsp;
-		struct pri_subcmd_cc_id cc_remote_user_free;
+		struct pri_subcmd_cc_b_free cc_remote_user_free;
 		struct pri_subcmd_cc_id cc_status_req;
 		struct pri_subcmd_cc_status cc_status_req_rsp;
 		struct pri_subcmd_cc_status cc_status;
