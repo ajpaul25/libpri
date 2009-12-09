@@ -1866,7 +1866,7 @@ static unsigned char *enc_qsig_call_rerouting(struct pri *ctrl, unsigned char *p
 	q931ie_pos = msg.args.qsig.CallRerouting.q931ie_contents;
 	*q931ie_pos++ = 0x04;	/* Bearer Capability IE */
 	*q931ie_pos++ = 0x03;	/* len */
-	*q931ie_pos++ = 0x80 | call->transcapability;	/* Rxed transfer capability. */
+	*q931ie_pos++ = 0x80 | call->bc.transcapability;	/* Rxed transfer capability. */
 	*q931ie_pos++ = 0x90;	/* circuit mode, 64kbit/s */
 	*q931ie_pos++ = 0xa3;	/* level1 protocol, a-law */
 	*q931ie_pos++ = 0x95;	/* locking shift to codeset 5 (national use) */
@@ -1979,7 +1979,7 @@ static unsigned char *enc_etsi_call_rerouting(struct pri *ctrl, unsigned char *p
 	q931ie_pos = msg.args.etsi.CallRerouting.q931ie_contents;
 	*q931ie_pos++ = 0x04;	/* Bearer Capability IE */
 	*q931ie_pos++ = 0x03;	/* len */
-	*q931ie_pos++ = 0x80 | call->transcapability;	/* Rxed transfer capability. */
+	*q931ie_pos++ = 0x80 | call->bc.transcapability;	/* Rxed transfer capability. */
 	*q931ie_pos++ = 0x90;	/* circuit mode, 64kbit/s */
 	*q931ie_pos++ = 0xa3;	/* level1 protocol, a-law */
 	msg.args.etsi.CallRerouting.q931ie.length = q931ie_pos

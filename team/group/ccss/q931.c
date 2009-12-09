@@ -868,6 +868,27 @@ int q931_party_id_presentation(const struct q931_party_id *id)
 	return number_value | number_screening;
 }
 
+/*!
+ * \internal
+ * \brief Append the given ie contents to the save ie location.
+ *
+ * \param save_ie Saved ie contents to append new ie.
+ * \param ie Contents to append.
+ *
+ * \return Nothing
+ */
+static void q931_append_ie_contents(struct q931_saved_ie_contents *save_ie, struct q931_ie *ie)
+{
+	int size;
+
+	size = ie->len + 2;
+	if (size < sizeof(save_ie->data) - save_ie->length) {
+		/* Contents will fit so append it. */
+		memcpy(&save_ie->data[save_ie->length], ie, size);
+		save_ie->length += size;
+	}
+}
+
 static void q931_clr_subcommands(struct pri *ctrl)
 {
 	ctrl->subcmds.counter_subcmd = 0;
@@ -1441,26 +1462,25 @@ static int receive_bearer_capability(int full_ie, struct pri *ctrl, q931_call *c
 		pri_error(ctrl, "!! non-standard Q.931 standard field\n");
 		return -1;
 	}
-	call->transcapability = ie->data[0] & 0x1f;
-	call->transmoderate = ie->data[1] & 0x7f;
+	call->bc.transcapability = ie->data[0] & 0x1f;
+	call->bc.transmoderate = ie->data[1] & 0x7f;
    
 	/* octet 4.1 exists iff mode/rate is multirate */
-	if (call->transmoderate == TRANS_MODE_MULTIRATE) {
-		call->transmultiple = ie->data[pos++] & 0x7f;
+	if (call->bc.transmoderate == TRANS_MODE_MULTIRATE) {
+		call->bc.transmultiple = ie->data[pos++] & 0x7f;
 	}
 
 	/* Look for octet 5; this is identified by bits 5,6 == 01 */
-	if (pos < len && 
-	     (ie->data[pos] & 0x60) == 0x20 ) {
+	if (pos < len && (ie->data[pos] & 0x60) == 0x20) {
 		/* although the layer1 is only the bottom 5 bits of the byte,
 		   previous versions of this library passed bits 5&6 through
 		   too, so we have to do the same for binary compatability */
-		call->userl1 = ie->data[pos] & 0x7f;
+		call->bc.userl1 = ie->data[pos] & 0x7f;
 		pos++;
 		
 		/* octet 5a? */
 		if (pos < len && !(ie->data[pos-1] & 0x80)) {
-			call->rateadaption = ie->data[pos] & 0x7f;
+			call->bc.rateadaption = ie->data[pos] & 0x7f;
 			pos++;
  		}
 		
@@ -1472,15 +1492,13 @@ static int receive_bearer_capability(int full_ie, struct pri *ctrl, q931_call *c
 	}
 
 	/* Look for octet 6; this is identified by bits 5,6 == 10 */
-     	if (pos < len && 
-             (ie->data[pos] & 0x60) == 0x40) {
-		call->userl2 = ie->data[pos++] & 0x1f;
+	if (pos < len && (ie->data[pos] & 0x60) == 0x40) {
+		call->bc.userl2 = ie->data[pos++] & 0x1f;
 	}
 
 	/* Look for octet 7; this is identified by bits 5,6 == 11 */
-     	if (pos < len && 
-             (ie->data[pos] & 0x60) == 0x60) {
-		call->userl3 = ie->data[pos++] & 0x1f;
+	if (pos < len && (ie->data[pos] & 0x60) == 0x60) {
+		call->bc.userl3 = ie->data[pos++] & 0x1f;
 	}
 	return 0;
 }
@@ -1507,51 +1525,51 @@ static int transmit_bearer_capability(int full_ie, struct pri *ctrl, q931_call *
 		return 4;
 	}
 
-	tc = call->transcapability;
+	tc = call->bc.transcapability;
 	ie->data[0] = 0x80 | tc;
-	ie->data[1] = call->transmoderate | 0x80;
+	ie->data[1] = call->bc.transmoderate | 0x80;
 
  	pos = 2;
  	/* octet 4.1 exists iff mode/rate is multirate */
- 	if (call->transmoderate == TRANS_MODE_MULTIRATE ) {
- 		ie->data[pos++] = call->transmultiple | 0x80;
+ 	if (call->bc.transmoderate == TRANS_MODE_MULTIRATE ) {
+ 		ie->data[pos++] = call->bc.transmultiple | 0x80;
 	}
 
 	if ((tc & PRI_TRANS_CAP_DIGITAL) && (ctrl->switchtype == PRI_SWITCH_EUROISDN_E1) &&
-		(call->transmoderate == TRANS_MODE_PACKET)) {
+		(call->bc.transmoderate == TRANS_MODE_PACKET)) {
 		/* Apparently EuroISDN switches don't seem to like user layer 2/3 */
 		return 4;
 	}
 
-	if ((tc & PRI_TRANS_CAP_DIGITAL) && (call->transmoderate == TRANS_MODE_64_CIRCUIT)) {
+	if ((tc & PRI_TRANS_CAP_DIGITAL) && (call->bc.transmoderate == TRANS_MODE_64_CIRCUIT)) {
 		/* Unrestricted digital 64k data calls don't use user layer 2/3 */
 		return 4;
 	}
 
-	if (call->transmoderate != TRANS_MODE_PACKET) {
+	if (call->bc.transmoderate != TRANS_MODE_PACKET) {
 		/* If you have an AT&T 4ESS, you don't send any more info */
-		if ((ctrl->switchtype != PRI_SWITCH_ATT4ESS) && (call->userl1 > -1)) {
-			ie->data[pos++] = call->userl1 | 0x80; /* XXX Ext bit? XXX */
-			if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
-				ie->data[pos++] = call->rateadaption | 0x80;
+		if ((ctrl->switchtype != PRI_SWITCH_ATT4ESS) && (call->bc.userl1 > -1)) {
+			ie->data[pos++] = call->bc.userl1 | 0x80; /* XXX Ext bit? XXX */
+			if (call->bc.userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
+				ie->data[pos++] = call->bc.rateadaption | 0x80;
 			}
 			return pos + 2;
  		}
  
- 		ie->data[pos++] = 0xa0 | (call->userl1 & 0x1f);
+ 		ie->data[pos++] = 0xa0 | (call->bc.userl1 & 0x1f);
  
- 		if (call->userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
+ 		if (call->bc.userl1 == PRI_LAYER_1_ITU_RATE_ADAPT) {
  		    ie->data[pos-1] &= ~0x80; /* clear EXT bit in octet 5 */
- 		    ie->data[pos++] = call->rateadaption | 0x80;
+ 		    ie->data[pos++] = call->bc.rateadaption | 0x80;
  		}
  	}
  	
  	
- 	if (call->userl2 != -1)
- 		ie->data[pos++] = 0xc0 | (call->userl2 & 0x1f);
+ 	if (call->bc.userl2 != -1)
+ 		ie->data[pos++] = 0xc0 | (call->bc.userl2 & 0x1f);
  
- 	if (call->userl3 != -1)
- 		ie->data[pos++] = 0xe0 | (call->userl3 & 0x1f);
+ 	if (call->bc.userl3 != -1)
+ 		ie->data[pos++] = 0xe0 | (call->bc.userl3 & 0x1f);
  
  	return pos + 2;
 }
@@ -3580,13 +3598,13 @@ void q931_init_call_record(struct pri *ctrl, struct q931_call *call, int cr)
 	call->peercallstate = Q931_CALL_STATE_NULL;
 	call->sugcallstate = Q931_CALL_STATE_NOT_SET;
 	call->ri = -1;
-	call->transcapability = -1;
-	call->transmoderate = -1;
-	call->transmultiple = -1;
-	call->userl1 = -1;
-	call->userl2 = -1;
-	call->userl3 = -1;
-	call->rateadaption = -1;
+	call->bc.transcapability = -1;
+	call->bc.transmoderate = -1;
+	call->bc.transmultiple = -1;
+	call->bc.userl1 = -1;
+	call->bc.userl2 = -1;
+	call->bc.userl3 = -1;
+	call->bc.rateadaption = -1;
 	call->progress = -1;
 	call->causecode = -1;
 	call->causeloc = -1;
@@ -3850,7 +3868,8 @@ static int add_ie(struct pri *ctrl, q931_call *call, int msgtype, int ie, q931_i
 	int res, total_res;
 	int have_shift;
 	int ies_count, order;
-	for (x=0;x<sizeof(ies) / sizeof(ies[0]);x++) {
+
+	for (x = 0; x < ARRAY_LEN(ies); ++x) {
 		if (ies[x].ie == ie) {
 			/* This is our baby */
 			if (ies[x].transmit) {
@@ -3878,6 +3897,36 @@ static int add_ie(struct pri *ctrl, q931_call *call, int msgtype, int ie, q931_i
 					if (res > 0) {
 						if ((iet->ie & 0x80) == 0) /* Multibyte IE */
 							iet->len = res - 2;
+						if (msgtype == Q931_SETUP && *codeset == 0) {
+							switch (iet->ie) {
+							case Q931_BEARER_CAPABILITY:
+								if (!(call->cc.saved_ie_flags & CC_SAVED_IE_BC)) {
+									/* Save first BC ie contents for possible CC. */
+									call->cc.saved_ie_flags |= CC_SAVED_IE_BC;
+									q931_append_ie_contents(&call->cc.saved_ie_contents,
+										iet);
+								}
+								break;
+							case Q931_LOW_LAYER_COMPAT:
+								if (!(call->cc.saved_ie_flags & CC_SAVED_IE_LLC)) {
+									/* Save first LLC ie contents for possible CC. */
+									call->cc.saved_ie_flags |= CC_SAVED_IE_LLC;
+									q931_append_ie_contents(&call->cc.saved_ie_contents,
+										iet);
+								}
+								break;
+							case Q931_HIGH_LAYER_COMPAT:
+								if (!(call->cc.saved_ie_flags & CC_SAVED_IE_HLC)) {
+									/* Save first HLC ie contents for possible CC. */
+									call->cc.saved_ie_flags |= CC_SAVED_IE_HLC;
+									q931_append_ie_contents(&call->cc.saved_ie_contents,
+										iet);
+								}
+								break;
+							default:
+								break;
+							}
+						}
 						total_res += res;
 						maxlen -= res;
 						iet = (q931_ie *)((char *)iet + res);
@@ -3965,7 +4014,34 @@ static int q931_handle_ie(int codeset, struct pri *ctrl, q931_call *c, int msg, 
 	int full_ie = Q931_FULL_IE(codeset, ie->ie);
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "-- Processing IE %d (cs%d, %s)\n", ie->ie, codeset, ie2str(full_ie));
-	for (x=0;x<sizeof(ies) / sizeof(ies[0]);x++) {
+	if (msg == Q931_SETUP && codeset == 0) {
+		switch (ie->ie) {
+		case Q931_BEARER_CAPABILITY:
+			if (!(c->cc.saved_ie_flags & CC_SAVED_IE_BC)) {
+				/* Save first BC ie contents for possible CC. */
+				c->cc.saved_ie_flags |= CC_SAVED_IE_BC;
+				q931_append_ie_contents(&c->cc.saved_ie_contents, ie);
+			}
+			break;
+		case Q931_LOW_LAYER_COMPAT:
+			if (!(c->cc.saved_ie_flags & CC_SAVED_IE_LLC)) {
+				/* Save first LLC ie contents for possible CC. */
+				c->cc.saved_ie_flags |= CC_SAVED_IE_LLC;
+				q931_append_ie_contents(&c->cc.saved_ie_contents, ie);
+			}
+			break;
+		case Q931_HIGH_LAYER_COMPAT:
+			if (!(c->cc.saved_ie_flags & CC_SAVED_IE_HLC)) {
+				/* Save first HLC ie contents for possible CC. */
+				c->cc.saved_ie_flags |= CC_SAVED_IE_HLC;
+				q931_append_ie_contents(&c->cc.saved_ie_contents, ie);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	for (x = 0; x < ARRAY_LEN(ies); ++x) {
 		if (full_ie == ies[x].ie) {
 			if (ies[x].receive)
 				return ies[x].receive(full_ie, ctrl, c, msg, ie, ielen(ie));
@@ -4799,13 +4875,14 @@ static void t303_expiry(void *data)
 		/* We got a DISCONNECT, RELEASE, or RELEASE_COMPLETE and no other responses. */
 		pri_fake_clearing(c);
 	} else if (c->t303_expirycnt < 2) {
+		c->cc.saved_ie_contents.length = 0;
+		c->cc.saved_ie_flags = 0;
 		if (ctrl->subchannel && !ctrl->bri)
 			res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
 		else if (c->cis_call)
 			res = send_message(ctrl, c, Q931_SETUP, cis_setup_ies);
 		else
 			res = send_message(ctrl, c, Q931_SETUP, setup_ies);
-
 		if (res) {
 			pri_error(c->pri, "Error resending setup message!\n");
 		}
@@ -4835,13 +4912,14 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		c->keypad_digits[0] = '\0';
 	}
 
-	c->transcapability = req->transmode;
-	c->transmoderate = TRANS_MODE_64_CIRCUIT;
+	c->bc.transcapability = req->transmode;
+	c->bc.transmoderate = TRANS_MODE_64_CIRCUIT;
 	if (!req->userl1)
 		req->userl1 = PRI_LAYER_1_ULAW;
-	c->userl1 = req->userl1;
-	c->userl2 = -1;
-	c->userl3 = -1;
+	c->bc.userl1 = req->userl1;
+	c->bc.userl2 = -1;
+	c->bc.userl3 = -1;
+
 	c->ds1no = (req->channel & 0xff00) >> 8;
 	c->ds1explicit = (req->channel & 0x10000) >> 16;
 	if ((ctrl->localtype == PRI_CPE) && ctrl->subchannel && !ctrl->bri) {
@@ -4893,6 +4971,8 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->cc.party_a = c->local_id;
 	c->cc.party_b_is_remote = 1;
 
+	c->cc.saved_ie_contents.length = 0;
+	c->cc.saved_ie_flags = 0;
 	if (ctrl->subchannel && !ctrl->bri)
 		res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
 	else if (c->cis_call)
@@ -5715,6 +5795,8 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 	case Q931_SETUP:
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 			pri_message(ctrl, "-- Processing Q.931 Call Setup\n");
+		c->cc.saved_ie_contents.length = 0;
+		c->cc.saved_ie_flags = 0;
 		/* Fall through */
 	case Q931_REGISTER:
 		c->channelno = -1;
@@ -5722,13 +5804,14 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->chanflags = 0;
 		c->ds1no = 0;
 		c->ri = -1;
-		c->transcapability = -1;
-		c->transmoderate = -1;
-		c->transmultiple = -1;
-		c->userl1 = -1;
-		c->userl2 = -1;
-		c->userl3 = -1;
-		c->rateadaption = -1;
+
+		c->bc.transcapability = -1;
+		c->bc.transmoderate = -1;
+		c->bc.transmultiple = -1;
+		c->bc.userl1 = -1;
+		c->bc.userl2 = -1;
+		c->bc.userl3 = -1;
+		c->bc.rateadaption = -1;
 
 		q931_party_address_init(&c->called);
 		q931_party_id_init(&c->local_id);
@@ -6572,9 +6655,9 @@ static void q931_fill_ring_event(struct pri *ctrl, struct q931_call *call)
 	ctrl->ev.ring.flexible = !(call->chanflags & FLAG_EXCLUSIVE);
 	ctrl->ev.ring.cref = call->cr;
 	ctrl->ev.ring.call = call->master_call;
-	ctrl->ev.ring.layer1 = call->userl1;
+	ctrl->ev.ring.layer1 = call->bc.userl1;
 	ctrl->ev.ring.complete = call->complete;
-	ctrl->ev.ring.ctype = call->transcapability;
+	ctrl->ev.ring.ctype = call->bc.transcapability;
 	ctrl->ev.ring.progress = call->progress;
 	ctrl->ev.ring.progressmask = call->progressmask;
 	ctrl->ev.ring.reversecharge = call->reversecharge;
@@ -6883,7 +6966,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		c->peercallstate = Q931_CALL_STATE_CALL_INITIATED;
 		/* it's not yet a call since higher level can respond with RELEASE or RELEASE_COMPLETE */
 		c->alive = 0;
-		if (c->transmoderate != TRANS_MODE_64_CIRCUIT) {
+		if (c->bc.transmoderate != TRANS_MODE_64_CIRCUIT) {
 			q931_release_complete(ctrl, c, PRI_CAUSE_BEARERCAPABILITY_NOTIMPL);
 			break;
 		}

@@ -407,6 +407,38 @@ enum Q931_HOLD_STATE {
 	Q931_HOLD_STATE_RETRIEVE_IND,
 };
 
+/* Only save the first of each BC, HLC, and LLC from the initial SETUP. */
+#define CC_SAVED_IE_BC	(1 << 0)	/*!< BC has already been saved. */
+#define CC_SAVED_IE_HLC	(1 << 1)	/*!< HLC has already been saved. */
+#define CC_SAVED_IE_LLC	(1 << 2)	/*!< LLC has already been saved. */
+
+/*! Saved ie contents for BC, HLC, and LLC. (Only the first of each is saved.) */
+struct q931_saved_ie_contents {
+	/*! Length of saved ie contents. */
+	unsigned char length;
+	/*! Saved ie contents data. */
+	unsigned char data[
+		/* Bearer Capability has a max length of 12. */
+		12
+		/* High Layer Compatibility has a max length of 5. */
+		+ 5
+		/* Low Layer Compatibility has a max length of 18. */
+		+ 18
+		/* Room for null terminator just in case. */
+		+ 1];
+};
+
+/*! Digested BC parameters. */
+struct decoded_bc {
+	int transcapability;
+	int transmoderate;
+	int transmultiple;
+	int userl1;
+	int userl2;
+	int userl3;
+	int rateadaption;
+};
+
 /* q931_call datastructure */
 struct q931_call {
 	struct pri *pri;	/* PRI */
@@ -431,14 +463,8 @@ struct q931_call {
 	
 	int ri;				/* Restart Indicator (Restart Indicator IE) */
 
-	/* Bearer Capability */
-	int transcapability;
-	int transmoderate;
-	int transmultiple;
-	int userl1;
-	int userl2;
-	int userl3;
-	int rateadaption;
+	/*! Bearer Capability */
+	struct decoded_bc bc;
 
 	/*!
 	 * \brief TRUE if the call is a Call Independent Signalling connection.
@@ -578,11 +604,14 @@ struct q931_call {
 		struct pri_cc_record *record;
 		/*! Original calling party. */
 		struct q931_party_id party_a;
+		/*! Saved BC, HLC, and LLC from initial SETUP */
+		struct q931_saved_ie_contents saved_ie_contents;
+		/*! Only save the first of each BC, HLC, and LLC from the initial SETUP. */
+		unsigned char saved_ie_flags;
 		/*! TRUE if the remote party is party B. */
 		unsigned char party_b_is_remote;
 		/*! TRUE if call needs to be hung up. */
 		unsigned char hangup_call;
-/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
 	} cc;
 };
 
@@ -694,7 +723,10 @@ struct pri_cc_record {
 	struct q931_party_id party_a;
 	/*! Original called party. */
 	struct q931_party_address party_b;
-/* BUGBUG need to record BC, HLC, and LLC from initial SETUP */
+	/*! Saved BC, HLC, and LLC from initial SETUP */
+	struct q931_saved_ie_contents saved_ie_contents;
+	/*! Saved decoded BC */
+	struct decoded_bc bc;
 
 	/*! FSM parameters. */
 	union {
