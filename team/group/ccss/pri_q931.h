@@ -82,6 +82,9 @@ typedef struct q931_ie {
 
 /* Q.931 / National ISDN Message Types */
 
+/*! Send this facility APDU on the next message to go out. */
+#define Q931_ANY_MESSAGE			-1
+
 /* Call Establishment Messages */
 #define Q931_ALERTING 				0x01
 #define Q931_CALL_PROCEEDING		0x02

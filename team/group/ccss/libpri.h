@@ -51,6 +51,7 @@
 #define	PRI_DEBUG_Q931_ANOMALY 	(1 << 7)	/* Show unexpected events */
 #define PRI_DEBUG_APDU			(1 << 8)	/* Debug of APDU components such as ROSE */
 #define PRI_DEBUG_AOC			(1 << 9)	/* Debug of Advice of Charge ROSE Messages */
+#define PRI_DEBUG_CC			(1 << 10)	/* Debug call-completion. */
 
 #define PRI_DEBUG_ALL			(0xffff)	/* Everything */
 
@@ -1454,7 +1455,7 @@ void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention);
 long pri_cc_available(struct pri *ctrl, q931_call *call);
 int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
 void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
-void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);
+int pri_cc_remote_user_free(struct pri *ctrl, long cc_id, int is_ccbs_busy);
 int pri_cc_status_req(struct pri *ctrl, long cc_id);
 void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_status(struct pri *ctrl, long cc_id, int status);
