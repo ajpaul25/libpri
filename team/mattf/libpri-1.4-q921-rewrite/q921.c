@@ -1055,7 +1055,6 @@ static pri_event * q921_sabme_rx(struct pri *pri, q921_h *h)
 			pri->ev.gen.e = PRI_EVENT_DCHAN_UP;
 			res = &pri->ev;
 		}
-		res = &pri->ev;
 		start_t203(pri);
 		q921_setstate(pri, Q921_MULTI_FRAME_ESTABLISHED);
 		break;
