@@ -1055,14 +1055,19 @@ static unsigned char *enc_etsi_ptmp_cc_interrogate_rsp_general(struct pri *ctrl,
 	/* Build the CallDetails list. */
 	idx = 0;
 	for (cc_record = master->cc.pool; cc_record; cc_record = cc_record->next) {
-		if ((!cc_record->is_ccnr) != (invoke->operation == ROSE_ETSI_CCBSInterrogate)) {
-			/* Record is not for the requested CCBS/CCNR mode. */
+		if (cc_record->ccbs_reference_id == CC_PTMP_INVALID_ID
+			|| (!cc_record->is_ccnr) != (invoke->operation == ROSE_ETSI_CCBSInterrogate)) {
+			/*
+			 * Record does not have a reference id yet
+			 * or is not for the requested CCBS/CCNR mode.
+			 */
 			continue;
 		}
 		if (party_a_number.valid) {
 			/* The party A number was given. */
 			party_a_number.presentation = cc_record->party_a.number.presentation;
 			if (q931_party_number_cmp(&party_a_number, &cc_record->party_a.number)) {
+				/* Record party A does not match. */
 				continue;
 			}
 		}
