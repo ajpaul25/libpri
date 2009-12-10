@@ -3918,7 +3918,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_LINK_CANCEL);
 		break;
 	case ROSE_ETSI_CCBSInterrogate:
-/* BUGBUG */
+		pri_cc_interrogate_rsp(ctrl, call, invoke);
 		break;
 	case ROSE_ETSI_CCBSErase:
 		break;
@@ -4016,7 +4016,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST);
 		break;
 	case ROSE_ETSI_CCNRInterrogate:
-/* BUGBUG */
+		pri_cc_interrogate_rsp(ctrl, call, invoke);
 		break;
 	case ROSE_ETSI_CCNR_T_Request:
 		break;

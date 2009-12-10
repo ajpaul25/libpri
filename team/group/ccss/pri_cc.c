@@ -301,9 +301,19 @@ struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 	cc_record->bc = call->bc;
 /*! \todo BUGBUG need more initialization?? */
 
-	/* Insert the new record into the database */
-	cc_record->next = ctrl->cc.pool;
-	ctrl->cc.pool = cc_record;
+	/*
+	 * Append the new record to the end of the list so they are in
+	 * cronological order for interrogations.
+	 */
+	if (ctrl->cc.pool) {
+		struct pri_cc_record *cur;
+
+		for (cur = ctrl->cc.pool; cur->next; cur = cur->next) {
+		}
+		cur->next = cc_record;
+	} else {
+		ctrl->cc.pool = cc_record;
+	}
 
 	return cc_record;
 }
@@ -926,6 +936,255 @@ static int send_ccbs_stop_alerting(struct pri *ctrl, q931_call *call, struct pri
 		|| q931_facility(ctrl, call)) {
 		pri_message(ctrl,
 			"Could not schedule facility message for CCBSStopAlerting.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+/*!
+ * \internal
+ * \brief Copy the cc information into the ETSI ROSE call-information record.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call_information ROSE call-information record to fill in.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void q931_copy_call_information_to_etsi_rose(struct pri *ctrl, struct roseEtsiCallInformation *call_information, const struct pri_cc_record *cc_record)
+{
+	q931_copy_address_to_rose(ctrl, &call_information->address_of_b, &cc_record->party_b);
+
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(call_information->q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		call_information->q931ie.length = cc_record->saved_ie_contents.length;
+		memcpy(call_information->q931ie.contents, cc_record->saved_ie_contents.data,
+			cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "call-information q931 ie contents did not fit.\n");
+	}
+
+	call_information->ccbs_reference = cc_record->ccbs_reference_id;
+
+	q931_copy_subaddress_to_rose(ctrl, &call_information->subaddress_of_a,
+		&cc_record->party_a.subaddress);
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI PTMP specific CCBSInterrogate/CCNRInterrogate result message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param invoke Decoded ROSE invoke message contents.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptmp_cc_interrogate_rsp_specific(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, const struct rose_msg_invoke *invoke,
+	const struct pri_cc_record *cc_record)
+{
+	struct rose_msg_result msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = invoke->invoke_id;
+	msg.operation = invoke->operation;
+
+	msg.args.etsi.CCBSInterrogate.recall_mode = cc_record->option.recall_mode;
+	msg.args.etsi.CCBSInterrogate.call_details.num_records = 1;
+	q931_copy_call_information_to_etsi_rose(ctrl,
+		&msg.args.etsi.CCBSInterrogate.call_details.list[0], cc_record);
+
+	pos = rose_encode_result(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI PTMP general CCBSInterrogate/CCNRInterrogate result message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param invoke Decoded ROSE invoke message contents.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptmp_cc_interrogate_rsp_general(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, const struct rose_msg_invoke *invoke)
+{
+	struct rose_msg_result msg;
+	struct q931_party_number party_a_number;
+	const struct pri_cc_record *cc_record;
+	unsigned char *new_pos;
+	struct pri *master;
+	unsigned idx;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = invoke->invoke_id;
+	msg.operation = invoke->operation;
+
+	master = PRI_MASTER(ctrl);
+	msg.args.etsi.CCBSInterrogate.recall_mode = master->cc.option.recall_mode;
+
+	/* Convert the given party A number. */
+	q931_party_number_init(&party_a_number);
+	if (invoke->args.etsi.CCBSInterrogate.a_party_number.length) {
+		/* The party A number was given. */
+		rose_copy_number_to_q931(ctrl, &party_a_number,
+			&invoke->args.etsi.CCBSInterrogate.a_party_number);
+	}
+
+	/* Build the CallDetails list. */
+	idx = 0;
+	for (cc_record = master->cc.pool; cc_record; cc_record = cc_record->next) {
+		if ((!cc_record->is_ccnr) != (invoke->operation == ROSE_ETSI_CCBSInterrogate)) {
+			/* Record is not for the requested CCBS/CCNR mode. */
+			continue;
+		}
+		if (party_a_number.valid) {
+			/* The party A number was given. */
+			party_a_number.presentation = cc_record->party_a.number.presentation;
+			if (q931_party_number_cmp(&party_a_number, &cc_record->party_a.number)) {
+				continue;
+			}
+		}
+
+		/* Add call information to the CallDetails list. */
+		q931_copy_call_information_to_etsi_rose(ctrl,
+			&msg.args.etsi.CCBSInterrogate.call_details.list[idx], cc_record);
+
+		++idx;
+		if (ARRAY_LEN(msg.args.etsi.CCBSInterrogate.call_details.list) <= idx) {
+			/* List is full. */
+			break;
+		}
+	}
+	msg.args.etsi.CCBSInterrogate.call_details.num_records = idx;
+
+	new_pos = rose_encode_result(ctrl, pos, end, &msg);
+
+	/* Reduce the CallDetails list until it fits into the given buffer. */
+	while (!new_pos && msg.args.etsi.CCBSInterrogate.call_details.num_records) {
+		--msg.args.etsi.CCBSInterrogate.call_details.num_records;
+		new_pos = rose_encode_result(ctrl, pos, end, &msg);
+	}
+
+	return new_pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue a specific CCBSInterrogate/CCNRInterrogate result message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode CCBSInterrogate/CCNRInterrogate response.
+ * \param invoke Decoded ROSE invoke message contents.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_cc_interrogate_rsp_specific(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke, const struct pri_cc_record *cc_record)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	end =
+		enc_etsi_ptmp_cc_interrogate_rsp_specific(ctrl, buffer, buffer + sizeof(buffer),
+			invoke, cc_record);
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue a general CCBSInterrogate/CCNRInterrogate result message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode CCBSInterrogate/CCNRInterrogate response.
+ * \param invoke Decoded ROSE invoke message contents.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_cc_interrogate_rsp_general(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	end =
+		enc_etsi_ptmp_cc_interrogate_rsp_general(ctrl, buffer, buffer + sizeof(buffer),
+			invoke);
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL);
+}
+
+/*!
+ * \brief Respond to the received CCBSInterrogate/CCNRInterrogate invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which the message came.
+ * \param invoke Decoded ROSE invoke message contents.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int pri_cc_interrogate_rsp(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke)
+{
+	int encode_result;
+
+	if (!PRI_MASTER(ctrl)->cc_support) {
+		/* Call completion is disabled. */
+		return send_facility_error(ctrl, call, invoke->invoke_id,
+			ROSE_ERROR_Gen_NotSubscribed);
+	}
+
+	if (invoke->args.etsi.CCBSInterrogate.ccbs_reference_present) {
+		struct pri_cc_record *cc_record;
+
+		/* Specific CC request interrogation. */
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSInterrogate.ccbs_reference);
+		if (!cc_record
+			|| ((!cc_record->is_ccnr)
+				== (invoke->operation == ROSE_ETSI_CCBSInterrogate))) {
+			/* Record does not exist or is not for the requested CCBS/CCNR mode. */
+			return send_facility_error(ctrl, call, invoke->invoke_id,
+				ROSE_ERROR_CCBS_InvalidCCBSReference);
+		}
+		encode_result = rose_cc_interrogate_rsp_specific(ctrl, call, invoke, cc_record);
+	} else {
+		/* General CC request interrogation. */
+		encode_result = rose_cc_interrogate_rsp_general(ctrl, call, invoke);
+	}
+
+	if (encode_result || q931_facility(ctrl, call)) {
+		pri_message(ctrl,
+			"Could not schedule facility message for cc-interrogate.\n");
 		return -1;
 	}
 
