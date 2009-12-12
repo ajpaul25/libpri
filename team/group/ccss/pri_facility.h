@@ -229,5 +229,6 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, const struct fac_extension_header *header, const struct rose_msg_reject *reject);
 
 int pri_cc_interrogate_rsp(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke);
+void pri_cc_request(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke);
 
 #endif /* _PRI_FACILITY_H */

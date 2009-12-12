@@ -42,6 +42,11 @@ const char *pri_facility_error2str(int facility_error_code)
 	return rose_error2str(facility_error_code);
 }
 
+const char *pri_facility_reject2str(int facility_reject_code)
+{
+	return rose_reject2str(facility_reject_code);
+}
+
 static int redirectingreason_from_q931(struct pri *ctrl, int redirectingreason)
 {
 	int value;
@@ -3545,7 +3550,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			 */
 			send_facility_error(ctrl, call, invoke->invoke_id,
 				ROSE_ERROR_Gen_ResourceUnavailable);
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
 
@@ -3598,7 +3602,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		if (!subcmd) {
 			send_facility_error(ctrl, call, invoke->invoke_id,
 				ROSE_ERROR_Gen_ResourceUnavailable);
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
 
@@ -3751,7 +3754,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			call->redirecting.state = Q931_REDIRECTING_STATE_IDLE;
 			subcmd = q931_alloc_subcommand(ctrl);
 			if (!subcmd) {
-				pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 				break;
 			}
 			/* Setup redirecting subcommand */
@@ -3839,6 +3841,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 #endif	/* Not handled yet */
 #if 0	/* Not handled yet */
 	case ROSE_ETSI_StatusRequest:
+		/*! \todo BUGBUG ROSE_ETSI_StatusRequest not handled */
 		break;
 #endif	/* Not handled yet */
 	case ROSE_ETSI_CallInfoRetain:
@@ -3864,47 +3867,24 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
 		cc_record->call_linkage_id =
 			invoke->args.etsi.CallInfoRetain.call_linkage_id & 0x7F;
-		if (pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE)) {
-			break;
-		}
+		call->cc.record = cc_record;
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE);
 
+/* BUGBUG move to pri_cc_act_pass_up_cc_available() --v */
 		subcmd = q931_alloc_subcommand(ctrl);
 		if (!subcmd) {
-			pri_cc_event(ctrl, call, cc_record, CC_EVENT_CANCEL);
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
-		call->cc.record = cc_record;
 
 		subcmd->cmd = PRI_SUBCMD_CC_AVAILABLE;
 		subcmd->u.cc_available.cc_id = cc_record->record_id;
+/* BUGBUG move to pri_cc_act_pass_up_cc_available() --^ */
 		break;
 	case ROSE_ETSI_CCBSRequest:
-		cc_record = pri_cc_find_by_linkage(ctrl,
-			invoke->args.etsi.CCBSRequest.call_linkage_id);
-		if (!cc_record) {
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_InvalidCallLinkageID);
-			break;
-		}
-		if (cc_record->state != CC_STATE_AVAILABLE) {
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_IsAlreadyActivated);
-			break;
-		}
-		cc_record->ccbs_reference_id = pri_cc_new_reference_id(ctrl);
-		if (cc_record->ccbs_reference_id == CC_PTMP_INVALID_ID) {
-			/* Could not allocate a call reference id. */
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_OutgoingCCBSQueueFull);
-			break;
-		}
-
-		cc_record->response.signaling = call;
-		cc_record->response.invoke_operation = invoke->operation;
-		cc_record->response.invoke_id = invoke->invoke_id;
-		cc_record->is_ccnr = 0;/* ccbs */
-		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST);
+		pri_cc_request(ctrl, call, invoke);
+		break;
+	case ROSE_ETSI_CCNRRequest:
+		pri_cc_request(ctrl, call, invoke);
 		break;
 	case ROSE_ETSI_CCBSDeactivate:
 		cc_record = pri_cc_find_by_reference(ctrl,
@@ -3920,9 +3900,34 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_ETSI_CCBSInterrogate:
 		pri_cc_interrogate_rsp(ctrl, call, invoke);
 		break;
+	case ROSE_ETSI_CCNRInterrogate:
+		pri_cc_interrogate_rsp(ctrl, call, invoke);
+		break;
 	case ROSE_ETSI_CCBSErase:
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSErase.ccbs_reference);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_LINK_CANCEL);
 		break;
 	case ROSE_ETSI_CCBSRemoteUserFree:
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSRemoteUserFree.ccbs_reference);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_REMOTE_USER_FREE);
 		break;
 	case ROSE_ETSI_CCBSCall:
 		cc_record = pri_cc_find_by_reference(ctrl,
@@ -3934,20 +3939,91 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			break;
 		}
 
+		/* Save off data to know how to send back any response. */
 		cc_record->response.signaling = call;
 		cc_record->response.invoke_operation = invoke->operation;
 		cc_record->response.invoke_id = invoke->invoke_id;
+
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_RECALL);
 		break;
 	case ROSE_ETSI_CCBSStatusRequest:
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSStatusRequest.ccbs_reference);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+
+		/* Save off data to know how to send back any response. */
+		cc_record->response.signaling = call;
+		cc_record->response.invoke_operation = invoke->operation;
+		cc_record->response.invoke_id = invoke->invoke_id;
+
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
+			break;
+		}
+
+		subcmd->cmd = PRI_SUBCMD_CC_STATUS_REQ;
+		subcmd->u.cc_status_req.cc_id = cc_record->record_id;
 		break;
 	case ROSE_ETSI_CCBSBFree:
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSBFree.ccbs_reference);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_B_FREE);
 		break;
 	case ROSE_ETSI_EraseCallLinkageID:
+		cc_record = pri_cc_find_by_linkage(ctrl,
+			invoke->args.etsi.EraseCallLinkageID.call_linkage_id);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+		/*
+		 * T_RETENTION expired on the network side so we will pretend
+		 * that it expired on our side.
+		 */
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_RETENTION);
 		break;
 	case ROSE_ETSI_CCBSStopAlerting:
+		cc_record = pri_cc_find_by_reference(ctrl,
+			invoke->args.etsi.CCBSStopAlerting.ccbs_reference);
+		if (!cc_record) {
+			/*
+			 * Ignore any status requests that we do not have a record.
+			 * We will not participate in any CC requests that we did
+			 * not initiate.
+			 */
+			break;
+		}
+
+		subcmd = q931_alloc_subcommand(ctrl);
+		if (!subcmd) {
+			break;
+		}
+
+		subcmd->cmd = PRI_SUBCMD_CC_STOP_ALERTING;
+		subcmd->u.cc_stop_alerting.cc_id = cc_record->record_id;
 		break;
 	case ROSE_ETSI_CCBS_T_Request:
+		break;
+	case ROSE_ETSI_CCNR_T_Request:
 		break;
 	case ROSE_ETSI_CCBS_T_Call:
 		break;
@@ -3973,52 +4049,8 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		if (!cc_record) {
 			break;
 		}
-		if (pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE)) {
-			break;
-		}
-
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			pri_cc_event(ctrl, call, cc_record, CC_EVENT_CANCEL);
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
-			break;
-		}
 		call->cc.record = cc_record;
-
-		subcmd->cmd = PRI_SUBCMD_CC_AVAILABLE;
-		subcmd->u.cc_available.cc_id = cc_record->record_id;
-		break;
-	case ROSE_ETSI_CCNRRequest:
-		cc_record = pri_cc_find_by_linkage(ctrl,
-			invoke->args.etsi.CCNRRequest.call_linkage_id);
-		if (!cc_record) {
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_InvalidCallLinkageID);
-			break;
-		}
-		if (cc_record->state != CC_STATE_AVAILABLE) {
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_IsAlreadyActivated);
-			break;
-		}
-		cc_record->ccbs_reference_id = pri_cc_new_reference_id(ctrl);
-		if (cc_record->ccbs_reference_id == CC_PTMP_INVALID_ID) {
-			/* Could not allocate a call reference id. */
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_CCBS_OutgoingCCBSQueueFull);
-			break;
-		}
-
-		cc_record->response.signaling = call;
-		cc_record->response.invoke_operation = invoke->operation;
-		cc_record->response.invoke_id = invoke->invoke_id;
-		cc_record->is_ccnr = 1;/* ccnr */
-		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST);
-		break;
-	case ROSE_ETSI_CCNRInterrogate:
-		pri_cc_interrogate_rsp(ctrl, call, invoke);
-		break;
-	case ROSE_ETSI_CCNR_T_Request:
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE);
 		break;
 	case ROSE_QSIG_CallingName:
 		/* CallingName is put in remote_id.name */
@@ -4033,7 +4065,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		/* Setup connected line subcommand */
 		subcmd = q931_alloc_subcommand(ctrl);
 		if (!subcmd) {
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
 		subcmd->cmd = PRI_SUBCMD_CONNECTED_LINE;
@@ -4157,7 +4188,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		if (!subcmd) {
 			send_facility_error(ctrl, call, invoke->invoke_id,
 				ROSE_ERROR_Gen_ResourceUnavailable);
-			pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 			break;
 		}
 
@@ -4351,7 +4381,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			call->redirecting.state = Q931_REDIRECTING_STATE_IDLE;
 			subcmd = q931_alloc_subcommand(ctrl);
 			if (!subcmd) {
-				pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 				break;
 			}
 			/* Setup redirecting subcommand */

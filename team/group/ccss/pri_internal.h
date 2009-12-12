@@ -650,8 +650,12 @@ enum CC_EVENTS {
 	CC_EVENT_CC_REQUEST,
 	/*! Requesting CC activation accepted. */
 	CC_EVENT_CC_REQUEST_ACCEPT,
+	/*! Requesting CC activation failed (error/reject received). */
+	CC_EVENT_CC_REQUEST_FAIL,
 	/*! CC party B is available. */
 	CC_EVENT_REMOTE_USER_FREE,
+	/*! CC party B is available, party A is busy or CCBS busy. */
+	CC_EVENT_B_FREE,
 	/*! CC poll/prompt for party A status. */
 	CC_EVENT_A_STATUS,
 	/*! CC party A is free/available for recall. */

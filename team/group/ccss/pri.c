@@ -1420,8 +1420,6 @@ char *pri_dump_info_str(struct pri *ctrl)
 		}
 	}
 
-/* BUGBUG add display of active call completion information. */
-
 	if (buf_size < used) {
 		pri_message(ctrl,
 			"pri_dump_info_str(): Produced output exceeded buffer capacity. (Truncated)\n");
