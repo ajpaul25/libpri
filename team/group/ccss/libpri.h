@@ -527,7 +527,7 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_CC_STATUS				12	/*!< Unsolicited update of CC party A status */
 #define PRI_SUBCMD_CC_CALL					13	/*!< Indicate that this call is a CC callback */
 #define PRI_SUBCMD_CC_CANCEL				14	/*!< Unsolicited indication that CC is canceled */
-#define PRI_SUBCMD_CC_DEACTIVATE_RSP		15	/*!< CC deactivation request response */
+#define PRI_SUBCMD_CC_STOP_ALERTING			15	/*!< Indicate that someone else has responed to remote user free */
 
 struct pri_subcmd_status_request {
 	/*!
@@ -584,18 +584,18 @@ struct pri_subcmd_cc_request_rsp {
 	 * \details
 	 * success(0),
 	 * timeout(1),
-	 * short_term_denial(2),
-	 * long_term_denial(3),
-	 * not_subscribed(4)
+	 * error(2),
+	 * reject(3)
 	 */
 	int status;
 	/*!
-	 * \brief Error code that can be converted to a string to further
+	 * \brief Failure code that can be converted to a string to further
 	 * explain the non-timeout failure.
-	 * \note Valid when non-zero.
+	 * \note Valid when status is error or reject.
 	 * \note Use pri_facility_error2str() to convert the error_code.
+	 * \note Use pri_facility_reject2str() to convert the reject_code.
 	 */
-	int error_code;
+	int fail_code;
 	/*!
 	 * \brief TRUE if negotiated to retain CC service if B busy again.
 	 */
@@ -624,26 +624,6 @@ struct pri_subcmd_cc_status {
 	int status;
 };
 
-struct pri_subcmd_cc_deactivate_rsp {
-	/*! \brief Call-Completion record id */
-	long cc_id;
-	/*!
-	 * \brief Status of the requested call-completion deactivation.
-	 * \details
-	 * success(0),
-	 * timeout(1),
-	 * fail(2)
-	 */
-	int status;
-	/*!
-	 * \brief Error code that can be converted to a string to further
-	 * explain the non-timeout failure.
-	 * \note Valid when non-zero.
-	 * \note Use pri_facility_error2str() to convert the error_code.
-	 */
-	int error_code;
-};
-
 struct pri_subcommand {
 	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
@@ -664,7 +644,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_status cc_status;
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_id cc_cancel;
-		struct pri_subcmd_cc_deactivate_rsp cc_deactivate_rsp;
+		struct pri_subcmd_cc_id cc_stop_alerting;
 	} u;
 };
 
@@ -1022,6 +1002,15 @@ char *pri_cause2str(int cause);
  * \return Descriptive error string.
  */
 const char *pri_facility_error2str(int facility_error_code);
+
+/*!
+ * \brief Convert the given facility reject code to a descriptive string.
+ *
+ * \param facility_reject_code Error code to convert to a string.
+ *
+ * \return Descriptive reject string.
+ */
+const char *pri_facility_reject2str(int facility_reject_code);
 
 /* Acknowledge a call and place it on the given channel.  Set info to non-zero if there
    is in-band data available on the channel */
@@ -1464,14 +1453,13 @@ void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention);
 
 long pri_cc_available(struct pri *ctrl, q931_call *call);
 int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
-void pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
+int pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
 int pri_cc_remote_user_free(struct pri *ctrl, long cc_id, int is_ccbs_busy);
 int pri_cc_status_req(struct pri *ctrl, long cc_id);
 void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_status(struct pri *ctrl, long cc_id, int status);
-int pri_cc_call(struct pri *ctrl, long cc_id, q931_call *call, int channel, int exclusive);
+int pri_cc_call(struct pri *ctrl, long cc_id, q931_call *call, struct pri_sr *req);
 void pri_cc_cancel(struct pri *ctrl, long cc_id);
-int pri_cc_deactivate_req(struct pri *ctrl, long cc_id);
 
 /* Get/Set PRI Timers  */
 #define PRI_GETSET_TIMERS

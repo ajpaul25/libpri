@@ -900,6 +900,7 @@ struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl)
 		return &ctrl->subcmds.subcmd[ctrl->subcmds.counter_subcmd++];
 	}
 
+	pri_error(ctrl, "ERROR: Too many facility subcommands\n");
 	return NULL;
 }
 
