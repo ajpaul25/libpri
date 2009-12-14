@@ -652,10 +652,12 @@ enum CC_EVENTS {
 	CC_EVENT_CC_REQUEST_ACCEPT,
 	/*! Requesting CC activation failed (error/reject received). */
 	CC_EVENT_CC_REQUEST_FAIL,
-	/*! CC party B is available. */
+	/*! CC party B is available, party A is considered free. */
 	CC_EVENT_REMOTE_USER_FREE,
 	/*! CC party B is available, party A is busy or CCBS busy. */
 	CC_EVENT_B_FREE,
+	/*! Someone else responded to the CC recall. */
+	CC_EVENT_STOP_ALERTING,
 	/*! CC poll/prompt for party A status. */
 	CC_EVENT_A_STATUS,
 	/*! CC party A is free/available for recall. */
@@ -750,8 +752,6 @@ struct pri_cc_record {
 			enum CC_PARTY_A_AVAILABILITY party_a_status_acc;
 			/*! Party A availability status */
 			enum CC_PARTY_A_AVAILABILITY party_a_status;
-			/*! TRUE if no B channels available for recall call. */
-			unsigned char is_ccbs_busy;
 		} ptmp;
 		/*! PTP FSM parameters. */
 		struct {

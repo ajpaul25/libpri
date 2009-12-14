@@ -521,13 +521,14 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_CC_AVAILABLE				6	/*!< Indicate that CC is available */
 #define PRI_SUBCMD_CC_REQ					7	/*!< CC activation request */
 #define PRI_SUBCMD_CC_REQ_RSP				8	/*!< CC activation request response */
-#define PRI_SUBCMD_CC_REMOTE_USER_FREE		9	/*!< Indicate that CC party B is available */
-#define PRI_SUBCMD_CC_STATUS_REQ			10	/*!< Request/prod to receive updates of CC party A status */
-#define PRI_SUBCMD_CC_STATUS_REQ_RSP		11	/*!< Requested update of CC party A status */
-#define PRI_SUBCMD_CC_STATUS				12	/*!< Unsolicited update of CC party A status */
-#define PRI_SUBCMD_CC_CALL					13	/*!< Indicate that this call is a CC callback */
-#define PRI_SUBCMD_CC_CANCEL				14	/*!< Unsolicited indication that CC is canceled */
-#define PRI_SUBCMD_CC_STOP_ALERTING			15	/*!< Indicate that someone else has responed to remote user free */
+#define PRI_SUBCMD_CC_REMOTE_USER_FREE		9	/*!< Indicate that CC party B is available, party A is considered free. */
+#define PRI_SUBCMD_CC_B_FREE				10	/*!< Indicate that CC party B is available, party A is considered busy. */
+#define PRI_SUBCMD_CC_STATUS_REQ			11	/*!< Request/prod to receive updates of CC party A status */
+#define PRI_SUBCMD_CC_STATUS_REQ_RSP		12	/*!< Requested update of CC party A status */
+#define PRI_SUBCMD_CC_STATUS				13	/*!< Unsolicited update of CC party A status */
+#define PRI_SUBCMD_CC_CALL					14	/*!< Indicate that this call is a CC callback */
+#define PRI_SUBCMD_CC_CANCEL				15	/*!< Unsolicited indication that CC is canceled */
+#define PRI_SUBCMD_CC_STOP_ALERTING			16	/*!< Indicate that someone else has responed to remote user free */
 
 struct pri_subcmd_status_request {
 	/*!
@@ -602,16 +603,6 @@ struct pri_subcmd_cc_request_rsp {
 	int retain_service;
 };
 
-struct pri_subcmd_cc_b_free {
-	/*! \brief Call-Completion record id */
-	long cc_id;
-	/*!
-	 * \brief TRUE if Party A is CCBS busy.
-	 * \note PTMP received CCBSBFree message because party A was busy or CCBS busy.
-	 */
-	int busy;
-};
-
 struct pri_subcmd_cc_status {
 	/*! \brief Call-Completion record id */
 	long cc_id;
@@ -638,13 +629,14 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_id cc_available;
 		struct pri_subcmd_cc_request cc_request;
 		struct pri_subcmd_cc_request_rsp cc_request_rsp;
-		struct pri_subcmd_cc_b_free cc_remote_user_free;
+		struct pri_subcmd_cc_id cc_remote_user_free;
+		struct pri_subcmd_cc_id cc_b_free;
+		struct pri_subcmd_cc_id cc_stop_alerting;
 		struct pri_subcmd_cc_id cc_status_req;
 		struct pri_subcmd_cc_status cc_status_req_rsp;
 		struct pri_subcmd_cc_status cc_status;
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_id cc_cancel;
-		struct pri_subcmd_cc_id cc_stop_alerting;
 	} u;
 };
 
@@ -1454,7 +1446,9 @@ void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention);
 long pri_cc_available(struct pri *ctrl, q931_call *call);
 int pri_cc_req(struct pri *ctrl, long cc_id, int mode);
 int pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
-int pri_cc_remote_user_free(struct pri *ctrl, long cc_id, int is_ccbs_busy);
+void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);
+void pri_cc_b_free(struct pri *ctrl, long cc_id);
+void pri_cc_stop_alerting(struct pri *ctrl, long cc_id);
 int pri_cc_status_req(struct pri *ctrl, long cc_id);
 void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_status(struct pri *ctrl, long cc_id, int status);
