@@ -1369,6 +1369,9 @@ static const char *pri_cc_fsm_event_str(enum CC_EVENTS event)
 	case CC_EVENT_B_FREE:
 		str = "CC_EVENT_B_FREE";
 		break;
+	case CC_EVENT_STOP_ALERTING:
+		str = "CC_EVENT_STOP_ALERTING";
+		break;
 	case CC_EVENT_A_STATUS:
 		str = "CC_EVENT_A_STATUS";
 		break;
@@ -2378,14 +2381,10 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
 		pri_cc_act_set_call_to_hangup(ctrl, call);
 		break;
+	case CC_EVENT_B_FREE:
+		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
+		break;
 	case CC_EVENT_REMOTE_USER_FREE:
-		if (cc_record->fsm.ptmp.is_ccbs_busy) {
-			pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			cc_record->state = CC_STATE_SUSPENDED;
-			break;
-		}
 		switch (cc_record->fsm.ptmp.party_a_status) {
 		case CC_PARTY_A_AVAILABILITY_INVALID:
 			if (!pri_cc_get_t_ccbs1_status(cc_record)) {
@@ -2507,18 +2506,6 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
 		pri_cc_act_set_call_to_hangup(ctrl, call);
 		break;
-	case CC_EVENT_REMOTE_USER_FREE:
-		if (cc_record->fsm.ptmp.is_ccbs_busy) {
-			pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			if (cc_record->fsm.ptmp.extended_t_ccbs1) {
-				pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-				pri_cc_act_add_raw_a_status_busy(ctrl, cc_record);
-				pri_cc_act_pass_up_status_rsp_a_indirect(ctrl, cc_record);
-			}
-			cc_record->state = CC_STATE_SUSPENDED;
-		}
-		break;
 	case CC_EVENT_A_STATUS:
 		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
 		pri_cc_act_start_extended_t_ccbs1(ctrl, cc_record);
@@ -2562,9 +2549,13 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
 		pri_cc_act_promote_a_status(ctrl, cc_record);
 		pri_cc_act_pass_up_a_status(ctrl, cc_record);
-		pri_cc_act_reset_raw_a_status(ctrl, cc_record);
-		pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
-		//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
+		/* Optimization due to flattening. */
+		//if (!pri_cc_get_t_ccbs1_status(cc_record))
+		{
+			pri_cc_act_reset_raw_a_status(ctrl, cc_record);
+			pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
+			//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
+		}
 		cc_record->state = CC_STATE_SUSPENDED;
 		break;
 	case CC_EVENT_TIMEOUT_T_CCBS2:
@@ -2616,30 +2607,9 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
 		pri_cc_act_set_call_to_hangup(ctrl, call);
 		break;
-	case CC_EVENT_REMOTE_USER_FREE:
-		if (cc_record->fsm.ptmp.is_ccbs_busy) {
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			if (cc_record->fsm.ptmp.extended_t_ccbs1) {
-				pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-				pri_cc_act_add_raw_a_status_busy(ctrl, cc_record);
-				pri_cc_act_pass_up_status_rsp_a_indirect(ctrl, cc_record);
-			}
-		} else {
-			if (!pri_cc_get_t_ccbs1_status(cc_record)) {
-				pri_cc_act_reset_raw_a_status(ctrl, cc_record);
-				pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
-				//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
-			}
-		}
-		break;
 	case CC_EVENT_A_STATUS:
-		/* Upper layer should not send when CCBS busy. */
-		if (cc_record->fsm.ptmp.is_ccbs_busy) {
-			pri_cc_act_add_raw_a_status_busy(ctrl, cc_record);
-		} else {
-			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_start_extended_t_ccbs1(ctrl, cc_record);
-		}
+		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
+		pri_cc_act_start_extended_t_ccbs1(ctrl, cc_record);
 		pri_cc_act_pass_up_status_rsp_a_indirect(ctrl, cc_record);
 		break;
 	case CC_EVENT_A_FREE:
@@ -2732,6 +2702,19 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 		pri_cc_act_stop_t_ccbs2(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_STOP_ALERTING:
+		/*
+		 * If an earlier link can send us this event then we
+		 * really should be configured for globalRecall like
+		 * the earlier link.
+		 */
+		if (cc_record->option.recall_mode == 0 /* globalRecall */) {
+			pri_cc_act_send_ccbs_stop_alerting(ctrl, cc_record);
+		}
+		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_reset_a_status(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
 		break;
 	case CC_EVENT_RECALL:
 		pri_cc_act_pass_up_cc_call(ctrl, cc_record);
@@ -3277,46 +3260,70 @@ int pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status)
 
 /*!
  * \brief Indicate that the remote user (Party B) is free to call.
+ * The upper layer considers Party A is free.
  *
  * \param ctrl D channel controller.
  * \param cc_id CC record ID to activate.
- * \param is_ccbs_busy TRUE if the span does not have any B channels
- * available for a recall call.
  *
- * \retval TRUE if is_ccbs_busy is used in the current CC mode.
- *
- * \note
- * If returned TRUE then this call must be called again when a B channel
- * becomes available.
+ * \return Nothing
  */
-int pri_cc_remote_user_free(struct pri *ctrl, long cc_id, int is_ccbs_busy)
+void pri_cc_remote_user_free(struct pri *ctrl, long cc_id)
 {
-	int is_ccbs_busy_used;
 	struct pri_cc_record *cc_record;
 
 	cc_record = pri_cc_find_by_id(ctrl, cc_id);
 	if (!cc_record) {
-		return 0;
+		return;
 	}
 
-	is_ccbs_busy_used = 0;
-	switch (ctrl->switchtype) {
-	case PRI_SWITCH_QSIG:
-		/*! \todo BUGBUG pri_cc_remote_user_free(Q.SIG) not written */
-		break;
-	case PRI_SWITCH_EUROISDN_E1:
-	case PRI_SWITCH_EUROISDN_T1:
-		if (q931_is_ptmp(ctrl)) {
-			cc_record->fsm.ptmp.is_ccbs_busy = is_ccbs_busy ? 1 : 0;
-			is_ccbs_busy_used = 1;
-		}
-		pri_cc_event(ctrl, cc_record->signaling, cc_record, CC_EVENT_REMOTE_USER_FREE);
-		break;
-	default:
-		break;
+	pri_cc_event(ctrl, cc_record->signaling, cc_record, CC_EVENT_REMOTE_USER_FREE);
+}
+
+/*!
+ * \brief Indicate that the remote user (Party B) is free to call.
+ * However, the upper layer considers Party A is busy.
+ *
+ * \details
+ * Party B is free, but Party A is considered busy for some reason.
+ * This is mainly due to the upper layer experiencing congestion.
+ * The upper layer will be monitoring Party A until it considers
+ * Party A free again.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_id CC record ID to activate.
+ *
+ * \return Nothing
+ */
+void pri_cc_b_free(struct pri *ctrl, long cc_id)
+{
+	struct pri_cc_record *cc_record;
+
+	cc_record = pri_cc_find_by_id(ctrl, cc_id);
+	if (!cc_record) {
+		return;
 	}
 
-	return is_ccbs_busy_used;
+	pri_cc_event(ctrl, cc_record->signaling, cc_record, CC_EVENT_B_FREE);
+}
+
+/*!
+ * \brief Indicate that some other Party A has responed to the CC recall.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_id CC record ID to activate.
+ *
+ * \return Nothing
+ */
+void pri_cc_stop_alerting(struct pri *ctrl, long cc_id)
+{
+	struct pri_cc_record *cc_record;
+
+	cc_record = pri_cc_find_by_id(ctrl, cc_id);
+	if (!cc_record) {
+		return;
+	}
+
+	pri_cc_event(ctrl, cc_record->signaling, cc_record, CC_EVENT_STOP_ALERTING);
 }
 
 /*!
