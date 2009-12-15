@@ -3852,10 +3852,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			 */
 			break;
 		}
-		/*
-		 * Since we received this facility, we will not be allocating any
-		 * reference and linkage id's.
-		 */
 		if (call->cc.record) {
 			/* Duplicate message!  Should not happen. */
 			break;
@@ -3865,20 +3861,14 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			break;
 		}
 		cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
+		/*
+		 * Since we received this facility, we will not be allocating any
+		 * reference and linkage id's.
+		 */
 		cc_record->call_linkage_id =
 			invoke->args.etsi.CallInfoRetain.call_linkage_id & 0x7F;
 		call->cc.record = cc_record;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE);
-
-/* BUGBUG move to pri_cc_act_pass_up_cc_available() --v */
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			break;
-		}
-
-		subcmd->cmd = PRI_SUBCMD_CC_AVAILABLE;
-		subcmd->u.cc_available.cc_id = cc_record->record_id;
-/* BUGBUG move to pri_cc_act_pass_up_cc_available() --^ */
 		break;
 	case ROSE_ETSI_CCBSRequest:
 		pri_cc_request(ctrl, call, invoke);

@@ -599,6 +599,7 @@ struct pri_subcmd_cc_request_rsp {
 	int fail_code;
 	/*!
 	 * \brief TRUE if negotiated to retain CC service if B busy again.
+	 * \note Valid when status is success.
 	 */
 	int retain_service;
 };
@@ -1449,7 +1450,7 @@ int pri_cc_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_remote_user_free(struct pri *ctrl, long cc_id);
 void pri_cc_b_free(struct pri *ctrl, long cc_id);
 void pri_cc_stop_alerting(struct pri *ctrl, long cc_id);
-int pri_cc_status_req(struct pri *ctrl, long cc_id);
+void pri_cc_status_req(struct pri *ctrl, long cc_id);
 void pri_cc_status_req_rsp(struct pri *ctrl, long cc_id, int status);
 void pri_cc_status(struct pri *ctrl, long cc_id, int status);
 int pri_cc_call(struct pri *ctrl, long cc_id, q931_call *call, struct pri_sr *req);

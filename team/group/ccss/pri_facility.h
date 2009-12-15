@@ -69,7 +69,7 @@
 /*! Reasons an APDU callback is called. */
 enum APDU_CALLBACK_REASON {
 	/*!
-	 * \brief Send setup error.  Abort and cleanup.
+	 * \brief Transmit facility ie setup error.  Abort and cleanup.
 	 * \note The message may or may not actually get sent.
 	 * \note The callback cannot generate an event subcmd.
 	 * \note The callback should not send messages.  Out of order messages will result.
