@@ -684,6 +684,14 @@ enum CC_EVENTS {
 	CC_EVENT_MSG_RELEASE,
 	/*! Sent RELEASE_COMPLETE message. */
 	CC_EVENT_MSG_RELEASE_COMPLETE,
+	/*! T_ACTIVATE timer timed out. */
+	CC_EVENT_TIMEOUT_T_ACTIVATE,
+#if 0
+	/*! T_DEACTIVATE timer timed out. */
+	CC_EVENT_TIMEOUT_T_DEACTIVATE,
+#endif
+	/*! T_INTERROGATE timer timed out. */
+	CC_EVENT_TIMEOUT_T_INTERROGATE,
 	/*! T_RETENTION timer timed out. */
 	CC_EVENT_TIMEOUT_T_RETENTION,
 	/*! T-STATUS timer equivalent for CC user A status timed out. */
@@ -759,6 +767,18 @@ struct pri_cc_record {
 			int t_supervision;
 		} ptp;
 	} fsm;
+	/*! Received message parameters of interest. */
+	union {
+		/*! cc-request error/reject response */
+		struct {
+			/*! enum APDU_CALLBACK_REASON reason */
+			int reason;
+			/*! MSG_ERROR/MSG_REJECT fail code. */
+			int code;
+		} cc_req_rsp;
+	} msg;
+	/*! Invoke id for the cc-request message to find if T_ACTIVATE/QSIG_CC_T1 still running. */
+	int t_activate_invoke_id;
 	/*! Pending response information. */
 	struct {
 		/*! Send response on this signaling link. */
@@ -785,9 +805,9 @@ struct pri_cc_record {
 	struct {
 		/*! PTMP recall mode: globalRecall(0), specificRecall(1) */
 		unsigned char recall_mode;
-		/*! TRUE if can retain cc service if party B is unavailable again. */
+		/*! TRUE if negotiated to retain CC service if B busy again. */
 		unsigned char retain_service;
-		/*! TRUE if Q.SIG signaling link is retained. */
+		/*! TRUE if negotiated for Q.SIG signaling link to be retained. */
 		unsigned char retain_signaling_link;
 #if defined(QSIG_PATH_RESERVATION_SUPPORT)
 		/*! Q.SIG TRUE if can do path reservation. */
