@@ -754,8 +754,6 @@ struct pri_cc_record {
 			int t_ccbs1_invoke_id;
 			/*! Accumulating party A availability status */
 			enum CC_PARTY_A_AVAILABILITY party_a_status_acc;
-			/*! Party A availability status */
-			enum CC_PARTY_A_AVAILABILITY party_a_status;
 		} ptmp;
 		/*! PTP FSM parameters. */
 		struct {
@@ -771,6 +769,8 @@ struct pri_cc_record {
 			int code;
 		} cc_req_rsp;
 	} msg;
+	/*! Party A availability status */
+	enum CC_PARTY_A_AVAILABILITY party_a_status;
 	/*!
 	 * \brief PTMP T_RETENTION timer id.
 	 * \note
