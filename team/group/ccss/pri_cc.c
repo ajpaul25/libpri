@@ -3415,37 +3415,30 @@ static void pri_cc_fsm_ptmp_monitor_idle(struct pri *ctrl, q931_call *call, stru
 static void pri_cc_fsm_ptmp_monitor_avail(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
 {
 	/*
-	 * For PTMP TE mode the T_RETENTION timer is not defined.  However,
-	 * we will use it anyway in this state to protect our resources from
-	 * leaks caused by the network cable being disconnected.  This
-	 * timer should be set much longer than the network so normally
-	 * the CC records will be cleaned up by network activity.
+	 * The upper layer is responsible for canceling the CC available
+	 * offering as a safeguard in case the network cable is disconnected.
+	 * The timer should be set much longer than the network T_RETENTION
+	 * timer so normally the CC records will be cleaned up by network
+	 * activity.
 	 */
 	switch (event) {
-	case CC_EVENT_MSG_RELEASE:
-	case CC_EVENT_MSG_RELEASE_COMPLETE:
-		pri_cc_act_stop_t_retention(ctrl, cc_record);
-		pri_cc_act_start_t_retention(ctrl, cc_record);
-		break;
 	case CC_EVENT_CC_REQUEST:
 		/* cc_record->is_ccnr is set before event posted. */
 		pri_cc_act_queue_cc_request(ctrl, call, cc_record);
 		//pri_cc_act_start_t_activate(ctrl, cc_record);
-		pri_cc_act_stop_t_retention(ctrl, cc_record);
 		cc_record->state = CC_STATE_REQUESTED;
 		break;
 	case CC_EVENT_TIMEOUT_T_RETENTION:
 		/*
 		 * Received EraseCallLinkageID
-		 * or T_RETENTION really timed out.
+		 * T_RETENTION expired on the network side so we will pretend
+		 * that it expired on our side.
 		 */
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
-		pri_cc_act_stop_t_retention(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_CANCEL:
-		pri_cc_act_stop_t_retention(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
