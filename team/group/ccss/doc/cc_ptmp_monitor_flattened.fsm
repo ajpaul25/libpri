@@ -25,39 +25,29 @@ FSM CC_PTMP_Monitor
 	}
 	State CC_STATE_AVAILABLE {
 		/*
-		 * For PTMP TE mode the T_RETENTION timer is not defined.  However,
-		 * we will use it anyway in this state to protect our resources from
-		 * leaks caused by the network cable being disconnected.  This
-		 * timer should be set much longer than the network so normally
-		 * the CC records will be cleaned up by network activity.
+		 * The upper layer is responsible for canceling the CC available
+		 * offering as a safeguard in case the network cable is disconnected.
+		 * The timer should be set much longer than the network T_RETENTION
+		 * timer so normally the CC records will be cleaned up by network
+		 * activity.
 		 */
-		Stimulus CC_EVENT_MSG_RELEASE {
-			Action Stop_T_RETENTION;
-			Action Start_T_RETENTION;
-		}
-		Stimulus CC_EVENT_MSG_RELEASE_COMPLETE {
-			Action Stop_T_RETENTION;
-			Action Start_T_RETENTION;
-		}
 		Stimulus CC_EVENT_CC_REQUEST {
 			/* cc_record->is_ccnr is set before event posted. */
 			Action Queue_CC_Request;
 			Action Start_T_ACTIVATE;
-			Action Stop_T_RETENTION;
 			Next_State CC_STATE_REQUESTED;
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_RETENTION {
 			/*
 			 * Received EraseCallLinkageID
-			 * or T_RETENTION really timed out.
+			 * T_RETENTION expired on the network side so we will pretend
+			 * that it expired on our side.
 			 */
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_RETENTION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Action Stop_T_RETENTION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
