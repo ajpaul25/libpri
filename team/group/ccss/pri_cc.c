@@ -2445,6 +2445,21 @@ static void pri_cc_act_pass_up_status_rsp_a(struct pri *ctrl, struct pri_cc_reco
 
 /*!
  * \internal
+ * \brief FSM action to promote raw A status.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_promote_raw_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	cc_record->party_a_status = cc_record->fsm.ptmp.party_a_status_acc;
+}
+
+/*!
+ * \internal
  * \brief FSM action to reset A status.
  *
  * \param ctrl D channel controller.
@@ -2455,22 +2470,7 @@ static void pri_cc_act_pass_up_status_rsp_a(struct pri *ctrl, struct pri_cc_reco
 static void pri_cc_act_reset_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
-	cc_record->fsm.ptmp.party_a_status = CC_PARTY_A_AVAILABILITY_INVALID;
-}
-
-/*!
- * \internal
- * \brief FSM action to promote raw A status.
- *
- * \param ctrl D channel controller.
- * \param cc_record Call completion record to process event.
- *
- * \return Nothing
- */
-static void pri_cc_act_promote_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
-{
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
-	cc_record->fsm.ptmp.party_a_status = cc_record->fsm.ptmp.party_a_status_acc;
+	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_INVALID;
 }
 
 /*!
@@ -2488,7 +2488,7 @@ static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *
 
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 
-	if (cc_record->fsm.ptmp.party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
+	if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
 		/* Party A status is invalid so don't pass it up. */
 		return;
 	}
@@ -2501,7 +2501,7 @@ static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *
 	subcmd->cmd = PRI_SUBCMD_CC_STATUS;
 	subcmd->u.cc_status.cc_id =  cc_record->record_id;
 	subcmd->u.cc_status.status =
-		(cc_record->fsm.ptmp.party_a_status == CC_PARTY_A_AVAILABILITY_FREE)
+		(cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_FREE)
 		? 0 /* free */ : 1 /* busy */;
 }
 
@@ -2977,7 +2977,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
 		break;
 	case CC_EVENT_REMOTE_USER_FREE:
-		switch (cc_record->fsm.ptmp.party_a_status) {
+		switch (cc_record->party_a_status) {
 		case CC_PARTY_A_AVAILABILITY_INVALID:
 			if (!pri_cc_get_t_ccbs1_status(cc_record)) {
 				pri_cc_act_reset_raw_a_status(ctrl, cc_record);
@@ -3022,7 +3022,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		break;
 	case CC_EVENT_A_FREE:
 		pri_cc_act_set_raw_a_status_free(ctrl, cc_record);
-		pri_cc_act_promote_a_status(ctrl, cc_record);
+		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
 		pri_cc_act_pass_up_a_status(ctrl, cc_record);
 		pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
 		break;
@@ -3031,8 +3031,8 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		pri_cc_act_pass_up_status_rsp_a(ctrl, cc_record);
 		break;
 	case CC_EVENT_TIMEOUT_T_CCBS1:
-		pri_cc_act_promote_a_status(ctrl, cc_record);
-		if (cc_record->fsm.ptmp.party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
+		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
+		if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
 			/*
 			 * Did not get any responses.
 			 * User A no longer present.
@@ -3106,7 +3106,7 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 	case CC_EVENT_A_FREE:
 		pri_cc_act_send_remote_user_free(ctrl, cc_record);
 		pri_cc_act_set_raw_a_status_free(ctrl, cc_record);
-		//pri_cc_act_promote_a_status(ctrl, cc_record);
+		//pri_cc_act_promote_raw_a_status(ctrl, cc_record);
 		//pri_cc_act_pass_up_a_status(ctrl, cc_record);
 		if (cc_record->fsm.ptmp.extended_t_ccbs1) {
 			pri_cc_act_pass_up_status_rsp_a(ctrl, cc_record);
@@ -3139,7 +3139,7 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 		}
 		/* Only received User A busy. */
 		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
-		pri_cc_act_promote_a_status(ctrl, cc_record);
+		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
 		pri_cc_act_pass_up_a_status(ctrl, cc_record);
 		/* Optimization due to flattening. */
 		//if (!pri_cc_get_t_ccbs1_status(cc_record))
@@ -3206,7 +3206,7 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 		break;
 	case CC_EVENT_A_FREE:
 		pri_cc_act_set_raw_a_status_free(ctrl, cc_record);
-		pri_cc_act_promote_a_status(ctrl, cc_record);
+		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
 		pri_cc_act_pass_up_a_status(ctrl, cc_record);
 		if (cc_record->fsm.ptmp.extended_t_ccbs1) {
 			pri_cc_act_pass_up_status_rsp_a(ctrl, cc_record);
