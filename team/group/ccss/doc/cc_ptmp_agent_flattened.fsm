@@ -60,7 +60,7 @@ FSM CC_PTMP_Agent
 			Action Send_EraseCallLinkageID;
 			Action Relese_LinkID;
 			/* Start T_CCBS2 or T_CCNR2 depending upon CC mode. */
-			Action Start_T_CCBS2;
+			Action Start_T_SUPERVISION;
 			Action Reset_A_Status;
 			Next_State CC_STATE_ACTIVATED;
 		}
@@ -159,7 +159,7 @@ FSM CC_PTMP_Agent
 				Action Pass_Up_CC_Cancel;
 				Action Stop_T_CCBS1;
 				Action Stop_Extended_T_CCBS1;
-				Action Stop_T_CCBS2;
+				Action Stop_T_SUPERVISION;
 				Action Set_Selfdestruct;
 				Next_State CC_STATE_IDLE;
 			}
@@ -167,12 +167,12 @@ FSM CC_PTMP_Agent
 		Stimulus CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1 {
 			Action Reset_A_Status;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -181,7 +181,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -189,7 +189,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -237,7 +237,7 @@ FSM CC_PTMP_Agent
 				Action Pass_Up_CC_Cancel;
 				Action Stop_T_CCBS1;
 				Action Stop_Extended_T_CCBS1;
-				Action Stop_T_CCBS2;
+				Action Stop_T_SUPERVISION;
 				Action Set_Selfdestruct;
 				Next_State CC_STATE_IDLE;
 			}
@@ -255,12 +255,12 @@ FSM CC_PTMP_Agent
 			}
 			Next_State CC_STATE_SUSPENDED;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -269,7 +269,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -277,7 +277,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -323,7 +323,7 @@ FSM CC_PTMP_Agent
 				Action Pass_Up_CC_Cancel;
 				Action Stop_T_CCBS1;
 				Action Stop_Extended_T_CCBS1;
-				Action Stop_T_CCBS2;
+				Action Stop_T_SUPERVISION;
 				Action Set_Selfdestruct;
 				Next_State CC_STATE_IDLE;
 			}
@@ -332,12 +332,12 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSStatusRequest;
 			Action Start_T_CCBS1;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -346,7 +346,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -354,7 +354,7 @@ FSM CC_PTMP_Agent
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -364,7 +364,7 @@ FSM CC_PTMP_Agent
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS3_TIMEOUT);
 			Action Stop_T_CCBS3;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -396,11 +396,11 @@ FSM CC_PTMP_Agent
 			Action Set_Raw_A_Status_Free;
 			Action Pass_Up_Status_Rsp_A_Indirect;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
 			Action Stop_T_CCBS3;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -408,14 +408,14 @@ FSM CC_PTMP_Agent
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS3;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
 			Action Send_CCBSErase(Normal_Unspecified);
 			Action Stop_T_CCBS3;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -429,23 +429,23 @@ FSM CC_PTMP_Agent
 			Action Set_Raw_A_Status_Free;
 			Action Pass_Up_Status_Rsp_A_Indirect;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_LINK_CANCEL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(Normal_Unspecified);
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
 			Action Send_CCBSErase(Normal_Unspecified);
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}

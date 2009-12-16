@@ -71,7 +71,7 @@ FSM CC_PTMP_Monitor
 			 * so normally the CC records will be cleaned up by network
 			 * activity.
 			 */
-			Action Start_T_CCBS2;
+			Action Start_T_SUPERVISION;
 			Next_State CC_STATE_ACTIVATED;
 		}
 		Stimulus CC_EVENT_CC_REQUEST_FAIL {
@@ -155,23 +155,23 @@ FSM CC_PTMP_Monitor
 			/* The original call parameters have already been set. */
 			Action Queue_SETUP_Recall;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Send_CC_Deactivate_Req;
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_LINK_CANCEL {
 			/* Received CCBSErase */
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
 			Action Send_CC_Deactivate_Req;
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
