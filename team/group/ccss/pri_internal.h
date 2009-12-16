@@ -674,7 +674,7 @@ enum CC_EVENTS {
 	CC_EVENT_LINK_CANCEL,
 	/*! Tear down CC request from upper layer. */
 	CC_EVENT_CANCEL,
-	/*! Tear down of CC signaling link completed. */
+	/*! Received message indicating tear down of CC signaling link completed. */
 	CC_EVENT_SIGNALING_GONE,
 	/*! Sent ALERTING message. */
 	CC_EVENT_MSG_ALERTING,
@@ -699,7 +699,7 @@ enum CC_EVENTS {
 	/*! Timeout for valid party A status. */
 	CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1,
 	/*! Max time the CCBS/CCNR service will be active. */
-	CC_EVENT_TIMEOUT_T_CCBS2,
+	CC_EVENT_TIMEOUT_T_SUPERVISION,
 	/*! Max time to wait for user A to respond to user B availability. */
 	CC_EVENT_TIMEOUT_T_CCBS3,
 };
@@ -746,12 +746,8 @@ struct pri_cc_record {
 	union {
 		/*! PTMP FSM parameters. */
 		struct {
-			/*! T_RETENTION timer id. */
-			int t_retention;
 			/*! Extended T_CCBS1 timer id for CCBSStatusRequest handling. */
 			int extended_t_ccbs1;
-			/*! T_CCBS2/T_CCNR2 timer id.  CC service supervision timer. */
-			int t_ccbs2;
 			/*! T_CCBS3 timer id. A response to B available timer. */
 			int t_ccbs3;
 			/*! Invoke id for the CCBSStatusRequest message to find if T_CCBS1 still running. */
@@ -763,8 +759,6 @@ struct pri_cc_record {
 		} ptmp;
 		/*! PTP FSM parameters. */
 		struct {
-			/*! T_CCBS5/T_CCBS6/T_CCNR5/T_CCNR6 timer id.  CC service supervision timer. */
-			int t_supervision;
 		} ptp;
 	} fsm;
 	/*! Received message parameters of interest. */
@@ -777,6 +771,24 @@ struct pri_cc_record {
 			int code;
 		} cc_req_rsp;
 	} msg;
+	/*!
+	 * \brief PTMP T_RETENTION timer id.
+	 * \note
+	 * This timer is used by all CC agents to implement
+	 * the Asterisk CC core offer timer.
+	 */
+	int t_retention;
+	/*!
+	 * \brief CC service supervision timer.
+	 *
+	 * \details
+	 * This timer is one of the following timer id's depending upon
+	 * switch type and CC mode:
+	 * PTMP - T_CCBS2/T_CCNR2,
+	 * PTP - T_CCBS5/T_CCNR5/T_CCBS6/T_CCNR6,
+	 * Q.SIG - QSIG_CCBS_T2/QSIG_CCNR_T2
+	 */
+	int t_supervision;
 	/*! Invoke id for the cc-request message to find if T_ACTIVATE/QSIG_CC_T1 still running. */
 	int t_activate_invoke_id;
 	/*! Pending response information. */

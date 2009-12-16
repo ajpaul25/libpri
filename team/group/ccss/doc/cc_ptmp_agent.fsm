@@ -310,12 +310,12 @@ FSM CC_PTMP_Agent
 	Superstate CC_ACTIVE(CC_STATE_ACTIVATED, CC_STATE_B_AVAILABLE, CC_STATE_SUSPENDED, CC_STATE_WAIT_CALLBACK, CC_STATE_CALLBACK) {
 		Prolog {
 			/* Start T_CCBS2 or T_CCNR2 depending upon CC mode. */
-			Action Start_T_CCBS2;
+			Action Start_T_SUPERVISION;
 		}
 		Epilog {
-			Action Stop_T_CCBS2;
+			Action Stop_T_SUPERVISION;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS2 {
+		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
 			Next_State CC_STATE_IDLE;
