@@ -676,6 +676,8 @@ enum CC_EVENTS {
 	CC_EVENT_CANCEL,
 	/*! Received message indicating tear down of CC signaling link completed. */
 	CC_EVENT_SIGNALING_GONE,
+	/*! Delayed hangup request for the signaling link to allow subcmd events to be passed up. */
+	CC_EVENT_HANGUP_SIGNALING,
 	/*! Sent ALERTING message. */
 	CC_EVENT_MSG_ALERTING,
 	/*! Sent DISCONNECT message. */
@@ -717,6 +719,10 @@ enum CC_PARTY_A_AVAILABILITY {
 struct pri_cc_record {
 	/*! Next call-completion record in the list */
 	struct pri_cc_record *next;
+	/*! Master D channel control structure. */
+	struct pri *master;
+	/*! Original call that is offered CC availability. (NULL if no longer exists.) */
+	struct q931_call *original_call;
 	/*!
 	 * \brief Associated signaling link. (NULL if not established.)
 	 * \note
@@ -771,6 +777,8 @@ struct pri_cc_record {
 	} msg;
 	/*! Party A availability status */
 	enum CC_PARTY_A_AVAILABILITY party_a_status;
+	/*! Indirect timer id to abort indirect action events. */
+	int t_indirect;
 	/*!
 	 * \brief PTMP T_RETENTION timer id.
 	 * \note

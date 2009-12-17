@@ -253,6 +253,16 @@ void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 	struct pri_cc_record **prev;
 	struct pri_cc_record *current;
 
+	/* Unlink CC signaling link associations. */
+	if (doomed->original_call) {
+		doomed->original_call->cc.record = NULL;
+		doomed->original_call = NULL;
+	}
+	if (doomed->signaling) {
+		doomed->signaling->cc.record = NULL;
+		doomed->signaling = NULL;
+	}
+
 	ctrl = PRI_MASTER(ctrl);
 	for (prev = &ctrl->cc.pool, current = ctrl->cc.pool; current;
 		prev = &current->next, current = current->next) {
@@ -291,6 +301,7 @@ struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 	}
 
 	/* Initialize the new record */
+	cc_record->master = ctrl;
 	cc_record->record_id = record_id;
 	cc_record->call_linkage_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
 	cc_record->ccbs_reference_id = CC_PTMP_INVALID_ID;/* So it will never be found this way */
@@ -729,6 +740,66 @@ static unsigned char *enc_etsi_ptmp_cc_request(struct pri *ctrl,
 
 /*!
  * \internal
+ * \brief Encode ETSI PTP CCBS_T_Request/CCNR_T_Request message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ptp_cc_request(struct pri *ctrl,
+	unsigned char *pos, unsigned char *end, struct pri_cc_record *cc_record)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = cc_record->is_ccnr
+		? ROSE_ETSI_CCNR_T_Request : ROSE_ETSI_CCBS_T_Request;
+
+	if (cc_record->saved_ie_contents.length
+		<= sizeof(msg.args.etsi.CCBS_T_Request.q931ie_contents)) {
+		/* Saved BC, HLC, and LLC from initial SETUP */
+		msg.args.etsi.CCBS_T_Request.q931ie.length = cc_record->saved_ie_contents.length;
+		memcpy(msg.args.etsi.CCBS_T_Request.q931ie.contents,
+			cc_record->saved_ie_contents.data, cc_record->saved_ie_contents.length);
+	} else {
+		pri_error(ctrl, "CCBS_T_Request q931 ie contents did not fit.\n");
+	}
+
+	q931_copy_address_to_rose(ctrl, &msg.args.etsi.CCBS_T_Request.destination,
+		&cc_record->party_b);
+
+	if (cc_record->party_a.number.valid && cc_record->party_a.number.str[0]) {
+		q931_copy_id_address_to_rose(ctrl, &msg.args.etsi.CCBS_T_Request.originating,
+			&cc_record->party_a);
+
+		msg.args.etsi.CCBS_T_Request.presentation_allowed_indicator_present = 1;
+		if ((cc_record->party_a.number.presentation & PRI_PRES_RESTRICTION)
+			== PRI_PRES_ALLOWED) {
+			msg.args.etsi.CCBS_T_Request.presentation_allowed_indicator = 1;
+		}
+	}
+
+	if (cc_record->master->cc.option.retain_service) {
+		msg.args.etsi.CCBS_T_Request.retention_supported = 1;
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
  * \brief Encode ETSI PTMP CCBSDeactivate message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -984,7 +1055,7 @@ static int rose_remote_user_free_encode(struct pri *ctrl, q931_call *call, struc
 		}
 		break;
 	case PRI_SWITCH_QSIG:
-		/* \todo BUGBUG rose_remote_user_free_encode(Q.SIG) not written. */
+		/*! \todo BUGBUG rose_remote_user_free_encode(Q.SIG) not written. */
 		return -1;
 	default:
 		return -1;
@@ -1021,6 +1092,148 @@ static int send_remote_user_free(struct pri *ctrl, q931_call *call, struct pri_c
 	}
 
 	return 0;
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue a CC suspend message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode CC suspend message.
+ * \param msgtype Q.931 message type to put facility ie in.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_cc_suspend_encode(struct pri *ctrl, q931_call *call, int msgtype)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end =
+			enc_etsi_ptp_cc_operation(ctrl, buffer, buffer + sizeof(buffer),
+				ROSE_ETSI_CCBS_T_Suspend);
+		break;
+	case PRI_SWITCH_QSIG:
+		/*! \todo BUGBUG rose_cc_suspend_encode(Q.SIG) not written. */
+		return -1;
+	default:
+		return -1;
+	}
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Encode and send a CC suspend message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int send_cc_suspend(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	q931_call *call;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		call = cc_record->signaling;
+		if (!call) {
+			return -1;
+		}
+		if (rose_cc_suspend_encode(ctrl, call, Q931_FACILITY)
+			|| q931_facility(ctrl, call)) {
+			pri_message(ctrl, "Could not schedule message for CC suspend.\n");
+			return -1;
+		}
+		return 0;
+	case PRI_SWITCH_QSIG:
+		/*! \todo BUGBUG send_cc_suspend(Q.SIG) not written */
+		return -1;
+	default:
+		return -1;
+	}
+}
+
+/*!
+ * \internal
+ * \brief Encode and queue a CC resume message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode CC resume message.
+ * \param msgtype Q.931 message type to put facility ie in.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int rose_cc_resume_encode(struct pri *ctrl, q931_call *call, int msgtype)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		end =
+			enc_etsi_ptp_cc_operation(ctrl, buffer, buffer + sizeof(buffer),
+				ROSE_ETSI_CCBS_T_Resume);
+		break;
+	case PRI_SWITCH_QSIG:
+		/*! \todo BUGBUG rose_cc_resume_encode(Q.SIG) not written. */
+		return -1;
+	default:
+		return -1;
+	}
+	if (!end) {
+		return -1;
+	}
+
+	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL);
+}
+
+/*!
+ * \internal
+ * \brief Encode and send a CC resume message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	q931_call *call;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		call = cc_record->signaling;
+		if (!call) {
+			return -1;
+		}
+		if (rose_cc_resume_encode(ctrl, call, Q931_FACILITY)
+			|| q931_facility(ctrl, call)) {
+			pri_message(ctrl, "Could not schedule message for CC resume.\n");
+			return -1;
+		}
+		return 0;
+	case PRI_SWITCH_QSIG:
+		/*! \todo BUGBUG send_cc_resume(Q.SIG) not written */
+		return -1;
+	default:
+		return -1;
+	}
 }
 
 /*!
@@ -1433,7 +1646,7 @@ int pri_cc_interrogate_rsp(struct pri *ctrl, q931_call *call, const struct rose_
 }
 
 /*!
- * \brief Respond to the received CCBSRequest/CCNRRequest invoke message.
+ * \brief Respond to the received PTMP CCBSRequest/CCNRRequest invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which the message came.
@@ -1441,7 +1654,7 @@ int pri_cc_interrogate_rsp(struct pri *ctrl, q931_call *call, const struct rose_
  *
  * \return Nothing
  */
-void pri_cc_request(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke)
+void pri_cc_ptmp_request(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke)
 {
 	struct pri_cc_record *cc_record;
 
@@ -1589,6 +1802,9 @@ static const char *pri_cc_fsm_event_str(enum CC_EVENTS event)
 	case CC_EVENT_SIGNALING_GONE:
 		str = "CC_EVENT_SIGNALING_GONE";
 		break;
+	case CC_EVENT_HANGUP_SIGNALING:
+		str = "CC_EVENT_HANGUP_SIGNALING";
+		break;
 	case CC_EVENT_MSG_ALERTING:
 		str = "CC_EVENT_MSG_ALERTING";
 		break;
@@ -1649,6 +1865,11 @@ static const char pri_cc_act_header[] = "  CC-Act: %s\n";
 static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+
+	/* Abort any pending indirect events. */
+	pri_schedule_del(ctrl, cc_record->t_indirect);
+	cc_record->t_indirect = 0;
+
 	cc_record->fsm_complete = 1;
 }
 
@@ -1698,7 +1919,7 @@ static void pri_cc_timeout_t_retention(void *data)
 	struct pri_cc_record *cc_record = data;
 
 	cc_record->t_retention = 0;
-	q931_cc_timeout(cc_record->signaling->pri, cc_record->signaling, cc_record,
+	q931_cc_timeout(cc_record->master, cc_record->signaling, cc_record,
 		CC_EVENT_TIMEOUT_T_RETENTION);
 }
 
@@ -1751,7 +1972,7 @@ static void pri_cc_timeout_extended_t_ccbs1(void *data)
 	struct pri_cc_record *cc_record = data;
 
 	cc_record->fsm.ptmp.extended_t_ccbs1 = 0;
-	q931_cc_timeout(cc_record->signaling->pri, cc_record->signaling, cc_record,
+	q931_cc_timeout(cc_record->master, cc_record->signaling, cc_record,
 		CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1);
 }
 
@@ -1806,7 +2027,7 @@ static void pri_cc_timeout_t_supervision(void *data)
 	struct pri_cc_record *cc_record = data;
 
 	cc_record->t_supervision = 0;
-	q931_cc_timeout(cc_record->signaling->pri, cc_record->signaling, cc_record,
+	q931_cc_timeout(cc_record->master, cc_record->signaling, cc_record,
 		CC_EVENT_TIMEOUT_T_SUPERVISION);
 }
 
@@ -1887,7 +2108,7 @@ static void pri_cc_timeout_t_ccbs3(void *data)
 	struct pri_cc_record *cc_record = data;
 
 	cc_record->fsm.ptmp.t_ccbs3 = 0;
-	q931_cc_timeout(cc_record->signaling->pri, cc_record->signaling, cc_record,
+	q931_cc_timeout(cc_record->master, cc_record->signaling, cc_record,
 		CC_EVENT_TIMEOUT_T_CCBS3);
 }
 
@@ -2165,6 +2386,57 @@ static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri
 
 /*!
  * \internal
+ * \brief cc-request PTP response callback function.
+ *
+ * \param reason Reason callback is called.
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param apdu APDU queued entry.  Do not change!
+ * \param msg APDU response message data.  (NULL if was not the reason called.)
+ *
+ * \return TRUE if no more responses are expected.
+ */
+static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const union apdu_msg_data *msg)
+{
+	struct pri_cc_record *cc_record;
+
+	cc_record = apdu->response.user.ptr;
+
+	switch (reason) {
+	case APDU_CALLBACK_REASON_TIMEOUT:
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_ACTIVATE);
+		break;
+	case APDU_CALLBACK_REASON_MSG_RESULT:
+		cc_record->option.retain_service =
+			msg->result->args.etsi.CCBS_T_Request.retention_supported;
+
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_ACCEPT);
+		break;
+	case APDU_CALLBACK_REASON_MSG_ERROR:
+		cc_record->msg.cc_req_rsp.reason = reason;
+		cc_record->msg.cc_req_rsp.code = msg->error->code;
+
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
+		break;
+	case APDU_CALLBACK_REASON_MSG_REJECT:
+		cc_record->msg.cc_req_rsp.reason = reason;
+		cc_record->msg.cc_req_rsp.code = msg->reject->code;
+
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
+		break;
+	default:
+		break;
+	}
+
+	/*
+	 * No more reponses are really expected.
+	 * However, the FSM will be removing the apdu_event itself instead.
+	 */
+	return 0;
+}
+
+/*!
+ * \internal
  * \brief Encode and queue a cc-request message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -2193,15 +2465,15 @@ static int rose_cc_request(struct pri *ctrl, q931_call *call, struct pri_cc_reco
 			msgtype = Q931_FACILITY;
 			response.callback = pri_cc_req_response_ptmp;
 		} else {
-			/* \todo BUGBUG rose_cc_request(PTP) not written. */
-			//msgtype = Q931_REGISTER;
-			//response.callback = pri_cc_req_response_ptp;
-			return -1;
+			end =
+				enc_etsi_ptp_cc_request(ctrl, buffer, buffer + sizeof(buffer), cc_record);
+			msgtype = Q931_REGISTER;
+			response.callback = pri_cc_req_response_ptp;
 		}
 		response.timeout_time = ctrl->timers[PRI_TIMER_T_ACTIVATE];
 		break;
 	case PRI_SWITCH_QSIG:
-		/* \todo BUGBUG rose_cc_request(Q.SIG) not written. */
+		/*! \todo BUGBUG rose_cc_request(Q.SIG) not written. */
 		//msgtype = Q931_SETUP;
 		//response.callback = pri_cc_req_response_qsig;
 		//response.timeout_time = ctrl->timers[PRI_TIMER_QSIG_CC_T1];
@@ -2280,6 +2552,36 @@ static void pri_cc_act_send_remote_user_free(struct pri *ctrl, struct pri_cc_rec
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 	send_remote_user_free(ctrl, cc_record->signaling, cc_record);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to send the CC suspend message.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_send_cc_suspend(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	send_cc_suspend(ctrl, cc_record);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to send the CC resume message.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	send_cc_resume(ctrl, cc_record);
 }
 
 /*!
@@ -2402,7 +2704,8 @@ static void pri_cc_indirect_status_rsp_a(void *data)
 {
 	struct pri_cc_record *cc_record = data;
 
-	q931_cc_indirect(cc_record->signaling->pri, cc_record->signaling, cc_record,
+	cc_record->t_indirect = 0;
+	q931_cc_indirect(cc_record->master, cc_record->signaling, cc_record,
 		pri_cc_fill_status_rsp_a);
 }
 
@@ -2424,7 +2727,12 @@ static void pri_cc_act_pass_up_status_rsp_a_indirect(struct pri *ctrl, struct pr
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 	if (cc_record->fsm.ptmp.party_a_status_acc != CC_PARTY_A_AVAILABILITY_INVALID) {
 		/* Accumulated party A status is not invalid so pass it up. */
-		pri_schedule_event(ctrl, 0, pri_cc_indirect_status_rsp_a, cc_record);
+		if (cc_record->t_indirect) {
+			pri_error(ctrl, "!! An indirect action is already active!");
+			pri_schedule_del(ctrl, cc_record->t_indirect);
+		}
+		cc_record->t_indirect = pri_schedule_event(ctrl, 0, pri_cc_indirect_status_rsp_a,
+			cc_record);
 	}
 }
 
@@ -2471,6 +2779,21 @@ static void pri_cc_act_reset_a_status(struct pri *ctrl, struct pri_cc_record *cc
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_INVALID;
+}
+
+/*!
+ * \internal
+ * \brief FSM action to set A status as busy.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_set_a_status_busy(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_BUSY;
 }
 
 /*!
@@ -2803,6 +3126,58 @@ static void pri_cc_act_set_call_to_hangup(struct pri *ctrl, q931_call *call)
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 	call->cc.hangup_call = 1;
+}
+
+/*!
+ * \internal
+ * \brief Post the CC_EVENT_HANGUP_SIGNALING event (timeout action).
+ *
+ * \param data CC record pointer.
+ *
+ * \return Nothing
+ */
+static void pri_cc_post_hangup_signaling(void *data)
+{
+	struct pri_cc_record *cc_record = data;
+
+	cc_record->t_indirect = 0;
+	q931_cc_timeout(cc_record->master, cc_record->signaling, cc_record,
+		CC_EVENT_HANGUP_SIGNALING);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to post the CC_EVENT_HANGUP_SIGNALING event indirectly.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_post_hangup_signaling(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	if (cc_record->t_indirect) {
+		pri_error(ctrl, "!! An indirect action is already active!");
+		pri_schedule_del(ctrl, cc_record->t_indirect);
+	}
+	cc_record->t_indirect = pri_schedule_event(ctrl, 0, pri_cc_post_hangup_signaling,
+		cc_record);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to immediately hangup the signaling link.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_hangup_signaling_link(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	pri_hangup(ctrl, cc_record->signaling, -1);
 }
 
 /*!
@@ -3563,30 +3938,22 @@ static void pri_cc_fsm_ptmp_monitor_wait_destruction(struct pri *ctrl, q931_call
 		 */
 		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
 		pri_cc_act_stop_t_activate(ctrl, cc_record);
-		/* Claim it was a timeout */
-		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_CC_REQUEST_FAIL:
 		pri_cc_act_stop_t_activate(ctrl, cc_record);
-		/* Claim it was a timeout */
-		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_TIMEOUT_T_ACTIVATE:
 		pri_cc_act_stop_t_activate(ctrl, cc_record);
-		/* Claim it was a timeout */
-		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_LINK_CANCEL:
 		/* Received CCBSErase */
 		pri_cc_act_stop_t_activate(ctrl, cc_record);
-		/* Claim it was a timeout */
-		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
@@ -3651,6 +4018,329 @@ static void pri_cc_fsm_ptmp_monitor_activated(struct pri *ctrl, q931_call *call,
 
 /*!
  * \internal
+ * \brief CC FSM PTP monitor CC_STATE_IDLE.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_idle(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_AVAILABLE:
+		/* Received CCBS-T-Aailable */
+		pri_cc_act_pass_up_cc_available(ctrl, cc_record);
+		cc_record->state = CC_STATE_AVAILABLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_AVAILABLE.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_avail(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	/* The upper layer is responsible for canceling the CC available offering. */
+	switch (event) {
+	case CC_EVENT_CC_REQUEST:
+		/*
+		 * Before event is posted:
+		 *   cc_record->is_ccnr is set.
+		 *   The signaling connection call record is created.
+		 */
+		pri_cc_act_queue_cc_request(ctrl, call, cc_record);
+		/*
+		 * For PTP mode the T_ACTIVATE timer is not defined.  However,
+		 * we will use it to protect our resources from leaks caused
+		 * by the network cable being disconnected.
+		 * This timer should be set longer than normal so the
+		 * CC records will normally be cleaned up by network activity.
+		 */
+		//pri_cc_act_start_t_activate(ctrl, cc_record);
+		cc_record->state = CC_STATE_REQUESTED;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_REQUESTED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_req(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_CC_REQUEST_ACCEPT:
+		/*
+		 * Received CCBS-T-Request/CCNR-T-Request response
+		 * Before event is posted:
+		 *   Negotiated CC retention setting saved
+		 */
+		pri_cc_act_pass_up_cc_req_rsp_success(ctrl, cc_record);
+		pri_cc_act_stop_t_activate(ctrl, cc_record);
+		/* Start T_CCBS6/T_CCNR6 depending upon CC mode. */
+		pri_cc_act_start_t_supervision(ctrl, cc_record);
+		pri_cc_act_reset_a_status(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
+		break;
+	case CC_EVENT_CC_REQUEST_FAIL:
+		pri_cc_act_pass_up_cc_req_rsp_fail(ctrl, cc_record);
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_activate(ctrl, cc_record);
+		/*
+		 * If this request fail comes in with the RELEASE_COMPLETE
+		 * message then the post action will never get a chance to
+		 * run.  It will be aborted because the CC_EVENT_SIGNALING_GONE
+		 * will be processed first.
+		 */
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_TIMEOUT_T_ACTIVATE:
+		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_activate(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Claim it was a timeout */
+		pri_cc_act_pass_up_cc_req_rsp_timeout(ctrl, cc_record);
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_activate(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_stop_t_activate(ctrl, cc_record);
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_WAIT_DESTRUCTION.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_wait_destruction(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	/*
+	 * Delayed disconnect of the signaling link to allow subcmd events
+	 * from the signaling link to be passed up.
+	 */
+	switch (event) {
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_HANGUP_SIGNALING:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_ACTIVATED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_activated(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_REMOTE_USER_FREE:
+		/* Received CCBS_T_RemoteUserFree */
+		pri_cc_act_pass_up_remote_user_free(ctrl, cc_record);
+		if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_BUSY) {
+			pri_cc_act_send_cc_suspend(ctrl, cc_record);
+			cc_record->state = CC_STATE_SUSPENDED;
+		} else {
+			cc_record->state = CC_STATE_WAIT_CALLBACK;
+		}
+		break;
+	case CC_EVENT_SUSPEND:
+		pri_cc_act_set_a_status_busy(ctrl, cc_record);
+		break;
+	case CC_EVENT_RESUME:
+		pri_cc_act_reset_a_status(ctrl, cc_record);
+		break;
+	case CC_EVENT_RECALL:
+		/* The original call parameters have already been set. */
+		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_WAIT_CALLBACK.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_wait_callback(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_SUSPEND:
+		pri_cc_act_send_cc_suspend(ctrl, cc_record);
+		cc_record->state = CC_STATE_SUSPENDED;
+		break;
+	case CC_EVENT_RECALL:
+		/* The original call parameters have already been set. */
+		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTP monitor CC_STATE_SUSPENDED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptp_monitor_suspended(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_RESUME:
+		pri_cc_act_send_cc_resume(ctrl, cc_record);
+		pri_cc_act_reset_a_status(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
+		break;
+	case CC_EVENT_RECALL:
+		/* The original call parameters have already been set. */
+		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
  * \brief CC FSM state function type.
  *
  * \param ctrl D channel controller.
@@ -3685,6 +4375,26 @@ static const pri_cc_fsm_state pri_cc_fsm_ptmp_monitor[CC_STATE_NUM] = {
 	[CC_STATE_REQUESTED] = pri_cc_fsm_ptmp_monitor_req,
 	[CC_STATE_WAIT_DESTRUCTION] = pri_cc_fsm_ptmp_monitor_wait_destruction,
 	[CC_STATE_ACTIVATED] = pri_cc_fsm_ptmp_monitor_activated,
+/* *INDENT-ON* */
+};
+
+/*! \todo BUGBUG pri_cc_fsm_ptp_agent[] not written */
+/*! CC FSM PTMP agent state table. */
+static const pri_cc_fsm_state pri_cc_fsm_ptp_agent[CC_STATE_NUM] = {
+/* *INDENT-OFF* */
+/* *INDENT-ON* */
+};
+
+/*! CC FSM PTP monitor state table. */
+static const pri_cc_fsm_state pri_cc_fsm_ptp_monitor[CC_STATE_NUM] = {
+/* *INDENT-OFF* */
+	[CC_STATE_IDLE] = pri_cc_fsm_ptp_monitor_idle,
+	[CC_STATE_AVAILABLE] = pri_cc_fsm_ptp_monitor_avail,
+	[CC_STATE_REQUESTED] = pri_cc_fsm_ptp_monitor_req,
+	[CC_STATE_WAIT_DESTRUCTION] = pri_cc_fsm_ptp_monitor_wait_destruction,
+	[CC_STATE_ACTIVATED] = pri_cc_fsm_ptp_monitor_activated,
+	[CC_STATE_WAIT_CALLBACK] = pri_cc_fsm_ptp_monitor_wait_callback,
+	[CC_STATE_SUSPENDED] = pri_cc_fsm_ptp_monitor_suspended,
 /* *INDENT-ON* */
 };
 
@@ -3723,11 +4433,10 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 				cc_fsm = pri_cc_fsm_ptmp_monitor;
 			}
 		} else {
-			/*! \todo BUGBUG pri_cc_event(ETSI PTP) not written */
 			if (cc_record->is_agent) {
-				cc_fsm = NULL;
+				cc_fsm = pri_cc_fsm_ptp_agent;
 			} else {
-				cc_fsm = NULL;
+				cc_fsm = pri_cc_fsm_ptp_monitor;
 			}
 		}
 		break;
@@ -3749,8 +4458,8 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 	}
 	if (orig_state < CC_STATE_IDLE || CC_STATE_NUM <= orig_state || !cc_fsm[orig_state]) {
 		/* Programming error: State not implemented. */
-		pri_error(ctrl, "!! CC state not implemented: %s\n",
-			pri_cc_fsm_state_str(orig_state));
+		pri_error(ctrl, "!! CC state not implemented: %s(%d)\n",
+			pri_cc_fsm_state_str(orig_state), orig_state);
 		return 0;
 	}
 	/* Execute the state. */
@@ -3760,9 +4469,6 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 			? "$" : pri_cc_fsm_state_str(cc_record->state));
 	}
 	if (cc_record->fsm_complete) {
-		if (call && call->cc.record == cc_record) {
-			call->cc.record = NULL;
-		}
 		pri_cc_delete_record(ctrl, cc_record);
 		return 1;
 	} else {
@@ -3810,6 +4516,7 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 		 * Q.SIG assumes CC is always available and is denied when
 		 * requested if CC is not possible or allowed.
 		 */
+		cc_record->original_call = call;
 		cc_record->is_agent = 1;
 		break;
 	case PRI_SWITCH_EUROISDN_E1:
@@ -3833,6 +4540,7 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 				break;
 			}
 		}
+		cc_record->original_call = call;
 		cc_record->is_agent = 1;
 		break;
 	default:
@@ -3858,6 +4566,9 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
  * \note
  * Will always get a reply from libpri.  libpri will start a timer to guarantee
  * that a reply will be passed back to the upper layer.
+ * \note
+ * If you cancel with pri_cc_cancel() you are indicating that you do not need
+ * the request reply and the cc_id will no longer be valid anyway.
  * \note
  * Allow for the possibility that the reply may come in before this
  * function returns.
@@ -3889,6 +4600,7 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
 		if (cc_record->signaling) {
+			/* We should not have a signaling link at this point. */
 			return -1;
 		}
 		call = q931_new_call(ctrl);
@@ -3900,7 +4612,6 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 		call->cc.record = cc_record;
 		if (pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST)) {
 			/* Should not happen. */
-			call->cc.record = NULL;
 			q931_destroycall(ctrl, call);
 			break;
 		}
@@ -3912,8 +4623,6 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 		req.cis_call = 1;
 		if (q931_setup(ctrl, call, &req)) {
 			/* Should not happen. */
-			cc_record->signaling = NULL;
-			call->cc.record = NULL;
 			q931_destroycall(ctrl, call);
 			return -1;
 		}
@@ -3932,6 +4641,7 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 
 		/* ETSI PTP */
 		if (cc_record->signaling) {
+			/* We should not have a signaling link at this point. */
 			return -1;
 		}
 		call = q931_new_call(ctrl);
@@ -3943,15 +4653,12 @@ int pri_cc_req(struct pri *ctrl, long cc_id, int mode)
 		call->cc.record = cc_record;
 		if (pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST)) {
 			/* Should not happen. */
-			call->cc.record = NULL;
 			q931_destroycall(ctrl, call);
 			break;
 		}
 
 		if (q931_register(ctrl, call)) {
 			/* Should not happen. */
-			cc_record->signaling = NULL;
-			call->cc.record = NULL;
 			q931_destroycall(ctrl, call);
 			return -1;
 		}

@@ -95,8 +95,6 @@ FSM CC_PTMP_Monitor
 		/* We were in the middle of a cc-request when we were asked to cancel. */
 		Epilog {
 			Action Stop_T_ACTIVATE;
-			/* Claim it was a timeout */
-			Action Pass_Up_CC_Req_Rsp_Timeout;
 		}
 		Stimulus CC_EVENT_CC_REQUEST_ACCEPT {
 			/*
