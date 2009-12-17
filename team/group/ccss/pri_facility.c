@@ -3867,14 +3867,15 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		 */
 		cc_record->call_linkage_id =
 			invoke->args.etsi.CallInfoRetain.call_linkage_id & 0x7F;
+		cc_record->original_call = call;
 		call->cc.record = cc_record;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE);
 		break;
 	case ROSE_ETSI_CCBSRequest:
-		pri_cc_request(ctrl, call, invoke);
+		pri_cc_ptmp_request(ctrl, call, invoke);
 		break;
 	case ROSE_ETSI_CCNRRequest:
-		pri_cc_request(ctrl, call, invoke);
+		pri_cc_ptmp_request(ctrl, call, invoke);
 		break;
 	case ROSE_ETSI_CCBSDeactivate:
 		cc_record = pri_cc_find_by_reference(ctrl,
@@ -4012,16 +4013,38 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		subcmd->u.cc_stop_alerting.cc_id = cc_record->record_id;
 		break;
 	case ROSE_ETSI_CCBS_T_Request:
+		/* BUGBUG ROSE_ETSI_CCBS_T_Request */
+		//pri_cc_ptp_request(ctrl, call, msgtype, invoke);
+		call->cc.hangup_call = 1;
 		break;
 	case ROSE_ETSI_CCNR_T_Request:
+		/* BUGBUG ROSE_ETSI_CCNR_T_Request */
+		//pri_cc_ptp_request(ctrl, call, msgtype, invoke);
+		call->cc.hangup_call = 1;
 		break;
 	case ROSE_ETSI_CCBS_T_Call:
+		/* BUGBUG ROSE_ETSI_CCBS_T_Call */
 		break;
 	case ROSE_ETSI_CCBS_T_Suspend:
+		cc_record = call->cc.record;
+		if (!cc_record) {
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_SUSPEND);
 		break;
 	case ROSE_ETSI_CCBS_T_Resume:
+		cc_record = call->cc.record;
+		if (!cc_record) {
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_RESUME);
 		break;
 	case ROSE_ETSI_CCBS_T_RemoteUserFree:
+		cc_record = call->cc.record;
+		if (!cc_record) {
+			break;
+		}
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_REMOTE_USER_FREE);
 		break;
 	case ROSE_ETSI_CCBS_T_Available:
 		if (!PRI_MASTER(ctrl)->cc_support) {
@@ -4039,6 +4062,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		if (!cc_record) {
 			break;
 		}
+		cc_record->original_call = call;
 		call->cc.record = cc_record;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_AVAILABLE);
 		break;

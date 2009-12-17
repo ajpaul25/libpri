@@ -111,30 +111,22 @@ FSM CC_PTMP_Monitor
 			 */
 			Action Send_CC_Deactivate_Req;
 			Action Stop_T_ACTIVATE;
-			/* Claim it was a timeout */
-			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CC_REQUEST_FAIL {
 			Action Stop_T_ACTIVATE;
-			/* Claim it was a timeout */
-			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_ACTIVATE {
 			Action Stop_T_ACTIVATE;
-			/* Claim it was a timeout */
-			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_LINK_CANCEL {
 			/* Received CCBSErase */
 			Action Stop_T_ACTIVATE;
-			/* Claim it was a timeout */
-			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
