@@ -125,6 +125,9 @@ union apdu_callback_param {
 	char pad[8];
 };
 
+/* So calls to pri_call_apdu_find() will not find an aliased event. */
+#define APDU_INVALID_INVOKE_ID  0x10000
+
 struct apdu_callback_data {
 	/*! APDU invoke id to match with any response messages. (Result/Error/Reject) */
 	int invoke_id;

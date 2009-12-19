@@ -2374,8 +2374,9 @@ static void pri_cc_act_stop_t_ccbs1(struct pri *ctrl, struct pri_cc_record *cc_r
 
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 
-	msg = pri_cc_get_t_ccbs1_status(cc_record);
+	msg = pri_call_apdu_find(cc_record->signaling, cc_record->fsm.ptmp.t_ccbs1_invoke_id);
 	if (msg) {
+		cc_record->fsm.ptmp.t_ccbs1_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_call_apdu_delete(cc_record->signaling, msg);
 	}
 }
@@ -2437,6 +2438,7 @@ static int rose_ccbs_status_request(struct pri *ctrl, q931_call *call, struct pr
 	}
 
 	memset(&response, 0, sizeof(response));
+	cc_record->fsm.ptmp.t_ccbs1_invoke_id = ctrl->last_invoke;
 	response.invoke_id = ctrl->last_invoke;
 	response.timeout_time = ctrl->timers[PRI_TIMER_T_CCBS1];
 	response.callback = pri_cc_ccbs_status_response;
@@ -2506,6 +2508,7 @@ static void pri_cc_act_stop_t_activate(struct pri *ctrl, struct pri_cc_record *c
 	}
 	msg = pri_call_apdu_find(cc_record->signaling, cc_record->t_activate_invoke_id);
 	if (msg) {
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_call_apdu_delete(cc_record->signaling, msg);
 	}
 }

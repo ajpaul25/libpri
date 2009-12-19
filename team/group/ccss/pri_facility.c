@@ -2817,6 +2817,10 @@ struct apdu_event *pri_call_apdu_find(struct q931_call *call, int invoke_id)
 {
 	struct apdu_event *apdu;
 
+	if (invoke_id == APDU_INVALID_INVOKE_ID) {
+		/* No need to search the list since it cannot be in there. */
+		return NULL;
+	}
 	for (apdu = call->apdus; apdu; apdu = apdu->next) {
 		/*
 		 * Note: The APDU cannot be sent and still in the queue without a
