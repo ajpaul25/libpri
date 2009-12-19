@@ -4948,6 +4948,7 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 	c->nonisdn = req->nonisdn;
 	c->newcall = 0;
 	c->cis_call = req->cis_call;
+	c->cis_recognized = req->cis_call;
 	c->cis_auto_disconnect = req->cis_auto_disconnect;
 	c->complete = req->numcomplete; 
 
@@ -5023,6 +5024,7 @@ int q931_register(struct pri *ctrl, q931_call *call)
 	call->newcall = 0;
 
 	call->cis_call = 1;
+	call->cis_recognized = 1;
 	call->cis_auto_disconnect = 0;
 	call->chanflags = FLAG_EXCLUSIVE;/* For safety mark this channel as exclusive. */
 	call->channelno = 0;
@@ -6965,6 +6967,12 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_release_complete(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
 			break;
 		}
+		if (/* c->cis_call && */ !c->cis_recognized) {
+			pri_message(ctrl,
+				"-- CIS connection not marked as handled.  Disconnecting it.\n");
+			q931_release_complete(ctrl, c, PRI_CAUSE_FACILITY_NOT_IMPLEMENTED);
+			break;
+		}
 
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;
@@ -6998,6 +7006,11 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		if (c->cc.hangup_call) {
 			q931_release_complete(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
+			break;
+		}
+		if (c->cis_call && !c->cis_recognized) {
+			pri_message(ctrl, "-- CIS call not marked as handled.  Disconnecting it.\n");
+			q931_release_complete(ctrl, c, PRI_CAUSE_FACILITY_NOT_IMPLEMENTED);
 			break;
 		}
 

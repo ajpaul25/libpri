@@ -471,6 +471,13 @@ struct q931_call {
 	 * \note The call has no B channel associated with it. (Just signalling)
 	 */
 	int cis_call;
+	/*!
+	 * \brief TRUE if we have recognized a use for this CIS call.
+	 * \note An incoming CIS call will be immediately disconnected if not set.
+	 * This is a safeguard against unhandled incoming CIS calls to protect the
+	 * call reference pool.
+	 */
+	int cis_recognized;
 	/*! \brief TRUE if we will auto disconnect the cis_call we originated. */
 	int cis_auto_disconnect;
 
@@ -779,6 +786,14 @@ struct pri_cc_record {
 	enum CC_PARTY_A_AVAILABILITY party_a_status;
 	/*! Indirect timer id to abort indirect action events. */
 	int t_indirect;
+/*
+ * BUGBUG t_retention needs to be handled specially.
+ * For PTP and Q.SIG there could be hundreds of them active.
+ * Something along the lines of using struct timeval and polling at half
+ * the T_RETENTION time but no less than 10 seconds.
+ * Also if the upper layer has disabled CC for this call, the upper layer
+ * needs to immediately cancel CC when the CC available indication comes in.
+ */
 	/*!
 	 * \brief PTMP T_RETENTION timer id.
 	 * \note
@@ -801,7 +816,11 @@ struct pri_cc_record {
 	int t_activate_invoke_id;
 	/*! Pending response information. */
 	struct {
-		/*! Send response on this signaling link. */
+		/*!
+		 * \brief Send response on this signaling link.
+		 * \note Used by PTMP for CCBSRequest/CCNRRequest/CCBSCall responses.
+		 * \note Used by Q.SIG for ccRingout responses.
+		 */
 		struct q931_call *signaling;
 		/*! Invoke operation code */
 		int invoke_operation;
@@ -877,6 +896,12 @@ static inline void q931_party_address_to_id(struct q931_party_id *id, struct q93
 	id->subaddress = address->subaddress;
 }
 
+static inline void q931_party_id_to_address(struct q931_party_address *address, struct q931_party_id *id)
+{
+	address->number = id->number;
+	address->subaddress = id->subaddress;
+}
+
 int q931_party_name_cmp(const struct q931_party_name *left, const struct q931_party_name *right);
 int q931_party_number_cmp(const struct q931_party_number *left, const struct q931_party_number *right);
 int q931_party_subaddress_cmp(const struct q931_party_subaddress *left, const struct q931_party_subaddress *right);
@@ -908,7 +933,7 @@ int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const
 
 struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned reference_id);
 struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned linkage_id);
-struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b);
+struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b, unsigned length, const unsigned char *q931_ies);
 int pri_cc_new_reference_id(struct pri *ctrl);
 void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
