@@ -3507,6 +3507,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	struct pri_cc_record *cc_record;
 	struct pri_subcommand *subcmd;
 	struct q931_party_id party_id;
+	struct q931_party_address party_address;
 	struct q931_party_redirecting deflection;
 
 	switch (invoke->operation) {
@@ -3950,7 +3951,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		}
 
 		/* Save off data to know how to send back any response. */
-		cc_record->response.signaling = call;
+		//cc_record->response.signaling = call;
 		cc_record->response.invoke_operation = invoke->operation;
 		cc_record->response.invoke_id = invoke->invoke_id;
 
@@ -4013,17 +4014,37 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		subcmd->u.cc_stop_alerting.cc_id = cc_record->record_id;
 		break;
 	case ROSE_ETSI_CCBS_T_Request:
-		/* BUGBUG ROSE_ETSI_CCBS_T_Request */
-		//pri_cc_ptp_request(ctrl, call, msgtype, invoke);
-		call->cc.hangup_call = 1;
+		pri_cc_ptp_request(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_ETSI_CCNR_T_Request:
-		/* BUGBUG ROSE_ETSI_CCNR_T_Request */
-		//pri_cc_ptp_request(ctrl, call, msgtype, invoke);
-		call->cc.hangup_call = 1;
+		pri_cc_ptp_request(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_ETSI_CCBS_T_Call:
-		/* BUGBUG ROSE_ETSI_CCBS_T_Call */
+		if (msgtype != Q931_SETUP) {
+			/* Ignore since it did not come in on the correct message. */
+			break;
+		}
+
+		/*
+		 * If we cannot find the cc_record we should still pass up the
+		 * CC call indication but with a -1 for the cc_id.
+		 * The upper layer would then need to search its records for a
+		 * matching CC.  The call may have come in on a different interface.
+		 */
+		q931_party_id_to_address(&party_address, &call->remote_id);
+		cc_record = pri_cc_find_by_addressing(ctrl, &party_address, &call->called,
+			call->cc.saved_ie_contents.length, call->cc.saved_ie_contents.data);
+		if (cc_record) {
+			pri_cc_event(ctrl, call, cc_record, CC_EVENT_RECALL);
+		} else {
+			subcmd = q931_alloc_subcommand(ctrl);
+			if (!subcmd) {
+				break;
+			}
+
+			subcmd->cmd = PRI_SUBCMD_CC_CALL;
+			subcmd->u.cc_call.cc_id = -1;
+		}
 		break;
 	case ROSE_ETSI_CCBS_T_Suspend:
 		cc_record = call->cc.record;

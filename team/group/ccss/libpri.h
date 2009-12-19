@@ -575,6 +575,11 @@ struct pri_subcmd_cc_request {
 	 * ccnr(1)
 	 */
 	int mode;
+	/*!
+	 * \brief TRUE if negotiated to retain CC service if B busy again.
+	 * \note This will be the setting if the CC request is accepted.
+	 */
+	int retain_service;
 };
 
 struct pri_subcmd_cc_request_rsp {
@@ -1413,7 +1418,8 @@ void pri_cc_enable(struct pri *ctrl, int enable);
 void pri_cc_recall_mode(struct pri *ctrl, int mode);
 
 /*!
- * \brief Set the call completion service retention mode if party B is busy again.
+ * \brief Set the call completion service retention mode to negotiate
+ * if party B is busy again.
  *
  * \param ctrl D channel controller.
  * \param retain_service TRUE if can retain cc service if party B is unavailable again.
