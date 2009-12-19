@@ -3279,7 +3279,7 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 {
 	q931_call *orig_call;
 	struct apdu_event *apdu;
-	union apdu_msg_data msg;
+	struct apdu_msg_data msg;
 
 	/* Gripe to the user about getting rejected. */
 	pri_error(ctrl, "ROSE REJECT:\n");
@@ -3325,7 +3325,8 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	} else {
 		orig_call = call;
 	}
-	msg.reject = reject;
+	msg.response.reject = reject;
+	msg.type = msgtype;
 	if (apdu->response.callback(APDU_CALLBACK_REASON_MSG_REJECT, ctrl, call, apdu, &msg)) {
 		pri_call_apdu_delete(orig_call, apdu);
 	}
@@ -3349,7 +3350,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 	const char *dms100_operation;
 	q931_call *orig_call;
 	struct apdu_event *apdu;
-	union apdu_msg_data msg;
+	struct apdu_msg_data msg;
 
 	/* Gripe to the user about getting an error. */
 	pri_error(ctrl, "ROSE RETURN ERROR:\n");
@@ -3407,7 +3408,8 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 	} else {
 		orig_call = call;
 	}
-	msg.error = error;
+	msg.response.error = error;
+	msg.type = msgtype;
 	if (apdu->response.callback(APDU_CALLBACK_REASON_MSG_ERROR, ctrl, call, apdu, &msg)) {
 		pri_call_apdu_delete(orig_call, apdu);
 	}
@@ -3430,7 +3432,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 {
 	q931_call *orig_call;
 	struct apdu_event *apdu;
-	union apdu_msg_data msg;
+	struct apdu_msg_data msg;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
@@ -3483,7 +3485,8 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	} else {
 		orig_call = call;
 	}
-	msg.result = result;
+	msg.response.result = result;
+	msg.type = msgtype;
 	if (apdu->response.callback(APDU_CALLBACK_REASON_MSG_RESULT, ctrl, call, apdu, &msg)) {
 		pri_call_apdu_delete(orig_call, apdu);
 	}

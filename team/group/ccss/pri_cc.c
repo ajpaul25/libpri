@@ -2392,7 +2392,7 @@ static void pri_cc_act_stop_t_ccbs1(struct pri *ctrl, struct pri_cc_record *cc_r
  *
  * \return TRUE if no more responses are expected.
  */
-static int pri_cc_ccbs_status_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const union apdu_msg_data *msg)
+static int pri_cc_ccbs_status_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_cc_record *cc_record;
 
@@ -2402,7 +2402,8 @@ static int pri_cc_ccbs_status_response(enum APDU_CALLBACK_REASON reason, struct 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_CCBS1);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
-		pri_cc_event(ctrl, call, cc_record, msg->result->args.etsi.CCBSStatusRequest.free
+		pri_cc_event(ctrl, call, cc_record,
+			msg->response.result->args.etsi.CCBSStatusRequest.free
 			? CC_EVENT_A_FREE : CC_EVENT_A_BUSY);
 		break;
 	default:
@@ -2521,7 +2522,7 @@ static void pri_cc_act_stop_t_activate(struct pri *ctrl, struct pri_cc_record *c
  *
  * \return TRUE if no more responses are expected.
  */
-static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const union apdu_msg_data *msg)
+static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_cc_record *cc_record;
 
@@ -2537,20 +2538,21 @@ static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri
 		 * reference and linkage id's.
 		 */
 		cc_record->ccbs_reference_id =
-			msg->result->args.etsi.CCBSRequest.ccbs_reference & 0x7F;
-		cc_record->option.recall_mode = msg->result->args.etsi.CCBSRequest.recall_mode;
+			msg->response.result->args.etsi.CCBSRequest.ccbs_reference & 0x7F;
+		cc_record->option.recall_mode =
+			msg->response.result->args.etsi.CCBSRequest.recall_mode;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_ACCEPT);
 		break;
 	case APDU_CALLBACK_REASON_MSG_ERROR:
 		cc_record->msg.cc_req_rsp.reason = reason;
-		cc_record->msg.cc_req_rsp.code = msg->error->code;
+		cc_record->msg.cc_req_rsp.code = msg->response.error->code;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
 		break;
 	case APDU_CALLBACK_REASON_MSG_REJECT:
 		cc_record->msg.cc_req_rsp.reason = reason;
-		cc_record->msg.cc_req_rsp.code = msg->reject->code;
+		cc_record->msg.cc_req_rsp.code = msg->response.reject->code;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
 		break;
@@ -2577,7 +2579,7 @@ static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri
  *
  * \return TRUE if no more responses are expected.
  */
-static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const union apdu_msg_data *msg)
+static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_cc_record *cc_record;
 
@@ -2589,19 +2591,19 @@ static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri 
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
 		cc_record->option.retain_service =
-			msg->result->args.etsi.CCBS_T_Request.retention_supported;
+			msg->response.result->args.etsi.CCBS_T_Request.retention_supported;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_ACCEPT);
 		break;
 	case APDU_CALLBACK_REASON_MSG_ERROR:
 		cc_record->msg.cc_req_rsp.reason = reason;
-		cc_record->msg.cc_req_rsp.code = msg->error->code;
+		cc_record->msg.cc_req_rsp.code = msg->response.error->code;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
 		break;
 	case APDU_CALLBACK_REASON_MSG_REJECT:
 		cc_record->msg.cc_req_rsp.reason = reason;
-		cc_record->msg.cc_req_rsp.code = msg->reject->code;
+		cc_record->msg.cc_req_rsp.code = msg->response.reject->code;
 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_FAIL);
 		break;

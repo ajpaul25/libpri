@@ -108,10 +108,15 @@ enum APDU_CALLBACK_REASON {
 	APDU_CALLBACK_REASON_MSG_REJECT,
 };
 
-union apdu_msg_data {
-	const struct rose_msg_result *result;
-	const struct rose_msg_error *error;
-	const struct rose_msg_reject *reject;
+struct apdu_msg_data {
+	/*! Decoded response message contents. */
+	union {
+		const struct rose_msg_result *result;
+		const struct rose_msg_error *error;
+		const struct rose_msg_reject *reject;
+	} response;
+	/*! Q.931 message type the response came in with. */
+	int type;
 };
 
 union apdu_callback_param {
@@ -143,7 +148,7 @@ struct apdu_callback_data {
 	 *
 	 * \return TRUE if no more responses are expected.
 	 */
-	int (*callback)(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const union apdu_msg_data *msg);
+	int (*callback)(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg);
 	/*! \brief Sender data for the callback function to identify the particular APDU. */
 	union apdu_callback_param user;
 };
