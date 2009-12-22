@@ -413,7 +413,6 @@ struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call)
 	cc_record->saved_ie_contents = call->cc.saved_ie_contents;
 	cc_record->bc = call->bc;
 	cc_record->option.recall_mode = ctrl->cc.option.recall_mode;
-	cc_record->option.retain_service = ctrl->cc.option.retain_service;
 /*! \todo BUGBUG need more initialization?? */
 
 	/*
@@ -891,9 +890,7 @@ static unsigned char *enc_etsi_ptp_cc_request(struct pri *ctrl,
 		}
 	}
 
-	if (cc_record->master->cc.option.retain_service) {
-		msg.args.etsi.CCBS_T_Request.retention_supported = 1;
-	}
+	//msg.args.etsi.CCBS_T_Request.retention_supported = 0;
 
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
@@ -1847,11 +1844,6 @@ void pri_cc_ptp_request(struct pri *ctrl, q931_call *call, int msgtype, const st
 	 * when we saved the original call information.
 	 */
 
-	/* Determine negotiated service_retention. */
-	cc_record->option.retain_service =
-		(invoke->args.etsi.CCBS_T_Request.retention_supported
-			&& cc_record->master->cc.option.retain_service) ? 1 : 0;
-
 	/* Link the signaling link to the cc_record. */
 	call->cc.record = cc_record;
 	cc_record->signaling = call;
@@ -2593,9 +2585,6 @@ static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri 
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_ACTIVATE);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
-		cc_record->option.retain_service =
-			msg->response.result->args.etsi.CCBS_T_Request.retention_supported;
-
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_CC_REQUEST_ACCEPT);
 		break;
 	case APDU_CALLBACK_REASON_MSG_ERROR:
@@ -3052,7 +3041,6 @@ static void pri_cc_act_pass_up_cc_request(struct pri *ctrl, struct pri_cc_record
 	subcmd->cmd = PRI_SUBCMD_CC_REQ;
 	subcmd->u.cc_request.cc_id =  cc_record->record_id;
 	subcmd->u.cc_request.mode = cc_record->is_ccnr ? 1 /* ccnr */ : 0 /* ccbs */;
-	subcmd->u.cc_request.retain_service = cc_record->option.retain_service;
 }
 
 /*!
@@ -3151,7 +3139,6 @@ static void pri_cc_act_pass_up_cc_req_rsp_success(struct pri *ctrl, struct pri_c
 	subcmd->u.cc_request_rsp.cc_id = cc_record->record_id;
 	subcmd->u.cc_request_rsp.status = 0;/* success */
 	subcmd->u.cc_request_rsp.fail_code = 0;
-	subcmd->u.cc_request_rsp.retain_service = cc_record->option.retain_service;
 }
 
 /*!
@@ -3180,7 +3167,6 @@ static void pri_cc_act_pass_up_cc_req_rsp_fail(struct pri *ctrl, struct pri_cc_r
 		(cc_record->msg.cc_req_rsp.reason == APDU_CALLBACK_REASON_MSG_ERROR)
 		? 2 /* error */ : 3 /* reject */;
 	subcmd->u.cc_request_rsp.fail_code = cc_record->msg.cc_req_rsp.code;
-	subcmd->u.cc_request_rsp.retain_service = 0;
 }
 
 /*!
@@ -3207,7 +3193,6 @@ static void pri_cc_act_pass_up_cc_req_rsp_timeout(struct pri *ctrl, struct pri_c
 	subcmd->u.cc_request_rsp.cc_id = cc_record->record_id;
 	subcmd->u.cc_request_rsp.status = 1;/* timeout */
 	subcmd->u.cc_request_rsp.fail_code = 0;
-	subcmd->u.cc_request_rsp.retain_service = 0;
 }
 
 /*!
@@ -5399,7 +5384,7 @@ static unsigned char *enc_cc_etsi_ptp_req_rsp(struct pri *ctrl, unsigned char *p
 	msg.operation = cc_record->response.invoke_operation;
 
 	/* CCBS/CCNR reply */
-	msg.args.etsi.CCBS_T_Request.retention_supported = cc_record->option.retain_service;
+	//msg.args.etsi.CCBS_T_Request.retention_supported = 0;
 
 	pos = rose_encode_result(ctrl, pos, end, &msg);
 

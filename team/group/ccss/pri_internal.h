@@ -180,8 +180,6 @@ struct pri {
 		struct {
 			/*! PTMP recall mode: globalRecall(0), specificRecall(1) */
 			unsigned char recall_mode;
-			/*! TRUE if can retain cc service if party B is unavailable again. */
-			unsigned char retain_service;
 			/*! Q.SIG Request signaling link retention: release(0), retain(1), do-not-care(2) */
 			unsigned char signaling_retention_req;
 			/*! Q.SIG Response request signaling link retention: release(0), retain(1) */
@@ -844,8 +842,6 @@ struct pri_cc_record {
 	struct {
 		/*! PTMP recall mode: globalRecall(0), specificRecall(1) */
 		unsigned char recall_mode;
-		/*! TRUE if negotiated to retain CC service if B busy again. */
-		unsigned char retain_service;
 		/*! TRUE if negotiated for Q.SIG signaling link to be retained. */
 		unsigned char retain_signaling_link;
 #if defined(QSIG_PATH_RESERVATION_SUPPORT)
