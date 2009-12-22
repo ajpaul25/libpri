@@ -1701,14 +1701,6 @@ void pri_cc_recall_mode(struct pri *ctrl, int mode)
 	}
 }
 
-void pri_cc_retain_service(struct pri *ctrl, int retain_service)
-{
-	ctrl = PRI_MASTER(ctrl);
-	if (ctrl) {
-		ctrl->cc.option.retain_service = retain_service ? 1 : 0;
-	}
-}
-
 void pri_cc_retain_signaling_req(struct pri *ctrl, int signaling_retention)
 {
 	ctrl = PRI_MASTER(ctrl);

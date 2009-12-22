@@ -575,11 +575,6 @@ struct pri_subcmd_cc_request {
 	 * ccnr(1)
 	 */
 	int mode;
-	/*!
-	 * \brief TRUE if negotiated to retain CC service if B busy again.
-	 * \note This will be the setting if the CC request is accepted.
-	 */
-	int retain_service;
 };
 
 struct pri_subcmd_cc_request_rsp {
@@ -602,11 +597,6 @@ struct pri_subcmd_cc_request_rsp {
 	 * \note Use pri_facility_reject2str() to convert the reject_code.
 	 */
 	int fail_code;
-	/*!
-	 * \brief TRUE if negotiated to retain CC service if B busy again.
-	 * \note Valid when status is success.
-	 */
-	int retain_service;
 };
 
 struct pri_subcmd_cc_status {
@@ -1416,17 +1406,6 @@ void pri_cc_enable(struct pri *ctrl, int enable);
  * \return Nothing
  */
 void pri_cc_recall_mode(struct pri *ctrl, int mode);
-
-/*!
- * \brief Set the call completion service retention mode to negotiate
- * if party B is busy again.
- *
- * \param ctrl D channel controller.
- * \param retain_service TRUE if can retain cc service if party B is unavailable again.
- *
- * \return Nothing
- */
-void pri_cc_retain_service(struct pri *ctrl, int retain_service);
 
 /*!
  * \brief Set the Q.SIG call completion signaling link retention mode.
