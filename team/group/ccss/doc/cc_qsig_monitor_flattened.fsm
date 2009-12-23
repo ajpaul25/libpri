@@ -188,7 +188,8 @@ FSM CC_QSIG_Monitor
 				Action Send_CC_Suspend;
 				Next_State CC_STATE_SUSPENDED;
 			}
-			Action Start_QSIG_CC_T3;
+			/* Start QSIG_CC_T3 */
+			Action Start_T_RECALL;
 			Next_State CC_STATE_WAIT_CALLBACK;
 		}
 		Stimulus CC_EVENT_SUSPEND {
@@ -240,11 +241,11 @@ FSM CC_QSIG_Monitor
 		Stimulus CC_EVENT_RECALL {
 			/* The original call parameters have already been set. */
 			Action Queue_SETUP_Recall;
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			Next_State CC_STATE_CALLBACK;
 		}
 		Stimulus CC_EVENT_SUSPEND {
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			/*
 			 * The ccSuspend will be sent in a FACILITY or CONNECT
 			 * message depending upon the CIS call state.
@@ -252,11 +253,11 @@ FSM CC_QSIG_Monitor
 			Action Send_CC_Suspend;
 			Next_State CC_STATE_SUSPENDED;
 		}
-		Stimulus CC_EVENT_TIMEOUT_QSIG_CC_T3 {
+		Stimulus CC_EVENT_TIMEOUT_T_RECALL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CC_Cancel(Q931_ANY_MESSAGE);
 			Action Hangup_Signaling_Link;
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -271,7 +272,7 @@ FSM CC_QSIG_Monitor
 			Test != TRUE {
 				Action Send_CC_Cancel(Q931_SETUP);
 			}
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -284,7 +285,7 @@ FSM CC_QSIG_Monitor
 			/* Received ccCancel */
 			Action Pass_Up_CC_Cancel;
 			Action Post_HANGUP_SIGNALING;
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Next_State CC_STATE_WAIT_DESTRUCTION;
 		}
@@ -297,7 +298,7 @@ FSM CC_QSIG_Monitor
 			Test != TRUE {
 				Action Send_CC_Cancel(Q931_SETUP);
 			}
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;

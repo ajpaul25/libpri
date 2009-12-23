@@ -191,10 +191,11 @@ FSM CC_QSIG_Monitor
 	}
 	State CC_STATE_WAIT_CALLBACK {
 		Prolog {
-			Action Start_QSIG_CC_T3;
+			/* Start QSIG_CC_T3 */
+			Action Start_T_RECALL;
 		}
 		Epilog {
-			Action Stop_QSIG_CC_T3;
+			Action Stop_T_RECALL;
 		}
 		Stimulus CC_EVENT_RECALL {
 			/* The original call parameters have already been set. */
@@ -204,7 +205,7 @@ FSM CC_QSIG_Monitor
 		Stimulus CC_EVENT_SUSPEND {
 			Next_State CC_STATE_SUSPENDED;
 		}
-		Stimulus CC_EVENT_TIMEOUT_QSIG_CC_T3 {
+		Stimulus CC_EVENT_TIMEOUT_T_RECALL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CC_Cancel(Q931_ANY_MESSAGE);
 			Action Hangup_Signaling_Link;
