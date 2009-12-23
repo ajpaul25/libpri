@@ -1497,8 +1497,41 @@ static int rose_cc_cancel(struct pri *ctrl, q931_call *call, struct pri_cc_recor
 	return pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL);
 }
 
-/* BUGBUG ccCancel could be sent in SETUP or RELEASE. */
-/* If ccPathReserve is supported it could also be sent in DISCONNECT. */
+/*!
+ * \internal
+ * \brief Encode and send a Q.SIG ccCancel message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param cc_record Call completion record to process event.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int send_cc_cancel(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	int retval;
+	q931_call *call;
+
+	/*
+	 * ccCancel could be sent in SETUP or RELEASE.
+	 * If ccPathReserve is supported it could also be sent in DISCONNECT.
+	 */
+	retval = -1;
+	call = cc_record->signaling;
+	if (call) {
+		retval = rose_cc_cancel(ctrl, call, cc_record, Q931_ANY_MESSAGE);
+		if (!retval) {
+			retval = pri_hangup(ctrl, call, -1);
+		}
+	} else {
+		retval = pri_cc_send_setup_encode(ctrl, cc_record, rose_cc_cancel);
+	}
+	if (retval) {
+		pri_message(ctrl, "Could not schedule message for ccCancel.\n");
+		return -1;
+	}
+	return 0;
+}
 
 /*!
  * \internal
@@ -1645,10 +1678,8 @@ static int send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc_record)
 	q931_call *call;
 
 	call = cc_record->signaling;
-	if (!call) {
-		return -1;
-	}
-	if (rose_cc_resume_encode(ctrl, call, Q931_FACILITY)
+	if (!call
+		|| rose_cc_resume_encode(ctrl, call, Q931_FACILITY)
 		|| q931_facility(ctrl, call)) {
 		pri_message(ctrl, "Could not schedule message for CC resume.\n");
 		return -1;
@@ -2622,6 +2653,21 @@ static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record 
 
 /*!
  * \internal
+ * \brief FSM action to disassociate the signaling link from the cc_record.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_disassociate_signaling_link(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	pri_cc_disassociate_signaling_link(cc_record);
+}
+
+/*!
+ * \internal
  * \brief FSM action to send CC available message.
  *
  * \param ctrl D channel controller.
@@ -3388,6 +3434,21 @@ static void pri_cc_act_send_remote_user_free(struct pri *ctrl, struct pri_cc_rec
 
 /*!
  * \internal
+ * \brief FSM action to send the CALL_PROCEEDING message on the signaling link.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_send_call_proceeding(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	pri_proceeding(ctrl, cc_record->signaling, 0, 0);
+}
+
+/*!
+ * \internal
  * \brief FSM action to send the CC suspend message.
  *
  * \param ctrl D channel controller.
@@ -3414,6 +3475,21 @@ static void pri_cc_act_send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 	send_cc_resume(ctrl, cc_record);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to send the ccCancel message.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_send_cc_cancel(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	send_cc_cancel(ctrl, cc_record);
 }
 
 /*!
@@ -5488,6 +5564,299 @@ static void pri_cc_fsm_ptp_monitor_suspended(struct pri *ctrl, q931_call *call, 
 
 /*!
  * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_IDLE.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_idle(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_AVAILABLE:
+		cc_record->state = CC_STATE_AVAILABLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_AVAILABLE.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_avail(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	/*
+	 * For Q.SIG mode the T_RETENTION timer is not defined.  However,
+	 * we will use it anyway in this state to protect our resources
+	 * from leaks caused by user A not requesting CC.  This timer
+	 * should be set much longer than the PTMP network link to
+	 * allow for variations in user A's CC offer timer.
+	 */
+	switch (event) {
+	case CC_EVENT_MSG_RELEASE:
+	case CC_EVENT_MSG_RELEASE_COMPLETE:
+		pri_cc_act_stop_t_retention(ctrl, cc_record);
+		pri_cc_act_start_t_retention(ctrl, cc_record);
+		break;
+	case CC_EVENT_CC_REQUEST:
+		pri_cc_act_pass_up_cc_request(ctrl, cc_record);
+		/* Send Q931_CALL_PROCEEDING message on signaling link. */
+		pri_cc_act_send_call_proceeding(ctrl, cc_record);
+		pri_cc_act_stop_t_retention(ctrl, cc_record);
+		cc_record->state = CC_STATE_REQUESTED;
+		break;
+	case CC_EVENT_TIMEOUT_T_RETENTION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_retention(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_stop_t_retention(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_REQUESTED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_req(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_CC_REQUEST_ACCEPT:
+		/* Start QSIG_CCBS_T2/QSIG_CCNR_T2 depending upon CC mode. */
+		pri_cc_act_start_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_WAIT_DESTRUCTION.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_wait_destruction(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	/*
+	 * Delayed disconnect of the signaling link to allow subcmd events
+	 * from the signaling link to be passed up.
+	 */
+	switch (event) {
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_HANGUP_SIGNALING:
+		pri_cc_act_hangup_signaling_link(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_ACTIVATED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_activated(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_REMOTE_USER_FREE:
+		/* Send ccExecPossible in FACILITY or SETUP. */
+		pri_cc_act_send_remote_user_free(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_CALLBACK;
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_disassociate_signaling_link(ctrl, cc_record);
+		break;
+	case CC_EVENT_LINK_CANCEL:
+		/* Received ccCancel */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_WAIT_CALLBACK.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_wait_callback(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_SUSPEND:
+		/* Received ccSuspend */
+		pri_cc_act_set_a_status_busy(ctrl, cc_record);
+		pri_cc_act_pass_up_a_status(ctrl, cc_record);
+		cc_record->state = CC_STATE_SUSPENDED;
+		break;
+	case CC_EVENT_RECALL:
+		/* Received ccRingout */
+		pri_cc_act_pass_up_cc_call(ctrl, cc_record);
+		pri_cc_act_set_original_call_parameters(ctrl, call, cc_record);
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_disassociate_signaling_link(ctrl, cc_record);
+		break;
+	case CC_EVENT_LINK_CANCEL:
+		/* Received ccCancel */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM Q.SIG agent CC_STATE_SUSPENDED.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_qsig_agent_suspended(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
+	case CC_EVENT_RESUME:
+		/* Received ccResume */
+		pri_cc_act_set_a_status_free(ctrl, cc_record);
+		pri_cc_act_pass_up_a_status(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
+		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_SIGNALING_GONE:
+		/* Signaling link cleared. */
+		pri_cc_act_disassociate_signaling_link(ctrl, cc_record);
+		break;
+	case CC_EVENT_LINK_CANCEL:
+		/* Received ccCancel */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_post_hangup_signaling(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_DESTRUCTION;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
  * \brief CC FSM state function type.
  *
  * \param ctrl D channel controller.
@@ -5551,6 +5920,34 @@ static const pri_cc_fsm_state pri_cc_fsm_ptp_monitor[CC_STATE_NUM] = {
 /* *INDENT-ON* */
 };
 
+/*! CC FSM Q.SIG agent state table. */
+static const pri_cc_fsm_state pri_cc_fsm_qsig_agent[CC_STATE_NUM] = {
+/* *INDENT-OFF* */
+	[CC_STATE_IDLE] = pri_cc_fsm_qsig_agent_idle,
+	[CC_STATE_AVAILABLE] = pri_cc_fsm_qsig_agent_avail,
+	[CC_STATE_REQUESTED] = pri_cc_fsm_qsig_agent_req,
+	[CC_STATE_WAIT_DESTRUCTION] = pri_cc_fsm_qsig_agent_wait_destruction,
+	[CC_STATE_ACTIVATED] = pri_cc_fsm_qsig_agent_activated,
+	[CC_STATE_WAIT_CALLBACK] = pri_cc_fsm_qsig_agent_wait_callback,
+	[CC_STATE_SUSPENDED] = pri_cc_fsm_qsig_agent_suspended,
+/* *INDENT-ON* */
+};
+
+/*! \todo BUGBUG pri_cc_fsm_qsig_monitor(Q.SIG) not written */
+/*! CC FSM Q.SIG monitor state table. */
+static const pri_cc_fsm_state pri_cc_fsm_qsig_monitor[CC_STATE_NUM] = {
+/* *INDENT-OFF* */
+	//[CC_STATE_IDLE] = pri_cc_fsm_qsig_monitor_idle,
+	//[CC_STATE_AVAILABLE] = pri_cc_fsm_qsig_monitor_avail,
+	//[CC_STATE_REQUESTED] = pri_cc_fsm_qsig_monitor_req,
+	//[CC_STATE_WAIT_DESTRUCTION] = pri_cc_fsm_qsig_monitor_wait_destruction,
+	//[CC_STATE_ACTIVATED] = pri_cc_fsm_qsig_monitor_activated,
+	//[CC_STATE_WAIT_CALLBACK] = pri_cc_fsm_qsig_monitor_wait_callback,
+	//[CC_STATE_CALLBACK] = pri_cc_fsm_qsig_monitor_callback,
+	//[CC_STATE_SUSPENDED] = pri_cc_fsm_qsig_monitor_suspended,
+/* *INDENT-ON* */
+};
+
 /*!
  * \brief Send an event to the cc state machine.
  *
@@ -5570,11 +5967,10 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_QSIG:
-		/*! \todo BUGBUG pri_cc_event(Q.SIG) not written */
 		if (cc_record->is_agent) {
-			cc_fsm = NULL;
+			cc_fsm = pri_cc_fsm_qsig_agent;
 		} else {
-			cc_fsm = NULL;
+			cc_fsm = pri_cc_fsm_qsig_monitor;
 		}
 		break;
 	case PRI_SWITCH_EUROISDN_E1:
