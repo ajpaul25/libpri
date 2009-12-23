@@ -88,14 +88,7 @@ FSM CC_QSIG_Agent
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -112,14 +105,7 @@ FSM CC_QSIG_Agent
 			Next_State CC_STATE_WAIT_DESTRUCTION;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -139,14 +125,7 @@ FSM CC_QSIG_Agent
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -163,14 +142,7 @@ FSM CC_QSIG_Agent
 			Next_State CC_STATE_WAIT_DESTRUCTION;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -185,14 +157,7 @@ FSM CC_QSIG_Agent
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -209,14 +174,7 @@ FSM CC_QSIG_Agent
 			Next_State CC_STATE_WAIT_DESTRUCTION;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Test == Get_Signaling_Link_Active;
-			Test == TRUE {
-				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Hangup_Signaling_Link;
-			}
-			Test != TRUE {
-				Action Send_CC_Cancel(Q931_SETUP);
-			}
+			Action Send_CC_Cancel;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
