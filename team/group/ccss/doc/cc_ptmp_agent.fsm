@@ -261,12 +261,13 @@ FSM CC_PTMP_Agent
 	}
 	State CC_STATE_WAIT_CALLBACK {
 		Prolog {
-			Action Start_T_CCBS3;
+			/* Start T_CCBS3 */
+			Action Start_T_RECALL;
 		}
 		Epilog {
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 		}
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS3 {
+		Stimulus CC_EVENT_TIMEOUT_T_RECALL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS3_TIMEOUT);
 			Next_State CC_STATE_IDLE;

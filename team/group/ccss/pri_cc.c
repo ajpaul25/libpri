@@ -2587,8 +2587,8 @@ static const char *pri_cc_fsm_event_str(enum CC_EVENTS event)
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		str = "CC_EVENT_TIMEOUT_T_SUPERVISION";
 		break;
-	case CC_EVENT_TIMEOUT_T_CCBS3:
-		str = "CC_EVENT_TIMEOUT_T_CCBS3";
+	case CC_EVENT_TIMEOUT_T_RECALL:
+		str = "CC_EVENT_TIMEOUT_T_RECALL";
 		break;
 	}
 	return str;
@@ -2825,54 +2825,70 @@ static void pri_cc_act_start_t_supervision(struct pri *ctrl, struct pri_cc_recor
 
 /*!
  * \internal
- * \brief FSM action to stop the PTMP T_CCBS3 timer.
+ * \brief FSM action to stop the T_RECALL timer.
  *
  * \param ctrl D channel controller.
  * \param cc_record Call completion record to process event.
  *
  * \return Nothing
  */
-static void pri_cc_act_stop_t_ccbs3(struct pri *ctrl, struct pri_cc_record *cc_record)
+static void pri_cc_act_stop_t_recall(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
-	pri_schedule_del(ctrl, cc_record->fsm.ptmp.t_ccbs3);
-	cc_record->fsm.ptmp.t_ccbs3 = 0;
+	pri_schedule_del(ctrl, cc_record->t_recall);
+	cc_record->t_recall = 0;
 }
 
 /*!
  * \internal
- * \brief T_CCBS3 timeout callback.
+ * \brief T_RECALL timeout callback.
  *
  * \param data CC record pointer.
  *
  * \return Nothing
  */
-static void pri_cc_timeout_t_ccbs3(void *data)
+static void pri_cc_timeout_t_recall(void *data)
 {
 	struct pri_cc_record *cc_record = data;
 
-	cc_record->fsm.ptmp.t_ccbs3 = 0;
-	q931_cc_timeout(cc_record->master, cc_record, CC_EVENT_TIMEOUT_T_CCBS3);
+	cc_record->t_recall = 0;
+	q931_cc_timeout(cc_record->master, cc_record, CC_EVENT_TIMEOUT_T_RECALL);
 }
 
 /*!
  * \internal
- * \brief FSM action to start the PTMP T_CCBS3 timer.
+ * \brief FSM action to start the T_RECALL timer.
  *
  * \param ctrl D channel controller.
  * \param cc_record Call completion record to process event.
  *
  * \return Nothing
  */
-static void pri_cc_act_start_t_ccbs3(struct pri *ctrl, struct pri_cc_record *cc_record)
+static void pri_cc_act_start_t_recall(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
+	int duration;
+
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
-	if (cc_record->fsm.ptmp.t_ccbs3) {
-		pri_error(ctrl, "!! T_CCBS3 is already running!");
-		pri_schedule_del(ctrl, cc_record->fsm.ptmp.t_ccbs3);
+	if (cc_record->t_recall) {
+		pri_error(ctrl, "!! T_RECALL is already running!");
+		pri_schedule_del(ctrl, cc_record->t_recall);
 	}
-	cc_record->fsm.ptmp.t_ccbs3 = pri_schedule_event(ctrl,
-		ctrl->timers[PRI_TIMER_T_CCBS3], pri_cc_timeout_t_ccbs3, cc_record);
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		duration = ctrl->timers[PRI_TIMER_T_CCBS3];
+		break;
+	case PRI_SWITCH_QSIG:
+		duration = ctrl->timers[PRI_TIMER_QSIG_CC_T3];
+		break;
+	default:
+		/* Timer not defined for this switch type.  Should never happen. */
+		pri_error(ctrl, "!! A CC recall timer is not defined!");
+		duration = 0;
+		break;
+	}
+	cc_record->t_supervision = pri_schedule_event(ctrl, duration,
+		pri_cc_timeout_t_recall, cc_record);
 }
 
 /*!
@@ -4202,7 +4218,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 			pri_cc_act_send_remote_user_free(ctrl, cc_record);
 			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
 			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_start_t_ccbs3(ctrl, cc_record);
+			pri_cc_act_start_t_recall(ctrl, cc_record);
 			cc_record->state = CC_STATE_WAIT_CALLBACK;
 			break;
 		default:
@@ -4314,7 +4330,7 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 		}
 		pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
 		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-		pri_cc_act_start_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_start_t_recall(ctrl, cc_record);
 		cc_record->state = CC_STATE_WAIT_CALLBACK;
 		break;
 	case CC_EVENT_A_BUSY:
@@ -4488,10 +4504,10 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
 {
 	switch (event) {
-	case CC_EVENT_TIMEOUT_T_CCBS3:
+	case CC_EVENT_TIMEOUT_T_RECALL:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
 		pri_cc_act_send_ccbs_erase(ctrl, cc_record, 2 /* t-CCBS3-timeout */);
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_stop_t_supervision(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
@@ -4505,7 +4521,7 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 		if (cc_record->option.recall_mode == 0 /* globalRecall */) {
 			pri_cc_act_send_ccbs_stop_alerting(ctrl, cc_record);
 		}
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_reset_a_status(ctrl, cc_record);
 		cc_record->state = CC_STATE_ACTIVATED;
 		break;
@@ -4515,7 +4531,7 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 		if (cc_record->option.recall_mode == 0 /* globalRecall */) {
 			pri_cc_act_send_ccbs_stop_alerting(ctrl, cc_record);
 		}
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		cc_record->state = CC_STATE_CALLBACK;
 		break;
 	case CC_EVENT_A_STATUS:
@@ -4525,7 +4541,7 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
 		pri_cc_act_send_ccbs_erase(ctrl, cc_record, 1 /* t-CCBS2-timeout */);
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_stop_t_supervision(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
@@ -4533,14 +4549,14 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 	case CC_EVENT_LINK_CANCEL:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
 		pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_stop_t_supervision(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_CANCEL:
 		pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
-		pri_cc_act_stop_t_ccbs3(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_stop_t_supervision(ctrl, cc_record);
 		pri_cc_act_set_self_destruct(ctrl, cc_record);
 		cc_record->state = CC_STATE_IDLE;

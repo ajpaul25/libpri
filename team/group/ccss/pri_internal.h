@@ -706,7 +706,7 @@ enum CC_EVENTS {
 	/*! Max time the CCBS/CCNR service will be active. */
 	CC_EVENT_TIMEOUT_T_SUPERVISION,
 	/*! Max time to wait for user A to respond to user B availability. */
-	CC_EVENT_TIMEOUT_T_CCBS3,
+	CC_EVENT_TIMEOUT_T_RECALL,
 };
 
 enum CC_PARTY_A_AVAILABILITY {
@@ -757,8 +757,6 @@ struct pri_cc_record {
 		struct {
 			/*! Extended T_CCBS1 timer id for CCBSStatusRequest handling. */
 			int extended_t_ccbs1;
-			/*! T_CCBS3 timer id. A response to B available timer. */
-			int t_ccbs3;
 			/*! Invoke id for the CCBSStatusRequest message to find if T_CCBS1 still running. */
 			int t_ccbs1_invoke_id;
 			/*! Accumulating party A availability status */
@@ -770,8 +768,6 @@ struct pri_cc_record {
 		struct {
 			/*! Q.931 message type the current message event came in on. */
 			int msgtype;
-			/*! QSIG_CC_T3.  A response to B available timer. */
-			int t_cc_t3;
 		} qsig;
 	} fsm;
 	/*! Received message parameters of interest. */
@@ -814,6 +810,14 @@ struct pri_cc_record {
 	 * Q.SIG - QSIG_CCBS_T2/QSIG_CCNR_T2
 	 */
 	int t_supervision;
+	/*!
+	 * \brief Party A response to B availability for recall timer.
+	 * \details
+	 * This timer is one of the following timer id's:
+	 * PTMP - T_CCBS3
+	 * Q.SIG - QSIG_CC_T3
+	 */
+	int t_recall;
 	/*! Invoke id for the cc-request message to find if T_ACTIVATE/QSIG_CC_T1 still running. */
 	int t_activate_invoke_id;
 	/*! Pending response information. */

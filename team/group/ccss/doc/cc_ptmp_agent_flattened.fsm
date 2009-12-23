@@ -117,7 +117,8 @@ FSM CC_PTMP_Agent
 				Action Send_RemoteUserFree;
 				Action Stop_T_CCBS1;
 				Action Stop_Extended_T_CCBS1;
-				Action Start_T_CCBS3;
+				/* Start T_CCBS3 */
+				Action Start_T_RECALL;
 				Next_State CC_STATE_WAIT_CALLBACK;
 			}
 		}
@@ -216,7 +217,8 @@ FSM CC_PTMP_Agent
 			}
 			Action Stop_T_CCBS1;
 			Action Stop_Extended_T_CCBS1;
-			Action Start_T_CCBS3;
+			/* Start T_CCBS3 */
+			Action Start_T_RECALL;
 			Next_State CC_STATE_WAIT_CALLBACK;
 		}
 		Stimulus CC_EVENT_A_BUSY {
@@ -360,10 +362,10 @@ FSM CC_PTMP_Agent
 		}
 	}
 	State CC_STATE_WAIT_CALLBACK {
-		Stimulus CC_EVENT_TIMEOUT_T_CCBS3 {
+		Stimulus CC_EVENT_TIMEOUT_T_RECALL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS3_TIMEOUT);
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -378,7 +380,7 @@ FSM CC_PTMP_Agent
 			Test == globalRecall {
 				Action Send_CCBSStopAlerting;
 			}
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Action Reset_A_Status;
 			Next_State CC_STATE_ACTIVATED;
 		}
@@ -389,7 +391,7 @@ FSM CC_PTMP_Agent
 			Test == globalRecall {
 				Action Send_CCBSStopAlerting;
 			}
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Next_State CC_STATE_CALLBACK;
 		}
 		Stimulus CC_EVENT_A_STATUS {
@@ -399,7 +401,7 @@ FSM CC_PTMP_Agent
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(T_CCBS2_TIMEOUT);
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
@@ -407,14 +409,14 @@ FSM CC_PTMP_Agent
 		Stimulus CC_EVENT_LINK_CANCEL {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CCBSErase(Normal_Unspecified);
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
 			Action Send_CCBSErase(Normal_Unspecified);
-			Action Stop_T_CCBS3;
+			Action Stop_T_RECALL;
 			Action Stop_T_SUPERVISION;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
