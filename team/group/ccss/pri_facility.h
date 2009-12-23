@@ -239,5 +239,8 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 int pri_cc_interrogate_rsp(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke);
 void pri_cc_ptmp_request(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke);
 void pri_cc_ptp_request(struct pri *ctrl, q931_call *call, int msgtype, const struct rose_msg_invoke *invoke);
+void pri_cc_qsig_request(struct pri *ctrl, q931_call *call, int msgtype, const struct rose_msg_invoke *invoke);
+void pri_cc_qsig_cancel(struct pri *ctrl, q931_call *call, int msgtype, const struct rose_msg_invoke *invoke);
+void pri_cc_qsig_exec_possible(struct pri *ctrl, q931_call *call, int msgtype, const struct rose_msg_invoke *invoke);
 
 #endif /* _PRI_FACILITY_H */

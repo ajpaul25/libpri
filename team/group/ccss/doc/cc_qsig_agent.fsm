@@ -118,12 +118,12 @@ FSM CC_QSIG_Agent
 			Test == Get_Signaling_Link_Active;
 			Test == TRUE {
 				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Post_HANGUP_SIGNALING;
+				Action Hangup_Signaling_Link;
 			}
 			Test != TRUE {
 				Action Send_CC_Cancel(Q931_SETUP);
 			}
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */
@@ -140,10 +140,11 @@ FSM CC_QSIG_Agent
 			Test == TRUE {
 				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
 				Action Hangup_Signaling_Link;
-				Next_State CC_STATE_IDLE;
 			}
-			Action Send_CC_Cancel(Q931_SETUP);
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Test != TRUE {
+				Action Send_CC_Cancel(Q931_SETUP);
+			}
+			Next_State CC_STATE_IDLE;
 		}
 	}
 }

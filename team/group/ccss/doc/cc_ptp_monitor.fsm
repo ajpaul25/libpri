@@ -45,6 +45,9 @@ FSM CC_PTP_Monitor
 		}
 	}
 	State CC_STATE_REQUESTED {
+		Epilog {
+			Action Stop_T_ACTIVATE;
+		}
 		Stimulus CC_EVENT_CC_REQUEST_ACCEPT {
 			/*
 			 * Received CCBS-T-Request/CCNR-T-Request response
@@ -52,13 +55,11 @@ FSM CC_PTP_Monitor
 			 *   Negotiated CC retention setting saved
 			 */
 			Action Pass_Up_CC_Req_Rsp_Success;
-			Action Stop_T_ACTIVATE;
 			Next_State CC_STATE_ACTIVATED;
 		}
 		Stimulus CC_EVENT_CC_REQUEST_FAIL {
 			Action Pass_Up_CC_Req_Rsp_Fail(error/reject, code);
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_ACTIVATE;
 			/*
 			 * If this request fail comes in with the RELEASE_COMPLETE
 			 * message then the post action will never get a chance to
@@ -71,19 +72,16 @@ FSM CC_PTP_Monitor
 		Stimulus CC_EVENT_TIMEOUT_T_ACTIVATE {
 			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_ACTIVATE;
-			Action Post_HANGUP_SIGNALING;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Hangup_Signaling_Link;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Claim it was a timeout */
 			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_ACTIVATE;
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Action Stop_T_ACTIVATE;
 			Action Hangup_Signaling_Link;
 			Next_State CC_STATE_IDLE;
 		}
@@ -154,8 +152,8 @@ FSM CC_PTP_Monitor
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Action Post_HANGUP_SIGNALING;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Hangup_Signaling_Link;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */

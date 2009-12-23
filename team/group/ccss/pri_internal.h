@@ -613,8 +613,6 @@ struct q931_call {
 		struct q931_saved_ie_contents saved_ie_contents;
 		/*! Only save the first of each BC, HLC, and LLC from the initial SETUP. */
 		unsigned char saved_ie_flags;
-		/*! TRUE if the remote party is party B. */
-		unsigned char party_b_is_remote;
 		/*! TRUE if call needs to be hung up. */
 		unsigned char hangup_call;
 	} cc;
@@ -769,6 +767,12 @@ struct pri_cc_record {
 		/*! PTP FSM parameters. */
 		struct {
 		} ptp;
+		struct {
+			/*! Q.931 message type the current message event came in on. */
+			int msgtype;
+			/*! QSIG_CC_T3.  A response to B available timer. */
+			int t_cc_t3;
+		} qsig;
 	} fsm;
 	/*! Received message parameters of interest. */
 	union {
@@ -830,8 +834,6 @@ struct pri_cc_record {
 	unsigned char fsm_complete;
 	/*! TRUE if we are a call completion agent. */
 	unsigned char is_agent;
-	/*! TRUE if the remote party is party B. (We are a monitor./We are the originator.) */
-	unsigned char party_b_is_remote;
 	/*! TRUE if active cc mode is CCNR. */
 	unsigned char is_ccnr;
 	/*! PTMP pre-activation reference id. (0-127) */
@@ -886,13 +888,13 @@ void q931_party_address_init(struct q931_party_address *address);
 void q931_party_id_init(struct q931_party_id *id);
 void q931_party_redirecting_init(struct q931_party_redirecting *redirecting);
 
-static inline void q931_party_address_to_id(struct q931_party_id *id, struct q931_party_address *address)
+static inline void q931_party_address_to_id(struct q931_party_id *id, const struct q931_party_address *address)
 {
 	id->number = address->number;
 	id->subaddress = address->subaddress;
 }
 
-static inline void q931_party_id_to_address(struct q931_party_address *address, struct q931_party_id *id)
+static inline void q931_party_id_to_address(struct q931_party_address *address, const struct q931_party_id *id)
 {
 	address->number = id->number;
 	address->subaddress = id->subaddress;
@@ -934,8 +936,8 @@ int pri_cc_new_reference_id(struct pri *ctrl);
 void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
 int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
-int q931_cc_timeout(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
-void q931_cc_indirect(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
+int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_EVENTS event);
+void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
 static inline struct pri * PRI_MASTER(struct pri *mypri)
 {

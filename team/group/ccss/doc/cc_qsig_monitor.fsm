@@ -55,19 +55,20 @@ FSM CC_QSIG_Monitor
 			 *   Negotiated signaling link retention setting saved
 			 */
 			Action Stop_T_ACTIVATE;
-			Test = Get_Retain_Signaling_Link;
-			Test == TRUE {
-				Test = Get_msgtype;
-				Test == Q931_RELEASE {
+			Test = Get_msgtype;
+			Test == Q931_RELEASE {
+				Action Disassociate_Signaling_Link;
+				Test = Get_Retain_Signaling_Link;
+				Test == TRUE {
 					/*
 					 * The far end did not honor the
 					 * signaling link retention requirement.
+					 * ECMA-186 Section 6.5.2.2.1
 					 */
 					Action Pass_Up_CC_Req_Rsp_Timeout;
 					Action Pass_Up_CC_Cancel;
-					Action Disassociate_Signaling_Link;
 					Action Send_CC_Cancel(Q931_SETUP);
-					Next_State CC_STATE_WAIT_DESTRUCTION;
+					Next_State CC_STATE_IDLE;
 				}
 			}
 			Action Pass_Up_CC_Req_Rsp_Success;
@@ -90,8 +91,8 @@ FSM CC_QSIG_Monitor
 			Action Stop_T_ACTIVATE;
 			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Pass_Up_CC_Cancel;
-			Action Post_HANGUP_SIGNALING;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Hangup_Signaling_Link;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			Action Stop_T_ACTIVATE;
@@ -124,8 +125,9 @@ FSM CC_QSIG_Monitor
 			}
 			Test != Q931_RELEASE {
 				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Post_HANGUP_SIGNALING;
+				Action Hangup_Signaling_Link;
 			}
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CC_REQUEST_FAIL {
 			Action Stop_T_ACTIVATE;
@@ -205,8 +207,8 @@ FSM CC_QSIG_Monitor
 		Stimulus CC_EVENT_TIMEOUT_QSIG_CC_T3 {
 			Action Pass_Up_CC_Cancel;
 			Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-			Action Post_HANGUP_SIGNALING;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Hangup_Signaling_Link;
+			Next_State CC_STATE_IDLE;
 		}
 	}
 	State CC_STATE_CALLBACK {
@@ -237,12 +239,12 @@ FSM CC_QSIG_Monitor
 			Test == Get_Signaling_Link_Active;
 			Test == TRUE {
 				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
-				Action Post_HANGUP_SIGNALING;
+				Action Hangup_Signaling_Link;
 			}
 			Test != TRUE {
 				Action Send_CC_Cancel(Q931_SETUP);
 			}
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */
@@ -259,10 +261,11 @@ FSM CC_QSIG_Monitor
 			Test == TRUE {
 				Action Send_CC_Cancel(Q931_ANY_MESSAGE);
 				Action Hangup_Signaling_Link;
-				Next_State CC_STATE_IDLE;
 			}
-			Action Send_CC_Cancel(Q931_SETUP);
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Test != TRUE {
+				Action Send_CC_Cancel(Q931_SETUP);
+			}
+			Next_State CC_STATE_IDLE;
 		}
 	}
 }
