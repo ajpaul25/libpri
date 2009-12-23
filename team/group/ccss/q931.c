@@ -4980,7 +4980,6 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	/* Save the initial cc-parties. */
 	c->cc.party_a = c->local_id;
-	c->cc.party_b_is_remote = 1;
 
 	c->cc.saved_ie_contents.length = 0;
 	c->cc.saved_ie_flags = 0;
@@ -6757,24 +6756,27 @@ static void q931_apdu_timeout(void *data)
  * \brief Generic call-completion timeout event handler.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg.
  * \param cc_record Call completion record to process event.
  * \param event Event to process.
  *
  * \retval nonzero if cc record destroyed because FSM completed.
  */
-int q931_cc_timeout(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_EVENTS event)
 {
+	q931_call *call;
+	q931_call *dummy;
 	int fsm_complete;
 
+	q931_clr_subcommands(ctrl);
+	dummy = cc_record->master->dummy_call;
+	call = cc_record->signaling;
 	if (!call) {
 		/* Substitute the broadcast dummy call reference call. */
-		call = PRI_MASTER(ctrl)->dummy_call;
+		call = dummy;
 	}
-	q931_clr_subcommands(ctrl);
 	fsm_complete = pri_cc_event(ctrl, call, cc_record, event);
 	if (ctrl->subcmds.counter_subcmd) {
-		q931_fill_facility_event(ctrl, call);
+		q931_fill_facility_event(ctrl, dummy);
 		ctrl->schedev = 1;
 	}
 	return fsm_complete;
@@ -6784,22 +6786,26 @@ int q931_cc_timeout(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_
  * \brief Generic call-completion indirect event creation.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg.
  * \param cc_record Call completion record to process event.
  * \param func Function to call that will generate a libpri event.
  *
  * \return Nothing
  */
-void q931_cc_indirect(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record))
+void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record))
 {
+	q931_call *call;
+	q931_call *dummy;
+
+	q931_clr_subcommands(ctrl);
+	dummy = cc_record->master->dummy_call;
+	call = cc_record->signaling;
 	if (!call) {
 		/* Substitute the broadcast dummy call reference call. */
-		call = PRI_MASTER(ctrl)->dummy_call;
+		call = dummy;
 	}
-	q931_clr_subcommands(ctrl);
 	func(ctrl, call, cc_record);
 	if (ctrl->subcmds.counter_subcmd) {
-		q931_fill_facility_event(ctrl, call);
+		q931_fill_facility_event(ctrl, dummy);
 		ctrl->schedev = 1;
 	}
 }
@@ -7016,7 +7022,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		/* Save the initial cc-parties. (Incoming SETUP can only be a master call.) */
 		c->cc.party_a = c->remote_id;
-		c->cc.party_b_is_remote = 0;
 
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;

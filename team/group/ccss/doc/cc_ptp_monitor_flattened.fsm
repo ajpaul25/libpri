@@ -57,7 +57,6 @@ FSM CC_PTP_Monitor
 		Stimulus CC_EVENT_CC_REQUEST_FAIL {
 			Action Pass_Up_CC_Req_Rsp_Fail(error/reject, code);
 			Action Pass_Up_CC_Cancel;
-			Action Stop_T_ACTIVATE;
 			/*
 			 * If this request fail comes in with the RELEASE_COMPLETE
 			 * message then the post action will never get a chance to
@@ -65,14 +64,16 @@ FSM CC_PTP_Monitor
 			 * will be processed first.
 			 */
 			Action Post_HANGUP_SIGNALING;
+			Action Stop_T_ACTIVATE;
 			Next_State CC_STATE_WAIT_DESTRUCTION;
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_ACTIVATE {
 			Action Pass_Up_CC_Req_Rsp_Timeout;
 			Action Pass_Up_CC_Cancel;
+			Action Hangup_Signaling_Link;
 			Action Stop_T_ACTIVATE;
-			Action Post_HANGUP_SIGNALING;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Set_Selfdestruct;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Claim it was a timeout */
@@ -83,8 +84,8 @@ FSM CC_PTP_Monitor
 			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_CANCEL {
-			Action Stop_T_ACTIVATE;
 			Action Hangup_Signaling_Link;
+			Action Stop_T_ACTIVATE;
 			Action Set_Selfdestruct;
 			Next_State CC_STATE_IDLE;
 		}
@@ -133,9 +134,10 @@ FSM CC_PTP_Monitor
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Action Post_HANGUP_SIGNALING;
+			Action Hangup_Signaling_Link;
 			Action Stop_T_SUPERVISION;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Set_Selfdestruct;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */
@@ -162,9 +164,10 @@ FSM CC_PTP_Monitor
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Action Post_HANGUP_SIGNALING;
+			Action Hangup_Signaling_Link;
 			Action Stop_T_SUPERVISION;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Set_Selfdestruct;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */
@@ -192,9 +195,10 @@ FSM CC_PTP_Monitor
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Pass_Up_CC_Cancel;
-			Action Post_HANGUP_SIGNALING;
+			Action Hangup_Signaling_Link;
 			Action Stop_T_SUPERVISION;
-			Next_State CC_STATE_WAIT_DESTRUCTION;
+			Action Set_Selfdestruct;
+			Next_State CC_STATE_IDLE;
 		}
 		Stimulus CC_EVENT_SIGNALING_GONE {
 			/* Signaling link cleared. */

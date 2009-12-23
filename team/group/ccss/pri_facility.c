@@ -4438,24 +4438,70 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_QSIG_CfnrDivertedLegFailed:
 		break;
 #endif	/* Not handled yet */
-#if 0	/* Not handled yet */
 	case ROSE_QSIG_CcbsRequest:
+		pri_cc_qsig_request(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_QSIG_CcnrRequest:
+		pri_cc_qsig_request(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_QSIG_CcCancel:
+		pri_cc_qsig_cancel(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_QSIG_CcExecPossible:
+		pri_cc_qsig_exec_possible(ctrl, call, msgtype, invoke);
 		break;
 	case ROSE_QSIG_CcPathReserve:
+		/*!
+		 * \todo It may be possible for us to accept the ccPathReserve call.
+		 * We could certainly never initiate it.
+		 */
+		rose_error_msg_encode(ctrl, call, Q931_ANY_MESSAGE, invoke->invoke_id,
+			ROSE_ERROR_QSIG_FailedDueToInterworking);
+		call->cc.hangup_call = 1;
 		break;
 	case ROSE_QSIG_CcRingout:
+		if (msgtype != Q931_SETUP) {
+			/*
+			 * Ignore since it did not come in on the correct message.
+			 *
+			 * It could come in on a FACILITY message if we supported
+			 * incoming ccPathReserve calls.
+			 */
+			break;
+		}
+
+		q931_party_id_to_address(&party_address, &call->remote_id);
+		cc_record = pri_cc_find_by_addressing(ctrl, &party_address, &call->called,
+			call->cc.saved_ie_contents.length, call->cc.saved_ie_contents.data);
+		if (cc_record) {
+			/* Save off data to know how to send back any response. */
+			cc_record->response.signaling = call;
+			cc_record->response.invoke_operation = invoke->operation;
+			cc_record->response.invoke_id = invoke->invoke_id;
+
+			pri_cc_event(ctrl, call, cc_record, CC_EVENT_RECALL);
+		} else {
+			rose_error_msg_encode(ctrl, call, Q931_ANY_MESSAGE, invoke->invoke_id,
+				ROSE_ERROR_QSIG_FailureToMatch);
+			call->cc.hangup_call = 1;
+		}
 		break;
 	case ROSE_QSIG_CcSuspend:
+		cc_record = call->cc.record;
+		if (!cc_record) {
+			break;
+		}
+		cc_record->fsm.qsig.msgtype = msgtype;
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_SUSPEND);
 		break;
 	case ROSE_QSIG_CcResume:
+		cc_record = call->cc.record;
+		if (!cc_record) {
+			break;
+		}
+		cc_record->fsm.qsig.msgtype = msgtype;
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_RESUME);
 		break;
-#endif	/* Not handled yet */
 #if 0	/* Not handled yet */
 	case ROSE_QSIG_MWIActivate:
 		break;
