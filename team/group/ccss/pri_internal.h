@@ -698,9 +698,9 @@ enum CC_EVENTS {
 #if 0
 	/*! T_DEACTIVATE timer timed out. */
 	CC_EVENT_TIMEOUT_T_DEACTIVATE,
-#endif
 	/*! T_INTERROGATE timer timed out. */
 	CC_EVENT_TIMEOUT_T_INTERROGATE,
+#endif
 	/*! T_RETENTION timer timed out. */
 	CC_EVENT_TIMEOUT_T_RETENTION,
 	/*! T-STATUS timer equivalent for CC user A status timed out. */
@@ -940,8 +940,6 @@ int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const
 struct pri_cc_record *pri_cc_find_by_reference(struct pri *ctrl, unsigned reference_id);
 struct pri_cc_record *pri_cc_find_by_linkage(struct pri *ctrl, unsigned linkage_id);
 struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q931_party_address *party_a, const struct q931_party_address *party_b, unsigned length, const unsigned char *q931_ies);
-int pri_cc_new_reference_id(struct pri *ctrl);
-void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
 void pri_cc_qsig_determine_available(struct pri *ctrl, q931_call *call);
 int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);

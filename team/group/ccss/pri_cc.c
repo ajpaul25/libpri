@@ -247,6 +247,7 @@ struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q
 }
 
 /*!
+ * \internal
  * \brief Allocate a new cc_record reference id.
  *
  * \param ctrl D channel controller.
@@ -254,7 +255,7 @@ struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q
  * \retval reference_id on success.
  * \retval CC_PTMP_INVALID_ID on error.
  */
-int pri_cc_new_reference_id(struct pri *ctrl)
+static int pri_cc_new_reference_id(struct pri *ctrl)
 {
 	long reference_id;
 	long first_id;
@@ -359,6 +360,7 @@ static void pri_cc_disassociate_signaling_link(struct pri_cc_record *cc_record)
 }
 
 /*!
+ * \internal
  * \brief Delete the given call completion record
  *
  * \param ctrl D channel controller.
@@ -366,7 +368,7 @@ static void pri_cc_disassociate_signaling_link(struct pri_cc_record *cc_record)
  *
  * \return Nothing
  */
-void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
+static void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed)
 {
 	struct pri_cc_record **prev;
 	struct pri_cc_record *current;
@@ -2624,10 +2626,10 @@ static const char *pri_cc_fsm_event_str(enum CC_EVENTS event)
 	case CC_EVENT_TIMEOUT_T_DEACTIVATE:
 		str = "CC_EVENT_TIMEOUT_T_DEACTIVATE";
 		break;
-#endif
 	case CC_EVENT_TIMEOUT_T_INTERROGATE:
 		str = "CC_EVENT_TIMEOUT_T_INTERROGATE";
 		break;
+#endif
 	case CC_EVENT_TIMEOUT_T_RETENTION:
 		str = "CC_EVENT_TIMEOUT_T_RETENTION";
 		break;
@@ -6199,6 +6201,14 @@ static void pri_cc_fsm_qsig_monitor_wait_callback(struct pri *ctrl, q931_call *c
 		 */
 		pri_cc_act_send_cc_suspend(ctrl, cc_record);
 		cc_record->state = CC_STATE_SUSPENDED;
+		break;
+	case CC_EVENT_TIMEOUT_T_RECALL:
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_send_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_recall(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
