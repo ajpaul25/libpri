@@ -4881,6 +4881,12 @@ static void t303_expiry(void *data)
 	c->t303_expirycnt++;
 	c->t303_timer = 0;
 
+	/*!
+	 * \todo XXX Resending the SETUP message loses all facility ies
+	 * that the original may have had.  Actually any message Q.931
+	 * retransmits will lose the facility ies.
+	 */
+
 	if (c->cause != -1) {
 		/* We got a DISCONNECT, RELEASE, or RELEASE_COMPLETE and no other responses. */
 		pri_fake_clearing(c);
@@ -4980,6 +4986,10 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	/* Save the initial cc-parties. */
 	c->cc.party_a = c->local_id;
+	c->cc.originated = 1;
+	if (c->redirecting.from.number.valid) {
+		c->cc.initially_redirected = 1;
+	}
 
 	c->cc.saved_ie_contents.length = 0;
 	c->cc.saved_ie_flags = 0;
@@ -7044,6 +7054,14 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		libpri_copy_string(ctrl->ev.ringing.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.ringing.useruserinfo));
 		c->useruserinfo[0] = '\0';
 
+		switch (ctrl->switchtype) {
+		case PRI_SWITCH_QSIG:
+			pri_cc_qsig_determine_available(ctrl, c);
+			break;
+		default:
+			break;
+		}
+
 		for (cur = c->apdus; cur; cur = cur->next) {
 			if (!cur->sent && cur->message == Q931_FACILITY) {
 				q931_facility(ctrl, c);
@@ -7378,10 +7396,27 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (c->alive)
+
+		if (c->alive) {
+			switch (c->cause) {
+			case PRI_CAUSE_USER_BUSY:
+			case PRI_CAUSE_NORMAL_CIRCUIT_CONGESTION:
+				switch (ctrl->switchtype) {
+				case PRI_SWITCH_QSIG:
+					pri_cc_qsig_determine_available(ctrl, c);
+					break;
+				default:
+					break;
+				}
+				break;
+			default:
+				break;
+			}
+
 			return Q931_RES_HAVEEVENT;
-		else
+		} else {
 			pri_hangup(ctrl,c,c->cause);
+		}
 		break;
 	case Q931_RESTART_ACKNOWLEDGE:
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);

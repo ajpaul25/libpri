@@ -152,10 +152,6 @@ FSM CC_QSIG_Monitor
 		}
 	}
 	State CC_STATE_ACTIVATED {
-		/*
-		 * The signaling link is not established in this state
-		 * if retain-signaling-link is false.
-		 */
 		Prolog {
 			Action Reset_A_Status;
 		}

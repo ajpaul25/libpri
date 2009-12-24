@@ -615,6 +615,10 @@ struct q931_call {
 		unsigned char saved_ie_flags;
 		/*! TRUE if call needs to be hung up. */
 		unsigned char hangup_call;
+		/*! TRUE if we originated this call. */
+		unsigned char originated;
+		/*! TRUE if outgoing call was already redirected. */
+		unsigned char initially_redirected;
 	} cc;
 };
 
@@ -939,6 +943,7 @@ struct pri_cc_record *pri_cc_find_by_addressing(struct pri *ctrl, const struct q
 int pri_cc_new_reference_id(struct pri *ctrl);
 void pri_cc_delete_record(struct pri *ctrl, struct pri_cc_record *doomed);
 struct pri_cc_record *pri_cc_new_record(struct pri *ctrl, q931_call *call);
+void pri_cc_qsig_determine_available(struct pri *ctrl, q931_call *call);
 int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event);
 int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_EVENTS event);
 void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
