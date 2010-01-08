@@ -79,7 +79,7 @@ FSM CC_PTP_Agent
 	}
 	State CC_STATE_ACTIVATED {
 		Stimulus CC_EVENT_REMOTE_USER_FREE {
-			Action Pass_Up_A_Status;
+			Action Pass_Up_A_Status_Indirect;
 			Test = Get_A_Status;
 			Test == Busy {
 				Next_State CC_STATE_SUSPENDED;
