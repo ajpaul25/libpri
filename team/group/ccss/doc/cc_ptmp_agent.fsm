@@ -73,6 +73,10 @@ FSM CC_PTMP_Agent
  * Pass_Up_A_Status passes up the current final status of A.
  * Does nothing if status is invalid.
  *
+ * Pass_Up_A_Status_Indirect is the same as Pass_Up_A_Status but
+ * sets a timer to expire immediately to pass up the event.
+ * Does nothing if status is invalid.
+ *
  * Pass_Up_Status_Rsp_A passes up the current accumulated status of A.
  * Does nothing if status is invalid.
  *
@@ -97,12 +101,12 @@ FSM CC_PTMP_Agent
 				Next_State CC_STATE_B_AVAILABLE;
 			}
 			Test == Busy {
-				Action Pass_Up_A_Status;
+				Action Pass_Up_A_Status_Indirect;
 				Action Send_CCBSBFree;
 				Next_State CC_STATE_SUSPENDED;
 			}
 			Test == Free {
-				//Action Pass_Up_A_Status;
+				//Action Pass_Up_A_Status_Indirect;
 				Action Send_RemoteUserFree;
 				Next_State CC_STATE_WAIT_CALLBACK;
 			}

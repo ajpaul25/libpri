@@ -3629,7 +3629,7 @@ static void pri_cc_fill_status_rsp_a(struct pri *ctrl, q931_call *call, struct p
 
 /*!
  * \internal
- * \brief Pass up party A status to upper layer (indirectly).
+ * \brief Pass up party A status response to upper layer (indirectly).
  *
  * \param data CC record pointer.
  *
@@ -3645,7 +3645,7 @@ static void pri_cc_indirect_status_rsp_a(void *data)
 
 /*!
  * \internal
- * \brief FSM action to pass up party A status to upper layer (indirectly).
+ * \brief FSM action to pass up party A status response to upper layer (indirectly).
  *
  * \param ctrl D channel controller.
  * \param cc_record Call completion record to process event.
@@ -3672,7 +3672,7 @@ static void pri_cc_act_pass_up_status_rsp_a_indirect(struct pri *ctrl, struct pr
 
 /*!
  * \internal
- * \brief FSM action to pass up party A status to upper layer.
+ * \brief FSM action to pass up party A status response to upper layer.
  *
  * \param ctrl D channel controller.
  * \param cc_record Call completion record to process event.
@@ -3747,18 +3747,17 @@ static void pri_cc_act_set_a_status_free(struct pri *ctrl, struct pri_cc_record 
 
 /*!
  * \internal
- * \brief FSM action to pass up party A status to upper layer.
+ * \brief Fill in the party A status update event.
  *
  * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
  * \param cc_record Call completion record to process event.
  *
  * \return Nothing
  */
-static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
+static void pri_cc_fill_status_a(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record)
 {
 	struct pri_subcommand *subcmd;
-
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
 
 	if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
 		/* Party A status is invalid so don't pass it up. */
@@ -3775,6 +3774,64 @@ static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *
 	subcmd->u.cc_status.status =
 		(cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_FREE)
 		? 0 /* free */ : 1 /* busy */;
+}
+
+/*!
+ * \internal
+ * \brief Pass up party A status to upper layer (indirectly).
+ *
+ * \param data CC record pointer.
+ *
+ * \return Nothing
+ */
+static void pri_cc_indirect_status_a(void *data)
+{
+	struct pri_cc_record *cc_record = data;
+
+	cc_record->t_indirect = 0;
+	q931_cc_indirect(cc_record->master, cc_record, pri_cc_fill_status_a);
+}
+
+/*!
+ * \internal
+ * \brief FSM action to pass up party A status to upper layer (indirectly).
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ *
+ * \note
+ * Warning:  Must not use this action with pri_cc_act_set_self_destruct() in the
+ * same event.
+ */
+static void pri_cc_act_pass_up_a_status_indirect(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	if (cc_record->party_a_status != CC_PARTY_A_AVAILABILITY_INVALID) {
+		/* Party A status is not invalid so pass it up. */
+		if (cc_record->t_indirect) {
+			pri_error(ctrl, "!! An indirect action is already active!");
+			pri_schedule_del(ctrl, cc_record->t_indirect);
+		}
+		cc_record->t_indirect = pri_schedule_event(ctrl, 0, pri_cc_indirect_status_a,
+			cc_record);
+	}
+}
+
+/*!
+ * \internal
+ * \brief FSM action to pass up party A status to upper layer.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	pri_cc_fill_status_a(ctrl, cc_record->signaling, cc_record);
 }
 
 /*!
@@ -4307,7 +4364,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 			cc_record->state = CC_STATE_B_AVAILABLE;
 			break;
 		case CC_PARTY_A_AVAILABILITY_BUSY:
-			pri_cc_act_pass_up_a_status(ctrl, cc_record);
+			pri_cc_act_pass_up_a_status_indirect(ctrl, cc_record);
 			pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
 			if (!pri_cc_get_t_ccbs1_status(cc_record)) {
 				pri_cc_act_reset_raw_a_status(ctrl, cc_record);
@@ -4317,7 +4374,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 			cc_record->state = CC_STATE_SUSPENDED;
 			break;
 		case CC_PARTY_A_AVAILABILITY_FREE:
-			//pri_cc_act_pass_up_a_status(ctrl, cc_record);
+			//pri_cc_act_pass_up_a_status_indirect(ctrl, cc_record);
 			pri_cc_act_send_remote_user_free(ctrl, cc_record);
 			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
 			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
@@ -5115,7 +5172,7 @@ static void pri_cc_fsm_ptp_agent_activated(struct pri *ctrl, q931_call *call, st
 {
 	switch (event) {
 	case CC_EVENT_REMOTE_USER_FREE:
-		pri_cc_act_pass_up_a_status(ctrl, cc_record);
+		pri_cc_act_pass_up_a_status_indirect(ctrl, cc_record);
 		if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_BUSY) {
 			cc_record->state = CC_STATE_SUSPENDED;
 		} else {
