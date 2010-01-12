@@ -611,6 +611,17 @@ struct pri_subcmd_cc_status {
 	int status;
 };
 
+struct pri_subcmd_cc_cancel {
+	/*! \brief Call-Completion record id */
+	long cc_id;
+	/*!
+	 * \brief TRUE if the cc_id is for an agent.
+	 * \note This is a convenience value so the upper layer can know which
+	 * list it should search for the cc_id.
+	 */
+	int is_agent;
+};
+
 struct pri_subcommand {
 	/*! PRI_SUBCMD_xxx defined values */
 	int cmd;
@@ -632,7 +643,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_status cc_status_req_rsp;
 		struct pri_subcmd_cc_status cc_status;
 		struct pri_subcmd_cc_id cc_call;
-		struct pri_subcmd_cc_id cc_cancel;
+		struct pri_subcmd_cc_cancel cc_cancel;
 	} u;
 };
 

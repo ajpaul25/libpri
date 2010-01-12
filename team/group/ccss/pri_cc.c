@@ -3881,6 +3881,7 @@ static void pri_cc_act_pass_up_cc_cancel(struct pri *ctrl, struct pri_cc_record 
 
 	subcmd->cmd = PRI_SUBCMD_CC_CANCEL;
 	subcmd->u.cc_cancel.cc_id =  cc_record->record_id;
+	subcmd->u.cc_cancel.is_agent = cc_record->is_agent;
 }
 
 /*!
