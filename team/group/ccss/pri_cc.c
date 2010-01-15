@@ -2194,8 +2194,11 @@ void pri_cc_ptp_request(struct pri *ctrl, q931_call *call, int msgtype, const st
 	}
 
 	q931_party_address_init(&party_a);
-	rose_copy_address_to_q931(ctrl, &party_a,
-		&invoke->args.etsi.CCBS_T_Request.originating);
+	if (invoke->args.etsi.CCBS_T_Request.originating.number.length) {
+		/* The originating number is present. */
+		rose_copy_address_to_q931(ctrl, &party_a,
+			&invoke->args.etsi.CCBS_T_Request.originating);
+	}
 	q931_party_address_init(&party_b);
 	rose_copy_address_to_q931(ctrl, &party_b,
 		&invoke->args.etsi.CCBS_T_Request.destination);
@@ -2214,6 +2217,22 @@ void pri_cc_ptp_request(struct pri *ctrl, q931_call *call, int msgtype, const st
 	 * We already have the presentationAllowedIndicator in the cc_record
 	 * when we saved the original call information.
 	 */
+#if 0
+	if (invoke->args.etsi.CCBS_T_Request.presentation_allowed_indicator_present) {
+		if (invoke->args.etsi.CCBS_T_Request.presentation_allowed_indicator) {
+			if (party_a.number.str[0]) {
+				party_a.number.presentation =
+					PRI_PRES_ALLOWED | PRI_PRES_USER_NUMBER_UNSCREENED;
+			} else {
+				party_a.number.presentation =
+					PRI_PRES_UNAVAILABLE | PRI_PRES_USER_NUMBER_UNSCREENED;
+			}
+		} else {
+			party_a.number.presentation =
+				PRI_PRES_RESTRICTED | PRI_PRES_USER_NUMBER_UNSCREENED;
+		}
+	}
+#endif
 
 	/* Link the signaling link to the cc_record. */
 	call->cc.record = cc_record;
