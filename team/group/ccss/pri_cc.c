@@ -6537,8 +6537,8 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 	}
 	orig_state = cc_record->state;
 	if (ctrl->debug & PRI_DEBUG_CC) {
-		pri_message(ctrl, "CC-Event: %s in state %s\n", pri_cc_fsm_state_str(orig_state),
-			pri_cc_fsm_event_str(event));
+		pri_message(ctrl, "CC-Event: %s in state %s\n", pri_cc_fsm_event_str(event),
+			pri_cc_fsm_state_str(orig_state));
 	}
 	if (orig_state < CC_STATE_IDLE || CC_STATE_NUM <= orig_state || !cc_fsm[orig_state]) {
 		/* Programming error: State not implemented. */
