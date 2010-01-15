@@ -3285,12 +3285,14 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	struct apdu_event *apdu;
 	struct apdu_msg_data msg;
 
-	/* Gripe to the user about getting rejected. */
-	pri_error(ctrl, "ROSE REJECT:\n");
-	if (reject->invoke_id_present) {
-		pri_error(ctrl, "\tINVOKE ID: %d\n", reject->invoke_id);
+	if (ctrl->debug & PRI_DEBUG_APDU) {
+		/* Gripe to the user about getting rejected. */
+		pri_message(ctrl, "ROSE REJECT:\n");
+		if (reject->invoke_id_present) {
+			pri_message(ctrl, "\tINVOKE ID: %d\n", reject->invoke_id);
+		}
+		pri_message(ctrl, "\tPROBLEM: %s\n", rose_reject2str(reject->code));
 	}
-	pri_error(ctrl, "\tPROBLEM: %s\n", rose_reject2str(reject->code));
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
@@ -3356,31 +3358,33 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 	struct apdu_event *apdu;
 	struct apdu_msg_data msg;
 
-	/* Gripe to the user about getting an error. */
-	pri_error(ctrl, "ROSE RETURN ERROR:\n");
-	switch (ctrl->switchtype) {
-	case PRI_SWITCH_DMS100:
-		switch (error->invoke_id) {
-		case ROSE_DMS100_RLT_OPERATION_IND:
-			dms100_operation = "RLT_OPERATION_IND";
-			break;
-		case ROSE_DMS100_RLT_THIRD_PARTY:
-			dms100_operation = "RLT_THIRD_PARTY";
-			break;
+	if (ctrl->debug & PRI_DEBUG_APDU) {
+		/* Gripe to the user about getting an error. */
+		pri_message(ctrl, "ROSE RETURN ERROR:\n");
+		switch (ctrl->switchtype) {
+		case PRI_SWITCH_DMS100:
+			switch (error->invoke_id) {
+			case ROSE_DMS100_RLT_OPERATION_IND:
+				dms100_operation = "RLT_OPERATION_IND";
+				break;
+			case ROSE_DMS100_RLT_THIRD_PARTY:
+				dms100_operation = "RLT_THIRD_PARTY";
+				break;
+			default:
+				dms100_operation = NULL;
+				break;
+			}
+			if (dms100_operation) {
+				pri_message(ctrl, "\tOPERATION: %s\n", dms100_operation);
+				break;
+			}
+			/* fall through */
 		default:
-			dms100_operation = NULL;
+			pri_message(ctrl, "\tINVOKE ID: %d\n", error->invoke_id);
 			break;
 		}
-		if (dms100_operation) {
-			pri_error(ctrl, "\tOPERATION: %s\n", dms100_operation);
-			break;
-		}
-		/* fall through */
-	default:
-		pri_error(ctrl, "\tINVOKE ID: %d\n", error->invoke_id);
-		break;
+		pri_message(ctrl, "\tERROR: %s\n", rose_error2str(error->code));
 	}
-	pri_error(ctrl, "\tERROR: %s\n", rose_error2str(error->code));
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_DMS100:
