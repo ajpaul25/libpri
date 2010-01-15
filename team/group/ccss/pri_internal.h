@@ -802,6 +802,10 @@ struct pri_cc_record {
  * the T_RETENTION time but no less than 10 seconds.
  * Also if the upper layer has disabled CC for this call, the upper layer
  * needs to immediately cancel CC when the CC available indication comes in.
+ *
+ * Idea: make the pri_sched[] dynamically allocated so it can grow as needed.
+ * This is fairly simple to do and will save memory when slave D channels are
+ * being used.
  */
 	/*!
 	 * \brief PTMP T_RETENTION timer id.
