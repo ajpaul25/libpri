@@ -2668,10 +2668,10 @@ static const char *pri_cc_fsm_event_str(enum CC_EVENTS event)
 	return str;
 }
 
-static const char pri_cc_act_header[] = "  CC-Act: %s\n";
-#define PRI_CC_ACT_DEBUG_OUTPUT(ctrl)							\
-	if ((ctrl)->debug & PRI_DEBUG_CC) {							\
-		pri_message((ctrl), pri_cc_act_header, __FUNCTION__);	\
+static const char pri_cc_act_header[] = "%ld  CC-Act: %s\n";
+#define PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_id)							\
+	if ((ctrl)->debug & PRI_DEBUG_CC) {									\
+		pri_message((ctrl), pri_cc_act_header, (cc_id), __FUNCTION__);	\
 	}
 
 /*!
@@ -2685,7 +2685,7 @@ static const char pri_cc_act_header[] = "  CC-Act: %s\n";
  */
 static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	/* Abort any pending indirect events. */
 	pri_schedule_del(ctrl, cc_record->t_indirect);
@@ -2705,7 +2705,7 @@ static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record 
  */
 static void pri_cc_act_disassociate_signaling_link(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_cc_disassociate_signaling_link(cc_record);
 }
 
@@ -2714,15 +2714,15 @@ static void pri_cc_act_disassociate_signaling_link(struct pri *ctrl, struct pri_
  * \brief FSM action to send CC available message.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg.
  * \param cc_record Call completion record to process event.
+ * \param call Q.931 call leg.
  * \param msgtype Q.931 message type to put facility ie in.
  *
  * \return Nothing
  */
-static void pri_cc_act_send_cc_available(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, int msgtype)
+static void pri_cc_act_send_cc_available(struct pri *ctrl, struct pri_cc_record *cc_record, q931_call *call, int msgtype)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	rose_cc_available_encode(ctrl, call, cc_record, msgtype);
 }
 
@@ -2737,7 +2737,7 @@ static void pri_cc_act_send_cc_available(struct pri *ctrl, q931_call *call, stru
  */
 static void pri_cc_act_stop_t_retention(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_schedule_del(ctrl, cc_record->t_retention);
 	cc_record->t_retention = 0;
 }
@@ -2769,7 +2769,7 @@ static void pri_cc_timeout_t_retention(void *data)
  */
 static void pri_cc_act_start_t_retention(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->t_retention) {
 		pri_error(ctrl, "!! T_RETENTION is already running!");
 		pri_schedule_del(ctrl, cc_record->t_retention);
@@ -2789,7 +2789,7 @@ static void pri_cc_act_start_t_retention(struct pri *ctrl, struct pri_cc_record 
  */
 static void pri_cc_act_stop_extended_t_ccbs1(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_schedule_del(ctrl, cc_record->fsm.ptmp.extended_t_ccbs1);
 	cc_record->fsm.ptmp.extended_t_ccbs1 = 0;
 }
@@ -2821,7 +2821,7 @@ static void pri_cc_timeout_extended_t_ccbs1(void *data)
  */
 static void pri_cc_act_start_extended_t_ccbs1(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->fsm.ptmp.extended_t_ccbs1) {
 		pri_error(ctrl, "!! Extended T_CCBS1 is already running!");
 		pri_schedule_del(ctrl, cc_record->fsm.ptmp.extended_t_ccbs1);
@@ -2843,7 +2843,7 @@ static void pri_cc_act_start_extended_t_ccbs1(struct pri *ctrl, struct pri_cc_re
  */
 static void pri_cc_act_stop_t_supervision(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_schedule_del(ctrl, cc_record->t_supervision);
 	cc_record->t_supervision = 0;
 }
@@ -2878,7 +2878,7 @@ static void pri_cc_act_start_t_supervision(struct pri *ctrl, struct pri_cc_recor
 	int timer_id;
 	int duration;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->t_supervision) {
 		pri_error(ctrl, "!! A CC supervision timer is already running!");
 		pri_schedule_del(ctrl, cc_record->t_supervision);
@@ -2923,7 +2923,7 @@ static void pri_cc_act_start_t_supervision(struct pri *ctrl, struct pri_cc_recor
  */
 static void pri_cc_act_stop_t_recall(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_schedule_del(ctrl, cc_record->t_recall);
 	cc_record->t_recall = 0;
 }
@@ -2957,7 +2957,7 @@ static void pri_cc_act_start_t_recall(struct pri *ctrl, struct pri_cc_record *cc
 {
 	int duration;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->t_recall) {
 		pri_error(ctrl, "!! T_RECALL is already running!");
 		pri_schedule_del(ctrl, cc_record->t_recall);
@@ -2991,7 +2991,7 @@ static void pri_cc_act_start_t_recall(struct pri *ctrl, struct pri_cc_record *cc
  */
 static void pri_cc_act_send_erase_call_linkage_id(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_erase_call_linkage_id(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3008,7 +3008,7 @@ static void pri_cc_act_send_erase_call_linkage_id(struct pri *ctrl, struct pri_c
  */
 static void pri_cc_act_send_ccbs_erase(struct pri *ctrl, struct pri_cc_record *cc_record, int reason)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_ccbs_erase(ctrl, cc_record->signaling, cc_record, reason);
 }
 
@@ -3039,7 +3039,7 @@ static void pri_cc_act_stop_t_ccbs1(struct pri *ctrl, struct pri_cc_record *cc_r
 {
 	struct apdu_event *msg;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	msg = pri_call_apdu_find(cc_record->signaling, cc_record->fsm.ptmp.t_ccbs1_invoke_id);
 	if (msg) {
@@ -3151,7 +3151,7 @@ static int send_ccbs_status_request(struct pri *ctrl, q931_call *call, struct pr
  */
 static void pri_cc_act_send_ccbs_status_request(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_ccbs_status_request(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3168,7 +3168,7 @@ static void pri_cc_act_stop_t_activate(struct pri *ctrl, struct pri_cc_record *c
 {
 	struct apdu_event *msg;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	if (!cc_record->signaling) {
 		return;
@@ -3405,14 +3405,14 @@ static int rose_cc_request(struct pri *ctrl, q931_call *call, struct pri_cc_reco
  * \brief FSM action to queue the cc-request message.
  *
  * \param ctrl D channel controller.
- * \param call Call leg from which to encode cc-request.
  * \param cc_record Call completion record to process event.
+ * \param call Call leg from which to encode cc-request.
  *
  * \return Nothing
  */
-static void pri_cc_act_queue_cc_request(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record)
+static void pri_cc_act_queue_cc_request(struct pri *ctrl, struct pri_cc_record *cc_record, q931_call *call)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (rose_cc_request(ctrl, call, cc_record)) {
 		pri_message(ctrl, "Could not queue message for cc-request.\n");
 	}
@@ -3429,7 +3429,7 @@ static void pri_cc_act_queue_cc_request(struct pri *ctrl, q931_call *call, struc
  */
 static void pri_cc_act_send_cc_deactivate_req(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_cc_deactivate_req(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3444,7 +3444,7 @@ static void pri_cc_act_send_cc_deactivate_req(struct pri *ctrl, struct pri_cc_re
  */
 static void pri_cc_act_send_ccbs_b_free(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_ccbs_b_free(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3459,7 +3459,7 @@ static void pri_cc_act_send_ccbs_b_free(struct pri *ctrl, struct pri_cc_record *
  */
 static void pri_cc_act_send_remote_user_free(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_remote_user_free(ctrl, cc_record);
 }
 
@@ -3474,7 +3474,7 @@ static void pri_cc_act_send_remote_user_free(struct pri *ctrl, struct pri_cc_rec
  */
 static void pri_cc_act_send_call_proceeding(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_proceeding(ctrl, cc_record->signaling, 0, 0);
 }
 
@@ -3489,7 +3489,7 @@ static void pri_cc_act_send_call_proceeding(struct pri *ctrl, struct pri_cc_reco
  */
 static void pri_cc_act_send_cc_suspend(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_cc_suspend(ctrl, cc_record);
 }
 
@@ -3504,7 +3504,7 @@ static void pri_cc_act_send_cc_suspend(struct pri *ctrl, struct pri_cc_record *c
  */
 static void pri_cc_act_send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_cc_resume(ctrl, cc_record);
 }
 
@@ -3519,7 +3519,7 @@ static void pri_cc_act_send_cc_resume(struct pri *ctrl, struct pri_cc_record *cc
  */
 static void pri_cc_act_send_cc_cancel(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_cc_cancel(ctrl, cc_record);
 }
 
@@ -3534,7 +3534,7 @@ static void pri_cc_act_send_cc_cancel(struct pri *ctrl, struct pri_cc_record *cc
  */
 static void pri_cc_act_send_ccbs_stop_alerting(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	send_ccbs_stop_alerting(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3549,7 +3549,7 @@ static void pri_cc_act_send_ccbs_stop_alerting(struct pri *ctrl, struct pri_cc_r
  */
 static void pri_cc_act_release_link_id(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->call_linkage_id = CC_PTMP_INVALID_ID;
 }
 
@@ -3564,7 +3564,7 @@ static void pri_cc_act_release_link_id(struct pri *ctrl, struct pri_cc_record *c
  */
 static void pri_cc_act_set_retain_signaling_link(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->option.retain_signaling_link = 1;
 }
 
@@ -3579,7 +3579,7 @@ static void pri_cc_act_set_retain_signaling_link(struct pri *ctrl, struct pri_cc
  */
 static void pri_cc_act_reset_raw_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->fsm.ptmp.party_a_status_acc = CC_PARTY_A_AVAILABILITY_INVALID;
 }
 
@@ -3594,7 +3594,7 @@ static void pri_cc_act_reset_raw_a_status(struct pri *ctrl, struct pri_cc_record
  */
 static void pri_cc_act_add_raw_a_status_busy(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->fsm.ptmp.party_a_status_acc != CC_PARTY_A_AVAILABILITY_FREE) {
 		cc_record->fsm.ptmp.party_a_status_acc = CC_PARTY_A_AVAILABILITY_BUSY;
 	}
@@ -3611,7 +3611,7 @@ static void pri_cc_act_add_raw_a_status_busy(struct pri *ctrl, struct pri_cc_rec
  */
 static void pri_cc_act_set_raw_a_status_free(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->fsm.ptmp.party_a_status_acc = CC_PARTY_A_AVAILABILITY_FREE;
 }
 
@@ -3677,7 +3677,7 @@ static void pri_cc_indirect_status_rsp_a(void *data)
  */
 static void pri_cc_act_pass_up_status_rsp_a_indirect(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->fsm.ptmp.party_a_status_acc != CC_PARTY_A_AVAILABILITY_INVALID) {
 		/* Accumulated party A status is not invalid so pass it up. */
 		if (cc_record->t_indirect) {
@@ -3700,7 +3700,7 @@ static void pri_cc_act_pass_up_status_rsp_a_indirect(struct pri *ctrl, struct pr
  */
 static void pri_cc_act_pass_up_status_rsp_a(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_cc_fill_status_rsp_a(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3715,7 +3715,7 @@ static void pri_cc_act_pass_up_status_rsp_a(struct pri *ctrl, struct pri_cc_reco
  */
 static void pri_cc_act_promote_raw_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->party_a_status = cc_record->fsm.ptmp.party_a_status_acc;
 }
 
@@ -3730,7 +3730,7 @@ static void pri_cc_act_promote_raw_a_status(struct pri *ctrl, struct pri_cc_reco
  */
 static void pri_cc_act_reset_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_INVALID;
 }
 
@@ -3745,7 +3745,7 @@ static void pri_cc_act_reset_a_status(struct pri *ctrl, struct pri_cc_record *cc
  */
 static void pri_cc_act_set_a_status_busy(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_BUSY;
 }
 
@@ -3760,7 +3760,7 @@ static void pri_cc_act_set_a_status_busy(struct pri *ctrl, struct pri_cc_record 
  */
 static void pri_cc_act_set_a_status_free(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	cc_record->party_a_status = CC_PARTY_A_AVAILABILITY_FREE;
 }
 
@@ -3826,7 +3826,7 @@ static void pri_cc_indirect_status_a(void *data)
  */
 static void pri_cc_act_pass_up_a_status_indirect(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->party_a_status != CC_PARTY_A_AVAILABILITY_INVALID) {
 		/* Party A status is not invalid so pass it up. */
 		if (cc_record->t_indirect) {
@@ -3849,7 +3849,7 @@ static void pri_cc_act_pass_up_a_status_indirect(struct pri *ctrl, struct pri_cc
  */
 static void pri_cc_act_pass_up_a_status(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_cc_fill_status_a(ctrl, cc_record->signaling, cc_record);
 }
 
@@ -3866,7 +3866,7 @@ static void pri_cc_act_pass_up_cc_request(struct pri *ctrl, struct pri_cc_record
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -3891,7 +3891,7 @@ static void pri_cc_act_pass_up_cc_cancel(struct pri *ctrl, struct pri_cc_record 
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -3916,7 +3916,7 @@ static void pri_cc_act_pass_up_cc_call(struct pri *ctrl, struct pri_cc_record *c
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -3940,7 +3940,7 @@ static void pri_cc_act_pass_up_cc_available(struct pri *ctrl, struct pri_cc_reco
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -3964,7 +3964,7 @@ static void pri_cc_act_pass_up_cc_req_rsp_success(struct pri *ctrl, struct pri_c
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -3990,7 +3990,7 @@ static void pri_cc_act_pass_up_cc_req_rsp_fail(struct pri *ctrl, struct pri_cc_r
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -4018,7 +4018,7 @@ static void pri_cc_act_pass_up_cc_req_rsp_timeout(struct pri *ctrl, struct pri_c
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -4044,7 +4044,7 @@ static void pri_cc_act_pass_up_b_free(struct pri *ctrl, struct pri_cc_record *cc
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -4068,7 +4068,7 @@ static void pri_cc_act_pass_up_remote_user_free(struct pri *ctrl, struct pri_cc_
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -4092,7 +4092,7 @@ static void pri_cc_act_pass_up_stop_alerting(struct pri *ctrl, struct pri_cc_rec
 {
 	struct pri_subcommand *subcmd;
 
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
@@ -4115,7 +4115,7 @@ static void pri_cc_act_pass_up_stop_alerting(struct pri *ctrl, struct pri_cc_rec
  */
 static void pri_cc_act_send_error_recall(struct pri *ctrl, struct pri_cc_record *cc_record, enum rose_error_code code)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	rose_error_msg_encode(ctrl, cc_record->response.signaling, Q931_ANY_MESSAGE,
 		cc_record->response.invoke_id, code);
 }
@@ -4125,14 +4125,14 @@ static void pri_cc_act_send_error_recall(struct pri *ctrl, struct pri_cc_record 
  * \brief FSM action to queue CC recall marker.
  *
  * \param ctrl D channel controller.
- * \param call Q.931 call leg.
  * \param cc_record Call completion record to process event.
+ * \param call Q.931 call leg.
  *
  * \return Nothing
  */
-static void pri_cc_act_queue_setup_recall(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record)
+static void pri_cc_act_queue_setup_recall(struct pri *ctrl, struct pri_cc_record *cc_record, q931_call *call)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	rose_cc_recall_encode(ctrl, call, cc_record);
 }
 
@@ -4141,13 +4141,14 @@ static void pri_cc_act_queue_setup_recall(struct pri *ctrl, q931_call *call, str
  * \brief FSM action to request the call be hung up.
  *
  * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
  * \param call Q.931 call leg.
  *
  * \return Nothing
  */
-static void pri_cc_act_set_call_to_hangup(struct pri *ctrl, q931_call *call)
+static void pri_cc_act_set_call_to_hangup(struct pri *ctrl, struct pri_cc_record *cc_record, q931_call *call)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	call->cc.hangup_call = 1;
 }
 
@@ -4178,7 +4179,7 @@ static void pri_cc_post_hangup_signaling(void *data)
  */
 static void pri_cc_act_post_hangup_signaling(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	if (cc_record->t_indirect) {
 		pri_error(ctrl, "!! An indirect action is already active!");
 		pri_schedule_del(ctrl, cc_record->t_indirect);
@@ -4198,7 +4199,7 @@ static void pri_cc_act_post_hangup_signaling(struct pri *ctrl, struct pri_cc_rec
  */
 static void pri_cc_act_hangup_signaling_link(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
-	PRI_CC_ACT_DEBUG_OUTPUT(ctrl);
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 	pri_hangup(ctrl, cc_record->signaling, -1);
 }
 
@@ -4260,11 +4261,11 @@ static void pri_cc_fsm_ptmp_agent_pend_avail(struct pri *ctrl, q931_call *call, 
 {
 	switch (event) {
 	case CC_EVENT_MSG_ALERTING:
-		pri_cc_act_send_cc_available(ctrl, call, cc_record, Q931_ALERTING);
+		pri_cc_act_send_cc_available(ctrl, cc_record, call, Q931_ALERTING);
 		cc_record->state = CC_STATE_AVAILABLE;
 		break;
 	case CC_EVENT_MSG_DISCONNECT:
-		pri_cc_act_send_cc_available(ctrl, call, cc_record, Q931_DISCONNECT);
+		pri_cc_act_send_cc_available(ctrl, cc_record, call, Q931_DISCONNECT);
 		cc_record->state = CC_STATE_AVAILABLE;
 		break;
 	case CC_EVENT_CANCEL:
@@ -4368,7 +4369,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 	switch (event) {
 	case CC_EVENT_RECALL:
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
-		pri_cc_act_set_call_to_hangup(ctrl, call);
+		pri_cc_act_set_call_to_hangup(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_B_FREE:
 		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
@@ -4493,7 +4494,7 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 	switch (event) {
 	case CC_EVENT_RECALL:
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
-		pri_cc_act_set_call_to_hangup(ctrl, call);
+		pri_cc_act_set_call_to_hangup(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_A_STATUS:
 		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
@@ -4594,7 +4595,7 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 	switch (event) {
 	case CC_EVENT_RECALL:
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_NotReadyForCall);
-		pri_cc_act_set_call_to_hangup(ctrl, call);
+		pri_cc_act_set_call_to_hangup(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_A_STATUS:
 		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
@@ -4762,7 +4763,7 @@ static void pri_cc_fsm_ptmp_agent_callback(struct pri *ctrl, q931_call *call, st
 	switch (event) {
 	case CC_EVENT_RECALL:
 		pri_cc_act_send_error_recall(ctrl, cc_record, ROSE_ERROR_CCBS_AlreadyAccepted);
-		pri_cc_act_set_call_to_hangup(ctrl, call);
+		pri_cc_act_set_call_to_hangup(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_A_STATUS:
 		pri_cc_act_set_raw_a_status_free(ctrl, cc_record);
@@ -4848,7 +4849,7 @@ static void pri_cc_fsm_ptmp_monitor_avail(struct pri *ctrl, q931_call *call, str
 	switch (event) {
 	case CC_EVENT_CC_REQUEST:
 		/* cc_record->is_ccnr is set before event posted. */
-		pri_cc_act_queue_cc_request(ctrl, call, cc_record);
+		pri_cc_act_queue_cc_request(ctrl, cc_record, call);
 		//pri_cc_act_start_t_activate(ctrl, cc_record);
 		cc_record->state = CC_STATE_REQUESTED;
 		break;
@@ -5011,7 +5012,7 @@ static void pri_cc_fsm_ptmp_monitor_activated(struct pri *ctrl, q931_call *call,
 		break;
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
-		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
@@ -5078,11 +5079,11 @@ static void pri_cc_fsm_ptp_agent_pend_avail(struct pri *ctrl, q931_call *call, s
 {
 	switch (event) {
 	case CC_EVENT_MSG_ALERTING:
-		pri_cc_act_send_cc_available(ctrl, call, cc_record, Q931_ALERTING);
+		pri_cc_act_send_cc_available(ctrl, cc_record, call, Q931_ALERTING);
 		cc_record->state = CC_STATE_AVAILABLE;
 		break;
 	case CC_EVENT_MSG_DISCONNECT:
-		pri_cc_act_send_cc_available(ctrl, call, cc_record, Q931_DISCONNECT);
+		pri_cc_act_send_cc_available(ctrl, cc_record, call, Q931_DISCONNECT);
 		cc_record->state = CC_STATE_AVAILABLE;
 		break;
 	case CC_EVENT_CANCEL:
@@ -5387,7 +5388,7 @@ static void pri_cc_fsm_ptp_monitor_avail(struct pri *ctrl, q931_call *call, stru
 		 *   cc_record->is_ccnr is set.
 		 *   The signaling connection call record is created.
 		 */
-		pri_cc_act_queue_cc_request(ctrl, call, cc_record);
+		pri_cc_act_queue_cc_request(ctrl, cc_record, call);
 		/*
 		 * For PTP mode the T_ACTIVATE timer is not defined.  However,
 		 * we will use it to protect our resources from leaks caused
@@ -5544,7 +5545,7 @@ static void pri_cc_fsm_ptp_monitor_activated(struct pri *ctrl, q931_call *call, 
 		break;
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
-		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -5591,7 +5592,7 @@ static void pri_cc_fsm_ptp_monitor_wait_callback(struct pri *ctrl, q931_call *ca
 		break;
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
-		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -5639,7 +5640,7 @@ static void pri_cc_fsm_ptp_monitor_suspended(struct pri *ctrl, q931_call *call, 
 		break;
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
-		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -6015,7 +6016,7 @@ static void pri_cc_fsm_qsig_monitor_avail(struct pri *ctrl, q931_call *call, str
 		 *   cc_record->is_ccnr is set.
 		 *   The signaling connection call record is created.
 		 */
-		pri_cc_act_queue_cc_request(ctrl, call, cc_record);
+		pri_cc_act_queue_cc_request(ctrl, cc_record, call);
 		/* Start QSIG_CC_T1. */
 		//pri_cc_act_start_t_activate(ctrl, cc_record);
 		cc_record->state = CC_STATE_REQUESTED;
@@ -6266,7 +6267,7 @@ static void pri_cc_fsm_qsig_monitor_wait_callback(struct pri *ctrl, q931_call *c
 	switch (event) {
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
-		pri_cc_act_queue_setup_recall(ctrl, call, cc_record);
+		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
 		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		cc_record->state = CC_STATE_CALLBACK;
 		break;
@@ -6556,8 +6557,8 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 	}
 	orig_state = cc_record->state;
 	if (ctrl->debug & PRI_DEBUG_CC) {
-		pri_message(ctrl, "CC-Event: %s in state %s\n", pri_cc_fsm_event_str(event),
-			pri_cc_fsm_state_str(orig_state));
+		pri_message(ctrl, "%ld CC-Event: %s in state %s\n", cc_record->record_id,
+			pri_cc_fsm_event_str(event), pri_cc_fsm_state_str(orig_state));
 	}
 	if (orig_state < CC_STATE_IDLE || CC_STATE_NUM <= orig_state || !cc_fsm[orig_state]) {
 		/* Programming error: State not implemented. */
@@ -6568,7 +6569,8 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 	/* Execute the state. */
 	cc_fsm[orig_state](ctrl, call, cc_record, event);
 	if (ctrl->debug & PRI_DEBUG_CC) {
-		pri_message(ctrl, "  CC-Next-State: %s\n", (orig_state == cc_record->state)
+		pri_message(ctrl, "%ld  CC-Next-State: %s\n", cc_record->record_id,
+			(orig_state == cc_record->state)
 			? "$" : pri_cc_fsm_state_str(cc_record->state));
 	}
 	if (cc_record->fsm_complete) {
