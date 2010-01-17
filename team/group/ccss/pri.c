@@ -293,6 +293,7 @@ void __pri_free_tei(struct pri * p)
 			pri_call_apdu_queue_cleanup(call);
 		}
 		free(p->msg_line);
+		free(p->sched.timer);
 		free(p);
 	}
 }

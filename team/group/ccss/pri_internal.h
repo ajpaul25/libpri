@@ -57,9 +57,6 @@ struct pri_sched {
  */
 //#define QSIG_PATH_RESERVATION_SUPPORT	1
 
-/*! Maximum number of scheduled events active at the same time. */
-#define MAX_SCHED	(128 + 256) /* 256 CC supervision timer events */
-
 /*! Maximum number of facility ie's to handle per incoming message. */
 #define MAX_FACILITY_IES	8
 
@@ -81,7 +78,14 @@ struct pri {
 	struct pri_msg_line *msg_line;
 	struct pri *subchannel;	/* Sub-channel if appropriate */
 	struct pri *master;		/* Master channel if appropriate */
-	struct pri_sched pri_sched[MAX_SCHED];	/* Scheduled events */
+	struct {
+		/*! Dynamically allocated array of timers that can grow as needed. */
+		struct pri_sched *timer;
+		/*! Numer of timer slots in the allocated array of timers. */
+		unsigned num_slots;
+		/*! Maximum timer slots currently needed. */
+		unsigned max_used;
+	} sched;
 	int debug;			/* Debug stuff */
 	int state;			/* State of D-channel */
 	int switchtype;		/* Switch type */
@@ -795,18 +799,6 @@ struct pri_cc_record {
 	enum CC_PARTY_A_AVAILABILITY party_a_status;
 	/*! Indirect timer id to abort indirect action events. */
 	int t_indirect;
-/*
- * BUGBUG t_retention needs to be handled specially.
- * For PTP and Q.SIG there could be hundreds of them active.
- * Something along the lines of using struct timeval and polling at half
- * the T_RETENTION time but no less than 10 seconds.
- * Also if the upper layer has disabled CC for this call, the upper layer
- * needs to immediately cancel CC when the CC available indication comes in.
- *
- * Idea: make the pri_sched[] dynamically allocated so it can grow as needed.
- * This is fairly simple to do and will save memory when slave D channels are
- * being used.
- */
 	/*!
 	 * \brief PTMP T_RETENTION timer id.
 	 * \note
