@@ -1328,7 +1328,7 @@ static char *int_rate2str(int proto)
 static void dump_bearer_capability(int full_ie, struct pri *ctrl, q931_ie *ie, int len, char prefix)
 {
 	int pos=2;
-	pri_message(ctrl, "%c Bearer Capability (len=%2d) [ Ext: %d  Q.931 Std: %d  Info transfer capability: %s (%d)\n",
+	pri_message(ctrl, "%c Bearer Capability (len=%2d) [ Ext: %d  Coding-Std: %d  Info transfer capability: %s (%d)\n",
 		prefix, len, (ie->data[0] & 0x80 ) >> 7, (ie->data[0] & 0x60) >> 5, cap2str(ie->data[0] & 0x1f), (ie->data[0] & 0x1f));
 	pri_message(ctrl, "%c                              Ext: %d  Trans mode/rate: %s (%d)\n", prefix, (ie->data[1] & 0x80) >> 7, mode2str(ie->data[1] & 0x7f), ie->data[1] & 0x7f);
 
@@ -1458,48 +1458,63 @@ static void dump_bearer_capability(int full_ie, struct pri *ctrl, q931_ie *ie, i
 
 static int receive_bearer_capability(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len)
 {
-	int pos=2;
-	if (ie->data[0] & 0x60) {
-		pri_error(ctrl, "!! non-standard Q.931 standard field\n");
-		return -1;
-	}
-	call->bc.transcapability = ie->data[0] & 0x1f;
-	call->bc.transmoderate = ie->data[1] & 0x7f;
-   
-	/* octet 4.1 exists iff mode/rate is multirate */
-	if (call->bc.transmoderate == TRANS_MODE_MULTIRATE) {
-		call->bc.transmultiple = ie->data[pos++] & 0x7f;
-	}
+	int pos = 2;
 
-	/* Look for octet 5; this is identified by bits 5,6 == 01 */
-	if (pos < len && (ie->data[pos] & 0x60) == 0x20) {
-		/* although the layer1 is only the bottom 5 bits of the byte,
-		   previous versions of this library passed bits 5&6 through
-		   too, so we have to do the same for binary compatability */
-		call->bc.userl1 = ie->data[pos] & 0x7f;
-		pos++;
-		
-		/* octet 5a? */
-		if (pos < len && !(ie->data[pos-1] & 0x80)) {
-			call->bc.rateadaption = ie->data[pos] & 0x7f;
-			pos++;
- 		}
-		
-		/* octets 5b through 5d? */
-		while (pos < len && !(ie->data[pos-1] & 0x80)) {
-			pos++;
+	switch (ie->data[0] & 0x60) {
+	case 0x00:/* ITU-T standardized coding */
+		call->bc.transcapability = ie->data[0] & 0x1f;
+		call->bc.transmoderate = ie->data[1] & 0x7f;
+
+		/* octet 4.1 exists iff mode/rate is multirate */
+		if (call->bc.transmoderate == TRANS_MODE_MULTIRATE) {
+			call->bc.transmultiple = ie->data[pos++] & 0x7f;
 		}
-		
-	}
 
-	/* Look for octet 6; this is identified by bits 5,6 == 10 */
-	if (pos < len && (ie->data[pos] & 0x60) == 0x40) {
-		call->bc.userl2 = ie->data[pos++] & 0x1f;
-	}
+		/* Look for octet 5; this is identified by bits 5,6 == 01 */
+		if (pos < len && (ie->data[pos] & 0x60) == 0x20) {
+			/* although the layer1 is only the bottom 5 bits of the byte,
+			   previous versions of this library passed bits 5&6 through
+			   too, so we have to do the same for binary compatability */
+			call->bc.userl1 = ie->data[pos] & 0x7f;
+			pos++;
 
-	/* Look for octet 7; this is identified by bits 5,6 == 11 */
-	if (pos < len && (ie->data[pos] & 0x60) == 0x60) {
-		call->bc.userl3 = ie->data[pos++] & 0x1f;
+			/* octet 5a? */
+			if (pos < len && !(ie->data[pos-1] & 0x80)) {
+				call->bc.rateadaption = ie->data[pos] & 0x7f;
+				pos++;
+			}
+
+			/* octets 5b through 5d? */
+			while (pos < len && !(ie->data[pos-1] & 0x80)) {
+				pos++;
+			}
+
+		}
+
+		/* Look for octet 6; this is identified by bits 5,6 == 10 */
+		if (pos < len && (ie->data[pos] & 0x60) == 0x40) {
+			call->bc.userl2 = ie->data[pos++] & 0x1f;
+		}
+
+		/* Look for octet 7; this is identified by bits 5,6 == 11 */
+		if (pos < len && (ie->data[pos] & 0x60) == 0x60) {
+			call->bc.userl3 = ie->data[pos++] & 0x1f;
+		}
+		break;
+	case 0x20:/* ISO/IEC standard */
+		if (ie->data[0] == 0xa8 && ie->data[1] == 0x80) {
+			/*
+			 * Q.SIG uses for CIS calls. ECMA-165 Section 11.3.1
+			 * This mandatory ie is more or less a place holder in this case.
+			 */
+			call->bc.transcapability = PRI_TRANS_CAP_DIGITAL;
+			call->bc.transmoderate = TRANS_MODE_64_CIRCUIT;
+			break;
+		}
+		/* Fall through */
+	default:
+		pri_error(ctrl, "!! Coding-standard field is not Q.931.\n");
+		return -1;
 	}
 	return 0;
 }
@@ -6126,7 +6141,6 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 	
 	/* Handle IEs */
 	memset(mandies, 0, sizeof(mandies));
-	missingmand = 0;
 	for (x=0;x<sizeof(msgs) / sizeof(msgs[0]); x++)  {
 		if (msgs[x].msgnum == mh->msg) {
 			memcpy(mandies, msgs[x].mandies, sizeof(mandies));
@@ -6211,8 +6225,10 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 		}
 	}
 
-	/* Now handle the facility ie's after all the other ie's were processed. */
-	q931_handle_facilities(ctrl, c, mh->msg);
+	if (!missingmand) {
+		/* Now handle the facility ie's after all the other ie's were processed. */
+		q931_handle_facilities(ctrl, c, mh->msg);
+	}
 
 	/* Post handling */
 	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
