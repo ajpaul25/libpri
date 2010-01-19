@@ -3309,26 +3309,25 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		 */
 		return;
 	}
-	apdu = pri_call_apdu_find(call, reject->invoke_id);
-	if (!apdu) {
-		if (!q931_is_dummy_call(call) || !BRI_NT_PTMP(ctrl)) {
-			return;
-		}
+	orig_call = NULL;/* To make some compilers happy. */
+	apdu = NULL;
+	if (q931_is_dummy_call(call)) {
 		/*
-		 * The message might have been sent on the broadcast dummy call reference call
+		 * The message was likely sent on the broadcast dummy call reference call
 		 * and the reject came in on a specific dummy call reference call.
 		 * Look for the original invocation message on the
-		 * broadcast dummy call reference call.
+		 * broadcast dummy call reference call first.
 		 */
 		orig_call = PRI_MASTER(ctrl)->dummy_call;
-		if (!orig_call) {
-			return;
+		if (orig_call) {
+			apdu = pri_call_apdu_find(orig_call, reject->invoke_id);
 		}
-		apdu = pri_call_apdu_find(orig_call, reject->invoke_id);
+	}
+	if (!apdu) {
+		apdu = pri_call_apdu_find(call, reject->invoke_id);
 		if (!apdu) {
 			return;
 		}
-	} else {
 		orig_call = call;
 	}
 	msg.response.reject = reject;
@@ -3394,26 +3393,25 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 		break;
 	}
 
-	apdu = pri_call_apdu_find(call, error->invoke_id);
-	if (!apdu) {
-		if (!q931_is_dummy_call(call) || !BRI_NT_PTMP(ctrl)) {
-			return;
-		}
+	orig_call = NULL;/* To make some compilers happy. */
+	apdu = NULL;
+	if (q931_is_dummy_call(call)) {
 		/*
-		 * The message might have been sent on the broadcast dummy call reference call
+		 * The message was likely sent on the broadcast dummy call reference call
 		 * and the error came in on a specific dummy call reference call.
 		 * Look for the original invocation message on the
-		 * broadcast dummy call reference call.
+		 * broadcast dummy call reference call first.
 		 */
 		orig_call = PRI_MASTER(ctrl)->dummy_call;
-		if (!orig_call) {
-			return;
+		if (orig_call) {
+			apdu = pri_call_apdu_find(orig_call, error->invoke_id);
 		}
-		apdu = pri_call_apdu_find(orig_call, error->invoke_id);
+	}
+	if (!apdu) {
+		apdu = pri_call_apdu_find(call, error->invoke_id);
 		if (!apdu) {
 			return;
 		}
-	} else {
 		orig_call = call;
 	}
 	msg.response.error = error;
@@ -3471,26 +3469,25 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		break;
 	}
 
-	apdu = pri_call_apdu_find(call, result->invoke_id);
-	if (!apdu) {
-		if (!q931_is_dummy_call(call) || !BRI_NT_PTMP(ctrl)) {
-			return;
-		}
+	orig_call = NULL;/* To make some compilers happy. */
+	apdu = NULL;
+	if (q931_is_dummy_call(call)) {
 		/*
-		 * The message might have been sent on the broadcast dummy call reference call
+		 * The message was likely sent on the broadcast dummy call reference call
 		 * and the result came in on a specific dummy call reference call.
 		 * Look for the original invocation message on the
-		 * broadcast dummy call reference call.
+		 * broadcast dummy call reference call first.
 		 */
 		orig_call = PRI_MASTER(ctrl)->dummy_call;
-		if (!orig_call) {
-			return;
+		if (orig_call) {
+			apdu = pri_call_apdu_find(orig_call, result->invoke_id);
 		}
-		apdu = pri_call_apdu_find(orig_call, result->invoke_id);
+	}
+	if (!apdu) {
+		apdu = pri_call_apdu_find(call, result->invoke_id);
 		if (!apdu) {
 			return;
 		}
-	} else {
 		orig_call = call;
 	}
 	msg.response.result = result;
