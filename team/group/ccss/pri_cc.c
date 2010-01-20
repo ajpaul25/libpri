@@ -39,6 +39,10 @@
 
 #include <stdlib.h>
 
+/* Define CC_SANITY_CHECKS to add some consistency sanity checking. */
+//#define CC_SANITY_CHECKS	1
+#define CC_SANITY_CHECKS	1// BUGBUG
+
 
 /* ------------------------------------------------------------------- */
 
@@ -2690,6 +2694,29 @@ static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record 
 	/* Abort any pending indirect events. */
 	pri_schedule_del(ctrl, cc_record->t_indirect);
 	cc_record->t_indirect = 0;
+
+#if defined(CC_SANITY_CHECKS)
+	if (cc_record->t_retention) {
+		pri_error(ctrl, "T_RETENTION still active");
+		pri_schedule_del(ctrl, cc_record->t_retention);
+		cc_record->t_retention = 0;
+	}
+	if (cc_record->t_supervision) {
+		pri_error(ctrl, "T_SUPERVISION still active");
+		pri_schedule_del(ctrl, cc_record->t_supervision);
+		cc_record->t_supervision = 0;
+	}
+	if (cc_record->t_recall) {
+		pri_error(ctrl, "T_RECALL still active");
+		pri_schedule_del(ctrl, cc_record->t_recall);
+		cc_record->t_recall = 0;
+	}
+	if (q931_is_ptmp(ctrl) && cc_record->fsm.ptmp.extended_t_ccbs1) {
+		pri_error(ctrl, "Extended T_CCBS1 still active");
+		pri_schedule_del(ctrl, cc_record->fsm.ptmp.extended_t_ccbs1);
+		cc_record->fsm.ptmp.extended_t_ccbs1 = 0;
+	}
+#endif	/* defined(CC_SANITY_CHECKS) */
 
 	cc_record->fsm_complete = 1;
 }
