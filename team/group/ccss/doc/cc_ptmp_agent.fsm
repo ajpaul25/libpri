@@ -87,6 +87,7 @@ FSM CC_PTMP_Agent
 	State CC_STATE_ACTIVATED {
 		Prolog {
 			Action Reset_A_Status;
+			Action Raw_Status_Count_Reset;
 		}
 		Stimulus CC_EVENT_RECALL {
 			Action Send_Error_Recall(ROSE_ERROR_CCBS_NotReadyForCall);
@@ -128,6 +129,7 @@ FSM CC_PTMP_Agent
 			}
 		}
 		Stimulus CC_EVENT_A_FREE {
+			Action Raw_Status_Count_Reset;
 			Action Set_Raw_A_Status_Free;
 			Action Promote_Raw_A_Status;
 			Action Pass_Up_Status_Rsp_A;
@@ -140,18 +142,25 @@ FSM CC_PTMP_Agent
 		Stimulus CC_EVENT_TIMEOUT_T_CCBS1 {
 			Action Promote_Raw_A_Status;
 			Test = Get_A_Status;
+			Test != Invalid {
+				/* Only received User A busy. */
+				Action Raw_Status_Count_Reset;
+			}
 			Test == Invalid {
-				/*
-				 * Did not get any responses.
-				 * User A no longer present.
-				 */
-				Action Send_CCBSErase(Normal_Unspecified);
-				Action Pass_Up_CC_Cancel;
-				Next_State CC_STATE_IDLE;
+				/* Did not get any responses. */
+				Action Raw_Status_Count_Increment;
+				Test = Get_Raw_Status_Count;
+				Test >= RAW_STATUS_COUNT_MAX {
+					/* User A no longer present. */
+					Action Send_CCBSErase(Normal_Unspecified);
+					Action Pass_Up_CC_Cancel;
+					Next_State CC_STATE_IDLE;
+				}
 			}
 		}
 		Stimulus CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1 {
 			Action Reset_A_Status;
+			Action Raw_Status_Count_Reset;
 		}
 	}
 	State CC_STATE_B_AVAILABLE {
@@ -193,20 +202,28 @@ FSM CC_PTMP_Agent
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_CCBS1 {
 			Test = Get_Raw_A_Status;
-			Test == Invalid {
-				/*
-				 * Did not get any responses.
-				 * User A no longer present.
-				 */
-				Action Send_CCBSErase(Normal_Unspecified);
-				Action Pass_Up_CC_Cancel;
-				Next_State CC_STATE_IDLE;
+			Test != Invalid {
+				/* Only received User A is busy. */
+				Action Raw_Status_Count_Reset;
+				Action Send_CCBSBFree;
+				Action Promote_Raw_A_Status;
+				Action Pass_Up_A_Status;
+				Next_State CC_STATE_SUSPENDED;
 			}
-			/* Only received User A is busy. */
-			Action Send_CCBSBFree;
-			Action Promote_Raw_A_Status;
-			Action Pass_Up_A_Status;
-			Next_State CC_STATE_SUSPENDED;
+			Test == Invalid {
+				/* Did not get any responses. */
+				Action Raw_Status_Count_Increment;
+				Test = Get_Raw_Status_Count;
+				Test >= RAW_STATUS_COUNT_MAX {
+					/* User A no longer present. */
+					Action Send_CCBSErase(Normal_Unspecified);
+					Action Pass_Up_CC_Cancel;
+					Next_State CC_STATE_IDLE;
+				}
+				//Action Reset_Raw_A_Status;
+				Action Send_CCBSStatusRequest;
+				Action Start_T_CCBS1;
+			}
 		}
 	}
 	State CC_STATE_SUSPENDED {
@@ -248,16 +265,21 @@ FSM CC_PTMP_Agent
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_CCBS1 {
 			Test = Get_Raw_A_Status;
-			Test == Invalid {
-				/*
-				 * Did not get any responses.
-				 * User A no longer present.
-				 */
-				Action Send_CCBSErase(Normal_Unspecified);
-				Action Pass_Up_CC_Cancel;
-				Next_State CC_STATE_IDLE;
+			Test != Invalid {
+				/* Only received User A is busy. */
+				Action Raw_Status_Count_Reset;
 			}
-			/* Only received User A is busy. */
+			Test == Invalid {
+				/* Did not get any responses. */
+				Action Raw_Status_Count_Increment;
+				Test = Get_Raw_Status_Count;
+				Test >= RAW_STATUS_COUNT_MAX {
+					/* User A no longer present. */
+					Action Send_CCBSErase(Normal_Unspecified);
+					Action Pass_Up_CC_Cancel;
+					Next_State CC_STATE_IDLE;
+				}
+			}
 			Action Reset_Raw_A_Status;
 			Action Send_CCBSStatusRequest;
 			Action Start_T_CCBS1;

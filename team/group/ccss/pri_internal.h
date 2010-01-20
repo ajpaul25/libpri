@@ -774,6 +774,8 @@ struct pri_cc_record {
 			int extended_t_ccbs1;
 			/*! Invoke id for the CCBSStatusRequest message to find if T_CCBS1 still running. */
 			int t_ccbs1_invoke_id;
+			/*! Number of times party A status request got no responses. */
+			int party_a_status_count;
 			/*! Accumulating party A availability status */
 			enum CC_PARTY_A_AVAILABILITY party_a_status_acc;
 		} ptmp;
