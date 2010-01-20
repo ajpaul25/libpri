@@ -43,6 +43,8 @@
 //#define CC_SANITY_CHECKS	1
 #define CC_SANITY_CHECKS	1// BUGBUG
 
+/*! Maximum times CCBSStatusRequest can have no response before canceling CC. */
+#define RAW_STATUS_COUNT_MAX	3
 
 /* ------------------------------------------------------------------- */
 
@@ -3597,6 +3599,36 @@ static void pri_cc_act_set_retain_signaling_link(struct pri *ctrl, struct pri_cc
 
 /*!
  * \internal
+ * \brief FSM action to reset the raw A status request no response count.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_raw_status_count_reset(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
+	cc_record->fsm.ptmp.party_a_status_count = 0;
+}
+
+/*!
+ * \internal
+ * \brief FSM action to increment the raw A status request no response count.
+ *
+ * \param ctrl D channel controller.
+ * \param cc_record Call completion record to process event.
+ *
+ * \return Nothing
+ */
+static void pri_cc_act_raw_status_count_increment(struct pri *ctrl, struct pri_cc_record *cc_record)
+{
+	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
+	++cc_record->fsm.ptmp.party_a_status_count;
+}
+
+/*!
+ * \internal
  * \brief FSM action to reset raw A status.
  *
  * \param ctrl D channel controller.
@@ -4367,6 +4399,7 @@ static void pri_cc_fsm_ptmp_agent_req(struct pri *ctrl, q931_call *call, struct 
 		pri_cc_act_release_link_id(ctrl, cc_record);
 		pri_cc_act_start_t_supervision(ctrl, cc_record);
 		pri_cc_act_reset_a_status(ctrl, cc_record);
+		pri_cc_act_raw_status_count_reset(ctrl, cc_record);
 		cc_record->state = CC_STATE_ACTIVATED;
 		break;
 	case CC_EVENT_CANCEL:
@@ -4446,6 +4479,7 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		}
 		break;
 	case CC_EVENT_A_FREE:
+		pri_cc_act_raw_status_count_reset(ctrl, cc_record);
 		pri_cc_act_set_raw_a_status_free(ctrl, cc_record);
 		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
 		pri_cc_act_pass_up_a_status(ctrl, cc_record);
@@ -4457,22 +4491,27 @@ static void pri_cc_fsm_ptmp_agent_activated(struct pri *ctrl, q931_call *call, s
 		break;
 	case CC_EVENT_TIMEOUT_T_CCBS1:
 		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
-		if (cc_record->party_a_status == CC_PARTY_A_AVAILABILITY_INVALID) {
-			/*
-			 * Did not get any responses.
-			 * User A no longer present.
-			 */
-			pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
-			pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_t_supervision(ctrl, cc_record);
-			pri_cc_act_set_self_destruct(ctrl, cc_record);
-			cc_record->state = CC_STATE_IDLE;
+		if (cc_record->party_a_status != CC_PARTY_A_AVAILABILITY_INVALID) {
+			/* Only received User A busy. */
+			pri_cc_act_raw_status_count_reset(ctrl, cc_record);
+		} else {
+			/* Did not get any responses. */
+			pri_cc_act_raw_status_count_increment(ctrl, cc_record);
+			if (cc_record->fsm.ptmp.party_a_status_count >= RAW_STATUS_COUNT_MAX) {
+				/* User A no longer present. */
+				pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
+				pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+				pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_t_supervision(ctrl, cc_record);
+				pri_cc_act_set_self_destruct(ctrl, cc_record);
+				cc_record->state = CC_STATE_IDLE;
+			}
 		}
 		break;
 	case CC_EVENT_TIMEOUT_EXTENDED_T_CCBS1:
 		pri_cc_act_reset_a_status(ctrl, cc_record);
+		pri_cc_act_raw_status_count_reset(ctrl, cc_record);
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -4548,32 +4587,38 @@ static void pri_cc_fsm_ptmp_agent_b_avail(struct pri *ctrl, q931_call *call, str
 		}
 		break;
 	case CC_EVENT_TIMEOUT_T_CCBS1:
-		if (cc_record->fsm.ptmp.party_a_status_acc == CC_PARTY_A_AVAILABILITY_INVALID) {
-			/*
-			 * Did not get any responses.
-			 * User A no longer present.
-			 */
-			pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
-			pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_t_supervision(ctrl, cc_record);
-			pri_cc_act_set_self_destruct(ctrl, cc_record);
-			cc_record->state = CC_STATE_IDLE;
-			break;
-		}
-		/* Only received User A busy. */
-		pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
-		pri_cc_act_promote_raw_a_status(ctrl, cc_record);
-		pri_cc_act_pass_up_a_status(ctrl, cc_record);
-		/* Optimization due to flattening. */
-		//if (!pri_cc_get_t_ccbs1_status(cc_record))
-		{
-			pri_cc_act_reset_raw_a_status(ctrl, cc_record);
+		if (cc_record->fsm.ptmp.party_a_status_acc != CC_PARTY_A_AVAILABILITY_INVALID) {
+			/* Only received User A busy. */
+			pri_cc_act_raw_status_count_reset(ctrl, cc_record);
+			pri_cc_act_send_ccbs_b_free(ctrl, cc_record);
+			pri_cc_act_promote_raw_a_status(ctrl, cc_record);
+			pri_cc_act_pass_up_a_status(ctrl, cc_record);
+			/* Optimization due to flattening. */
+			//if (!pri_cc_get_t_ccbs1_status(cc_record))
+			{
+				pri_cc_act_reset_raw_a_status(ctrl, cc_record);
+				pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
+				//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
+			}
+			cc_record->state = CC_STATE_SUSPENDED;
+		} else {
+			/* Did not get any responses. */
+			pri_cc_act_raw_status_count_increment(ctrl, cc_record);
+			if (cc_record->fsm.ptmp.party_a_status_count >= RAW_STATUS_COUNT_MAX) {
+				/* User A no longer present. */
+				pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
+				pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+				pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_t_supervision(ctrl, cc_record);
+				pri_cc_act_set_self_destruct(ctrl, cc_record);
+				cc_record->state = CC_STATE_IDLE;
+				break;
+			}
+			//pri_cc_act_reset_raw_a_status(ctrl, cc_record);
 			pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
 			//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
 		}
-		cc_record->state = CC_STATE_SUSPENDED;
 		break;
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -4639,6 +4684,7 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 		pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
 		pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
 		pri_cc_act_reset_a_status(ctrl, cc_record);
+		pri_cc_act_raw_status_count_reset(ctrl, cc_record);
 		cc_record->state = CC_STATE_ACTIVATED;
 		break;
 	case CC_EVENT_A_BUSY:
@@ -4648,21 +4694,24 @@ static void pri_cc_fsm_ptmp_agent_suspended(struct pri *ctrl, q931_call *call, s
 		}
 		break;
 	case CC_EVENT_TIMEOUT_T_CCBS1:
-		if (cc_record->fsm.ptmp.party_a_status_acc == CC_PARTY_A_AVAILABILITY_INVALID) {
-			/*
-			 * Did not get any responses.
-			 * User A no longer present.
-			 */
-			pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
-			pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
-			pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
-			pri_cc_act_stop_t_supervision(ctrl, cc_record);
-			pri_cc_act_set_self_destruct(ctrl, cc_record);
-			cc_record->state = CC_STATE_IDLE;
-			break;
+		if (cc_record->fsm.ptmp.party_a_status_acc != CC_PARTY_A_AVAILABILITY_INVALID) {
+			/* Only received User A busy. */
+			pri_cc_act_raw_status_count_reset(ctrl, cc_record);
+		} else {
+			/* Did not get any responses. */
+			pri_cc_act_raw_status_count_increment(ctrl, cc_record);
+			if (cc_record->fsm.ptmp.party_a_status_count >= RAW_STATUS_COUNT_MAX) {
+				/* User A no longer present. */
+				pri_cc_act_send_ccbs_erase(ctrl, cc_record, 0 /* normal-unspecified */);
+				pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+				pri_cc_act_stop_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_extended_t_ccbs1(ctrl, cc_record);
+				pri_cc_act_stop_t_supervision(ctrl, cc_record);
+				pri_cc_act_set_self_destruct(ctrl, cc_record);
+				cc_record->state = CC_STATE_IDLE;
+				break;
+			}
 		}
-		/* Only received User A busy. */
 		pri_cc_act_reset_raw_a_status(ctrl, cc_record);
 		pri_cc_act_send_ccbs_status_request(ctrl, cc_record);
 		//pri_cc_act_start_t_ccbs1(ctrl, cc_record);
@@ -4731,6 +4780,7 @@ static void pri_cc_fsm_ptmp_agent_wait_callback(struct pri *ctrl, q931_call *cal
 		}
 		pri_cc_act_stop_t_recall(ctrl, cc_record);
 		pri_cc_act_reset_a_status(ctrl, cc_record);
+		pri_cc_act_raw_status_count_reset(ctrl, cc_record);
 		cc_record->state = CC_STATE_ACTIVATED;
 		break;
 	case CC_EVENT_RECALL:
