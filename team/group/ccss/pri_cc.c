@@ -2691,6 +2691,10 @@ static const char pri_cc_act_header[] = "%ld  CC-Act: %s\n";
  */
 static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record *cc_record)
 {
+#if defined(CC_SANITY_CHECKS)
+	struct apdu_event *msg;
+#endif	/* defined(CC_SANITY_CHECKS) */
+
 	PRI_CC_ACT_DEBUG_OUTPUT(ctrl, cc_record->record_id);
 
 	/* Abort any pending indirect events. */
@@ -2713,10 +2717,27 @@ static void pri_cc_act_set_self_destruct(struct pri *ctrl, struct pri_cc_record 
 		pri_schedule_del(ctrl, cc_record->t_recall);
 		cc_record->t_recall = 0;
 	}
-	if (q931_is_ptmp(ctrl) && cc_record->fsm.ptmp.extended_t_ccbs1) {
-		pri_error(ctrl, "Extended T_CCBS1 still active");
-		pri_schedule_del(ctrl, cc_record->fsm.ptmp.extended_t_ccbs1);
-		cc_record->fsm.ptmp.extended_t_ccbs1 = 0;
+	if (q931_is_ptmp(ctrl)) {
+		msg = pri_call_apdu_find(cc_record->signaling,
+			cc_record->fsm.ptmp.t_ccbs1_invoke_id);
+		if (msg) {
+			pri_error(ctrl, "T_CCBS1 still active");
+			cc_record->fsm.ptmp.t_ccbs1_invoke_id = APDU_INVALID_INVOKE_ID;
+			pri_call_apdu_delete(cc_record->signaling, msg);
+		}
+		if (cc_record->fsm.ptmp.extended_t_ccbs1) {
+			pri_error(ctrl, "Extended T_CCBS1 still active");
+			pri_schedule_del(ctrl, cc_record->fsm.ptmp.extended_t_ccbs1);
+			cc_record->fsm.ptmp.extended_t_ccbs1 = 0;
+		}
+	}
+	if (cc_record->signaling) {
+		msg = pri_call_apdu_find(cc_record->signaling, cc_record->t_activate_invoke_id);
+		if (msg) {
+			pri_error(ctrl, "T_ACTIVATE still active");
+			cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
+			pri_call_apdu_delete(cc_record->signaling, msg);
+		}
 	}
 #endif	/* defined(CC_SANITY_CHECKS) */
 
@@ -3095,7 +3116,11 @@ static int pri_cc_ccbs_status_response(enum APDU_CALLBACK_REASON reason, struct 
 
 	cc_record = apdu->response.user.ptr;
 	switch (reason) {
+	case APDU_CALLBACK_REASON_ERROR:
+		cc_record->fsm.ptmp.t_ccbs1_invoke_id = APDU_INVALID_INVOKE_ID;
+		break;
 	case APDU_CALLBACK_REASON_TIMEOUT:
+		cc_record->fsm.ptmp.t_ccbs1_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_CCBS1);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
@@ -3228,7 +3253,11 @@ static int pri_cc_req_response_ptmp(enum APDU_CALLBACK_REASON reason, struct pri
 	cc_record = apdu->response.user.ptr;
 
 	switch (reason) {
+	case APDU_CALLBACK_REASON_ERROR:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
+		break;
 	case APDU_CALLBACK_REASON_TIMEOUT:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_ACTIVATE);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
@@ -3285,7 +3314,11 @@ static int pri_cc_req_response_ptp(enum APDU_CALLBACK_REASON reason, struct pri 
 	cc_record = apdu->response.user.ptr;
 
 	switch (reason) {
+	case APDU_CALLBACK_REASON_ERROR:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
+		break;
 	case APDU_CALLBACK_REASON_TIMEOUT:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_ACTIVATE);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
@@ -3333,7 +3366,11 @@ static int pri_cc_req_response_qsig(enum APDU_CALLBACK_REASON reason, struct pri
 	cc_record = apdu->response.user.ptr;
 
 	switch (reason) {
+	case APDU_CALLBACK_REASON_ERROR:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
+		break;
 	case APDU_CALLBACK_REASON_TIMEOUT:
+		cc_record->t_activate_invoke_id = APDU_INVALID_INVOKE_ID;
 		pri_cc_event(ctrl, call, cc_record, CC_EVENT_TIMEOUT_T_ACTIVATE);
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
