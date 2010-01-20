@@ -3003,8 +3003,8 @@ static void pri_cc_act_start_t_recall(struct pri *ctrl, struct pri_cc_record *cc
 		duration = 0;
 		break;
 	}
-	cc_record->t_supervision = pri_schedule_event(ctrl, duration,
-		pri_cc_timeout_t_recall, cc_record);
+	cc_record->t_recall = pri_schedule_event(ctrl, duration, pri_cc_timeout_t_recall,
+		cc_record);
 }
 
 /*!
