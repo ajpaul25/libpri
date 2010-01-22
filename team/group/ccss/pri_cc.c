@@ -5120,14 +5120,102 @@ static void pri_cc_fsm_ptmp_monitor_activated(struct pri *ctrl, q931_call *call,
 	case CC_EVENT_REMOTE_USER_FREE:
 		/* Received CCBSRemoteUserFree */
 		pri_cc_act_pass_up_remote_user_free(ctrl, cc_record);
+		cc_record->state = CC_STATE_WAIT_CALLBACK;
 		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_LINK_CANCEL:
+		/* Received CCBSErase */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTMP monitor CC_STATE_WAIT_CALLBACK.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptmp_monitor_wait_callback(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	switch (event) {
 	case CC_EVENT_STOP_ALERTING:
 		pri_cc_act_pass_up_stop_alerting(ctrl, cc_record);
+		cc_record->state = CC_STATE_ACTIVATED;
 		break;
 	case CC_EVENT_RECALL:
 		/* The original call parameters have already been set. */
 		pri_cc_act_queue_setup_recall(ctrl, cc_record, call);
+		cc_record->state = CC_STATE_CALLBACK;
 		break;
+	case CC_EVENT_TIMEOUT_T_SUPERVISION:
+		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_LINK_CANCEL:
+		/* Received CCBSErase */
+		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	case CC_EVENT_CANCEL:
+		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
+		pri_cc_act_stop_t_supervision(ctrl, cc_record);
+		pri_cc_act_set_self_destruct(ctrl, cc_record);
+		cc_record->state = CC_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+}
+
+/*!
+ * \internal
+ * \brief CC FSM PTMP monitor CC_STATE_CALLBACK.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param cc_record Call completion record to process event.
+ * \param event Event to process.
+ *
+ * \return Nothing
+ */
+static void pri_cc_fsm_ptmp_monitor_callback(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record, enum CC_EVENTS event)
+{
+	/*
+	 * We are waiting for the CC records to be torn down because
+	 * CC is complete.
+	 * This state is mainly to block CC_EVENT_STOP_ALERTING since
+	 * we are the one doing the CC recall so we do not need to stop
+	 * alerting.
+	 */
+	switch (event) {
 	case CC_EVENT_TIMEOUT_T_SUPERVISION:
 		pri_cc_act_send_cc_deactivate_req(ctrl, cc_record);
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
@@ -6561,6 +6649,8 @@ static const pri_cc_fsm_state pri_cc_fsm_ptmp_monitor[CC_STATE_NUM] = {
 	[CC_STATE_REQUESTED] = pri_cc_fsm_ptmp_monitor_req,
 	[CC_STATE_WAIT_DESTRUCTION] = pri_cc_fsm_ptmp_monitor_wait_destruction,
 	[CC_STATE_ACTIVATED] = pri_cc_fsm_ptmp_monitor_activated,
+	[CC_STATE_WAIT_CALLBACK] = pri_cc_fsm_ptmp_monitor_wait_callback,
+	[CC_STATE_CALLBACK] = pri_cc_fsm_ptmp_monitor_callback,
 /* *INDENT-ON* */
 };
 
