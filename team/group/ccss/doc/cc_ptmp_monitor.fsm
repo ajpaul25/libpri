@@ -117,6 +117,37 @@ FSM CC_PTMP_Monitor
 		}
 	}
 	State CC_STATE_ACTIVATED {
+		Stimulus CC_EVENT_B_FREE {
+			/* Received CCBSBFree */
+			Action Pass_Up_B_Free;
+		}
+		Stimulus CC_EVENT_REMOTE_USER_FREE {
+			/* Received CCBSRemoteUserFree */
+			Action Pass_Up_Remote_User_Free;
+			Next_State CC_STATE_WAIT_CALLBACK;
+		}
+	}
+	State CC_STATE_WAIT_CALLBACK {
+		Stimulus CC_EVENT_STOP_ALERTING {
+			Action Pass_Up_Stop_Alerting;
+			Next_State CC_STATE_ACTIVATED;
+		}
+		Stimulus CC_EVENT_RECALL {
+			/* The original call parameters have already been set. */
+			Action Queue_SETUP_Recall;
+			Next_State CC_STATE_CALLBACK;
+		}
+	}
+	State CC_STATE_CALLBACK {
+		/*
+		 * We are waiting for the CC records to be torn down because
+		 * CC is complete.
+		 * This state is mainly to block CC_EVENT_STOP_ALERTING since
+		 * we are the one doing the CC recall so we do not need to stop
+		 * alerting.
+		 */
+	}
+	Superstate CC_ACTIVE(CC_STATE_ACTIVATED, CC_STATE_WAIT_CALLBACK, CC_STATE_CALLBACK) {
 		Prolog {
 			/*
 			 * Start T_CCBS2 or T_CCNR2 depending upon CC mode.
@@ -131,21 +162,6 @@ FSM CC_PTMP_Monitor
 		}
 		Epilog {
 			Action Stop_T_SUPERVISION;
-		}
-		Stimulus CC_EVENT_B_FREE {
-			/* Received CCBSBFree */
-			Action Pass_Up_B_Free;
-		}
-		Stimulus CC_EVENT_REMOTE_USER_FREE {
-			/* Received CCBSRemoteUserFree */
-			Action Pass_Up_Remote_User_Free;
-		}
-		Stimulus CC_EVENT_STOP_ALERTING {
-			Action Pass_Up_Stop_Alerting;
-		}
-		Stimulus CC_EVENT_RECALL {
-			/* The original call parameters have already been set. */
-			Action Queue_SETUP_Recall;
 		}
 		Stimulus CC_EVENT_TIMEOUT_T_SUPERVISION {
 			Action Send_CC_Deactivate_Req;
