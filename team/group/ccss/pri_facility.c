@@ -4012,14 +4012,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			 */
 			break;
 		}
-
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			break;
-		}
-
-		subcmd->cmd = PRI_SUBCMD_CC_STOP_ALERTING;
-		subcmd->u.cc_stop_alerting.cc_id = cc_record->record_id;
+		pri_cc_event(ctrl, call, cc_record, CC_EVENT_STOP_ALERTING);
 		break;
 	case ROSE_ETSI_CCBS_T_Request:
 		pri_cc_ptp_request(ctrl, call, msgtype, invoke);
