@@ -512,12 +512,21 @@ struct pri_rerouting_data {
 	int invoke_id;
 };
 
+/*
+ * NOTE:
+ * The code surrounded by STATUS_REQUEST_PLACE_HOLDER is not implemented.
+ * The STATUS_REQUEST_PLACE_HOLDER code will be made unconditional if support
+ * for the messages is ever needed (and gets written).
+ */
+
 /* Subcommands derived from supplementary services. */
 #define PRI_SUBCMD_REDIRECTING				1	/*!< Redirecting information update */
 #define PRI_SUBCMD_CONNECTED_LINE			2	/*!< Connected line information update */
 #define PRI_SUBCMD_REROUTING				3	/*!< CallRerouting/CallDeflection received. */
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 #define PRI_SUBCMD_STATUS_REQ				4	/*!< Determine the status of the given party. */
 #define PRI_SUBCMD_STATUS_REQ_RSP			5	/*!< Status request response */
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 #define PRI_SUBCMD_CC_AVAILABLE				6	/*!< Indicate that CC is available */
 #define PRI_SUBCMD_CC_REQ					7	/*!< CC activation request */
 #define PRI_SUBCMD_CC_REQ_RSP				8	/*!< CC activation request response */
@@ -530,6 +539,7 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_CC_CANCEL				15	/*!< Unsolicited indication that CC is canceled */
 #define PRI_SUBCMD_CC_STOP_ALERTING			16	/*!< Indicate that someone else has responed to remote user free */
 
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
 	/*!
 	 * \brief Invoke id in case there are multiple outstanding requests.
@@ -540,7 +550,9 @@ struct pri_subcmd_status_request {
 	/*! \brief Party address requesting status about. */
 	struct pri_party_address party;
 };
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request_rsp {
 	/*!
 	 * \brief Request id in case there are multiple outstanding requests.
@@ -554,11 +566,11 @@ struct pri_subcmd_status_request_rsp {
 	 * free(0),
 	 * busy(1),
 	 * incompatible(2)
-	 * unknown(3),
-	 * timeout(4),
+	 * timeout(3),
 	 */
 	int status;
 };
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 
 struct pri_subcmd_cc_id {
 	/*! \brief Call-Completion record id */
@@ -631,8 +643,10 @@ struct pri_subcommand {
 		struct pri_party_connected_line connected_line;
 		struct pri_party_redirecting redirecting;
 		struct pri_rerouting_data rerouting;
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 		struct pri_subcmd_status_request status_request;
 		struct pri_subcmd_status_request_rsp status_request_rsp;
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 		struct pri_subcmd_cc_id cc_available;
 		struct pri_subcmd_cc_request cc_request;
 		struct pri_subcmd_cc_request_rsp cc_request_rsp;
@@ -1395,8 +1409,10 @@ int pri_retrieve_ack(struct pri *ctrl, q931_call *call, int channel);
  */
 int pri_retrieve_rej(struct pri *ctrl, q931_call *call, int cause);
 
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req);
 void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status);
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 
 /*!
  * \brief Set the call completion feature enable flag.

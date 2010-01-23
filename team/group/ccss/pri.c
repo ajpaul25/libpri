@@ -957,6 +957,7 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 	return 0;
 }
 
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 /*!
  * \brief Poll/ping for the status of any "called" party.
  *
@@ -968,10 +969,7 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
  * \note
  * There could be one or more PRI_SUBCMD_STATUS_REQ_RSP to the status request
  * depending upon how many endpoints respond to the request.
- * (This includes the timeout or unknown termination response.)
- * \note
- * If the switch type is not ETSI BRI PTMP NT then the status will always be
- * an immediate unknown.
+ * (This includes the timeout termination response.)
  * \note
  * Could be used to poll for the status of call-completion party B.
  *
@@ -980,10 +978,11 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
  */
 int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req)
 {
-	/*! \todo BUGBUG pri_status_req() not written */
 	return -1;
 }
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 /*!
  * \brief Response to a poll/ping request for status of any "called" party by libpri.
  *
@@ -1001,8 +1000,8 @@ int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req)
  */
 void pri_status_req_rsp(struct pri *ctrl, int invoke_id, int status)
 {
-	/*! \todo BUGBUG pri_status_req_rsp() not written */
 }
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 
 #if 0
 /* deprecated routines, use pri_hangup */
