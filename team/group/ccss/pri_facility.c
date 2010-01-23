@@ -3848,11 +3848,11 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 	case ROSE_ETSI_EctLoopTest:
 		break;
 #endif	/* Not handled yet */
-#if 0	/* Not handled yet */
+#if defined(STATUS_REQUEST_PLACE_HOLDER)
 	case ROSE_ETSI_StatusRequest:
-		/*! \todo BUGBUG ROSE_ETSI_StatusRequest not handled */
+		/* Not handled yet */
 		break;
-#endif	/* Not handled yet */
+#endif	/* defined(STATUS_REQUEST_PLACE_HOLDER) */
 	case ROSE_ETSI_CallInfoRetain:
 		if (!PRI_MASTER(ctrl)->cc_support) {
 			/*
