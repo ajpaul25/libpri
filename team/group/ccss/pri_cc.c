@@ -6833,6 +6833,14 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 		if (q931_is_ptmp(ctrl)) {
 			int linkage_id;
 
+			if (!BRI_NT_PTMP(ctrl)) {
+				/*
+				 * No CC agent protocol defined for this mode.
+				 * i.e.,  A device acting like a phone cannot be a CC agent.
+				 */
+				break;
+			}
+
 			linkage_id = pri_cc_new_linkage_id(ctrl);
 			if (linkage_id == CC_PTMP_INVALID_ID) {
 				break;
