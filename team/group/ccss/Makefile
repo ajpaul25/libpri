@@ -125,6 +125,11 @@ else
 LIBPRI_OPT = -O2
 endif
 
+ifeq ($(CPUARCH),i686)
+CFLAGS += -m32
+SOFLAGS += -m32
+endif
+
 all: $(STATIC_LIBRARY) $(DYNAMIC_LIBRARY)
 
 update:
