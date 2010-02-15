@@ -1205,7 +1205,7 @@ int pri_set_service_message_support(struct pri *pri, int supportflag);
 
 #define PRI_2BCT
 /* Attempt to pass the channels back to the NET side if compatable and
- * suscribed.  Sometimes called 2 bchannel transfer (2BCT) */
+ * subscribed.  Sometimes called 2 bchannel transfer (2BCT) */
 int pri_channel_bridge(q931_call *call1, q931_call *call2);
 
 /* Override message and error stuff */

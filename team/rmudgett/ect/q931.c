@@ -3597,7 +3597,8 @@ static inline void q931_dumpie(struct pri *ctrl, int codeset, q931_ie *ie, char 
  *
  * \param ctrl D channel controller.
  * \param call Q.931 call leg.
- * 
+ * \param cr Call Reference identifier.
+ *
  * \note The call record is assumed to already be memset() to zero.
  *
  * \return Nothing
@@ -3647,6 +3648,49 @@ void q931_init_call_record(struct pri *ctrl, struct q931_call *call, int cr)
 	} else {
 		call->pri = ctrl;
 	}
+}
+
+/*!
+ * \brief Find a call in the active call pool.
+ *
+ * \param ctrl D channel controller.
+ * \param cr Call Reference identifier.
+ *
+ * \retval call if found.
+ * \retval NULL if not found.
+ */
+q931_call *q931_find_call(struct pri *ctrl, int cr)
+{
+	q931_call *cur;
+	struct pri *master;
+
+	if (cr == Q931_DUMMY_CALL_REFERENCE) {
+		return ctrl->dummy_call;
+	}
+
+	/* Find the master  - He has the call pool */
+	master = PRI_MASTER(ctrl);
+
+	for (cur = *master->callpool; cur; cur = cur->next) {
+		if (cur->cr == cr) {
+			/* Found existing call. */
+			switch (ctrl->switchtype) {
+			case PRI_SWITCH_GR303_EOC:
+			case PRI_SWITCH_GR303_EOC_PATH:
+			case PRI_SWITCH_GR303_TMC:
+			case PRI_SWITCH_GR303_TMC_SWITCHING:
+				break;
+			default:
+				if (!ctrl->bri) {
+					/* PRI is set to whoever called us */
+					cur->pri = ctrl;
+				}
+				break;
+			}
+			break;
+		}
+	}
+	return cur;
 }
 
 static q931_call *q931_getcall(struct pri *ctrl, int cr)

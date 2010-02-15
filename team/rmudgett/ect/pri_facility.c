@@ -2362,6 +2362,155 @@ int anfpr_initiate_transfer(struct pri *ctrl, q931_call *c1, q931_call *c2)
 }
 /* End AFN-PR */
 
+/*!
+ * \internal
+ * \brief Encode ETSI ExplicitEctExecute message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param link_id Identifier of other call involved in transfer.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ect_explicit_execute(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, int link_id)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = ROSE_ETSI_ExplicitEctExecute;
+
+	msg.args.etsi.ExplicitEctExecute.link_id = link_id;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief ECT LinkId response callback function.
+ *
+ * \param reason Reason callback is called.
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param apdu APDU queued entry.  Do not change!
+ * \param msg APDU response message data.  (NULL if was not the reason called.)
+ *
+ * \return TRUE if no more responses are expected.
+ */
+static int etsi_ect_link_id_rsp(enum APDU_CALLBACK_REASON reason, struct pri *ctrl,
+	struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+	q931_call *call_2;
+
+	switch (reason) {
+	case APDU_CALLBACK_REASON_MSG_RESULT:
+		call_2 = q931_find_call(ctrl, apdu->response.user.value);
+		if (!call_2) {
+			break;
+		}
+
+		end = enc_etsi_ect_explicit_execute(ctrl, buffer, buffer + sizeof(buffer),
+			msg->response.result->args.etsi.EctLinkIdRequest.link_id);
+		if (!end) {
+			break;
+		}
+
+		/* Remember that if we queue a facility IE for a facility message we
+		 * have to explicitly send the facility message ourselves */
+		if (pri_call_apdu_queue(call_2, Q931_FACILITY, buffer, end - buffer, NULL)) {
+			break;
+		}
+		if (q931_facility(call->pri, call_2)) {
+			pri_message(ctrl, "Could not schedule facility message for call %d\n",
+				call_2->cr);
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+/*!
+ * \internal
+ * \brief Encode ETSI ECT LinkId request message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_ect_link_id_req(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.invoke_id = get_invokeid(ctrl);
+	msg.operation = ROSE_ETSI_EctLinkIdRequest;
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \brief Start an Explicit Call Transfer (ECT) sequence between the two calls.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call_1 Q.931 call leg 1
+ * \param call_2 Q.931 call leg 2
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int etsi_initiate_transfer(struct pri *ctrl, q931_call *call_1, q931_call *call_2)
+{
+	unsigned char buffer[256];
+	unsigned char *end;
+	struct apdu_callback_data response;
+
+	end = enc_etsi_ect_link_id_req(ctrl, buffer, buffer + sizeof(buffer));
+	if (!end) {
+		return -1;
+	}
+
+	memset(&response, 0, sizeof(response));
+	response.invoke_id = ctrl->last_invoke;
+	response.timeout_time = -1;
+	response.callback = etsi_ect_link_id_rsp;
+	response.user.value = call_2->cr;
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call_1, Q931_FACILITY, buffer, end - buffer, &response)
+		|| q931_facility(call_1->pri, call_1)) {
+		pri_message(ctrl, "Could not schedule facility message for call %d\n", call_1->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
 /* AOC */
 /*!
  * \internal

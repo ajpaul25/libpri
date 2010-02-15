@@ -1024,6 +1024,10 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	if (!call1 || !call2)
 		return -1;
 
+	/* Check to see if we're on the same PRI */
+	if (call1->pri != call2->pri)
+		return -1;
+	
 	/* Make sure we have compatible switchtypes */
 	if (call1->pri->switchtype != call2->pri->switchtype)
 		return -1;
@@ -1032,36 +1036,36 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	if (call1->bc.transcapability != call2->bc.transcapability)
 		return -1;
 
-	/* Check to see if we're on the same PRI */
-	if (call1->pri != call2->pri)
-		return -1;
-	
 	switch (call1->pri->switchtype) {
-		case PRI_SWITCH_NI2:
-		case PRI_SWITCH_LUCENT5E:
-		case PRI_SWITCH_ATT4ESS:
-			if (eect_initiate_transfer(call1->pri, call1, call2))
-				return -1;
-			else
-				return 0;
-			break;
-		case PRI_SWITCH_DMS100:
-			if (rlt_initiate_transfer(call1->pri, call1, call2))
-				return -1;
-			else
-				return 0;
-			break;
-		case PRI_SWITCH_QSIG:
-			call1->bridged_call = call2;
-			call2->bridged_call = call1;
-			if (anfpr_initiate_transfer(call1->pri, call1, call2))
-				return -1;
-			else
-				return 0;
-			break;
-		default:
+	case PRI_SWITCH_NI2:
+	case PRI_SWITCH_LUCENT5E:
+	case PRI_SWITCH_ATT4ESS:
+		if (eect_initiate_transfer(call1->pri, call1, call2)) {
 			return -1;
+		}
+		break;
+	case PRI_SWITCH_DMS100:
+		if (rlt_initiate_transfer(call1->pri, call1, call2)) {
+			return -1;
+		}
+		break;
+	case PRI_SWITCH_QSIG:
+		call1->bridged_call = call2;
+		call2->bridged_call = call1;
+		if (anfpr_initiate_transfer(call1->pri, call1, call2)) {
+			return -1;
+		}
+		break;
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		if (etsi_initiate_transfer(call1->pri, call1, call2)) {
+			return -1;
+		}
+		break;
+	default:
+		return -1;
 	}
+	return 0;
 }
 
 int pri_hangup(struct pri *pri, q931_call *call, int cause)
