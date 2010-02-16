@@ -1591,6 +1591,14 @@ void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits)
 	sr->keypad_digits = keypad_digits;
 }
 
+void pri_transfer_enable(struct pri *ctrl, int enable)
+{
+	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl->transfer_support = enable ? 1 : 0;
+	}
+}
+
 void pri_hold_enable(struct pri *ctrl, int enable)
 {
 	ctrl = PRI_MASTER(ctrl);
