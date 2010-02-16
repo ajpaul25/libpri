@@ -98,9 +98,11 @@ struct pri {
 	int protodisc;
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
+	unsigned int sendfacility:1;
 	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
 	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
 	unsigned int cc_support:1;/* TRUE if upper layer supports call completion. */
+	unsigned int transfer_support:1;/* TRUE if the upper layer supports ECT */
 
 	/* MDL variables */
 	int mdl_error;
@@ -173,7 +175,6 @@ struct pri {
 #endif
 
 	short last_invoke;	/* Last ROSE invoke ID (Valid in master record only) */
-	unsigned char sendfacility;
 
 	/*! Call completion (Valid in master record only) */
 	struct {
@@ -583,6 +584,11 @@ struct q931_call {
 	int transferable;			/* RLT call is transferable */
 	unsigned int rlt_call_id;	/* RLT call id */
 
+	/*! ETSI Explicit Call Transfer link id. */
+	int link_id;
+	/*! TRUE if link_id is valid. */
+	int is_link_id_valid;
+
 	/* Bridged call info */
 	q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
 
@@ -939,6 +945,9 @@ const char *msg2str(int msg);
 int q931_is_ptmp(const struct pri *ctrl);
 int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_type);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
+
+struct q931_call *q931_find_link_id_call(struct pri *ctrl, int link_id);
+struct q931_call *q931_find_held_active_call(struct pri *ctrl, struct q931_call *held_call);
 
 int q931_notify_redirection(struct pri *ctrl, q931_call *call, int notify, const struct q931_party_number *number);
 
