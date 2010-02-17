@@ -4178,8 +4178,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		error_code = etsi_ect_execute_transfer(ctrl, call, invoke->invoke_id);
 		if (error_code != ROSE_ERROR_None) {
 			send_facility_error(ctrl, call, invoke->invoke_id, error_code);
-		} else {
-			send_facility_result_ok(ctrl, call, invoke->invoke_id);
 		}
 		break;
 	case ROSE_ETSI_ExplicitEctExecute:
@@ -4187,8 +4185,6 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			invoke->args.etsi.ExplicitEctExecute.link_id);
 		if (error_code != ROSE_ERROR_None) {
 			send_facility_error(ctrl, call, invoke->invoke_id, error_code);
-		} else {
-			send_facility_result_ok(ctrl, call, invoke->invoke_id);
 		}
 		break;
 	case ROSE_ETSI_RequestSubaddress:
