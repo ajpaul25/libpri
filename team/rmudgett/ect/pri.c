@@ -988,7 +988,7 @@ int pri_status_req(struct pri *ctrl, int request_id, const struct pri_sr *req)
  * \param ctrl D channel controller.
  * \param invoke_id ID given by libpri when it requested the party status.
  * \param status free(0)/busy(1)/incompatible(2)
- * 
+ *
  * \note
  * There could be zero, one, or more responses to the original
  * status request depending upon how many endpoints respond to the request.
