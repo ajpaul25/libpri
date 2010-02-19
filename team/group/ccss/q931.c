@@ -7027,7 +7027,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		c->newcall = 0;
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_PRESENT);
 		c->peercallstate = Q931_CALL_STATE_CALL_INITIATED;
-		if (c->cis_call) { 
+		if (c->cis_call) {
 			/*
 			 * Make call alive so any message events clearing this
 			 * signaling call can pass up any subcmds.
