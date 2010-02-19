@@ -1027,7 +1027,7 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	/* Check to see if we're on the same PRI */
 	if (call1->pri != call2->pri)
 		return -1;
-	
+
 	/* Make sure we have compatible switchtypes */
 	if (call1->pri->switchtype != call2->pri->switchtype)
 		return -1;
