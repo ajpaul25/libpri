@@ -103,6 +103,7 @@ struct pri {
 	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
 	unsigned int cc_support:1;/* TRUE if upper layer supports call completion. */
 	unsigned int transfer_support:1;/* TRUE if the upper layer supports ECT */
+	unsigned int aoc_support:1;/* TRUE if can send AOC events to the upper layer. */
 
 	/* MDL variables */
 	int mdl_error;
