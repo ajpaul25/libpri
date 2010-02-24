@@ -156,7 +156,7 @@ static void aoc_etsi_subcmd_aoc_s_currency_info(struct pri_subcmd_aoc_s *aoc_s, 
 		/* Rate method being used. */
 		switch (info->list[idx].currency_type) {
 		case 0:/* specialChargingCode */
-			aoc_s->item[idx].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_ARRANGEMENT;
+			aoc_s->item[idx].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_CODE;
 			aoc_s->item[idx].rate.special = info->list[idx].u.special_charging_code;
 			break;
 		case 1:/* durationCurrency */
@@ -268,7 +268,7 @@ void aoc_etsi_aoc_s_special_arrangement(struct pri *ctrl, const struct rose_msg_
 		return;
 	}
 	subcmd->u.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT;
-	subcmd->u.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_ARRANGEMENT;
+	subcmd->u.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_CODE;
 	subcmd->u.aoc_s.item[0].rate.special =
 		invoke->args.etsi.AOCSSpecialArr.special_arrangement;
 }
