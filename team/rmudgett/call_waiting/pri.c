@@ -825,7 +825,7 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 		switch (ctrl->switchtype) {
 		case PRI_SWITCH_EUROISDN_E1:
 		case PRI_SWITCH_EUROISDN_T1:
-			if (q931_is_ptmp(ctrl)) {
+			if (PTMP_MODE(ctrl)) {
 				/* PTMP mode */
 				q931_notify_redirection(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
 					&call->local_id.number);
@@ -916,7 +916,7 @@ int pri_redirecting_update(struct pri *ctrl, q931_call *call, const struct pri_p
 		switch (ctrl->switchtype) {
 		case PRI_SWITCH_EUROISDN_E1:
 		case PRI_SWITCH_EUROISDN_T1:
-			if (q931_is_ptmp(ctrl)) {
+			if (PTMP_MODE(ctrl)) {
 				/* PTMP mode */
 				q931_notify_redirection(ctrl, call, PRI_NOTIFY_CALL_DIVERTING,
 					&call->redirecting.to.number);
@@ -1260,7 +1260,9 @@ void pri_message(struct pri *ctrl, const char *fmt, ...)
 	int added_length;
 	va_list ap;
 
-	ctrl = PRI_MASTER(ctrl);
+	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
+	}
 	if (!ctrl || !ctrl->msg_line) {
 		/* Just have to do it the old way. */
 		va_start(ap, fmt);
@@ -1322,7 +1324,7 @@ void pri_error(struct pri *pri, const char *fmt, ...)
 	vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
 	if (__pri_error)
-		__pri_error(PRI_MASTER(pri), tmp);
+		__pri_error(pri ? PRI_MASTER(pri) : NULL, tmp);
 	else
 		fputs(tmp, stderr);
 }
@@ -1593,16 +1595,16 @@ void pri_sr_set_keypad_digits(struct pri_sr *sr, const char *keypad_digits)
 
 void pri_transfer_enable(struct pri *ctrl, int enable)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->transfer_support = enable ? 1 : 0;
 	}
 }
 
 void pri_hold_enable(struct pri *ctrl, int enable)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->hold_support = enable ? 1 : 0;
 	}
 }
@@ -1665,8 +1667,8 @@ int pri_callrerouting_facility(struct pri *pri, q931_call *call, const char *des
 
 void pri_reroute_enable(struct pri *ctrl, int enable)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->deflection_support = enable ? 1 : 0;
 	}
 }
@@ -1717,32 +1719,32 @@ int pri_reroute_call(struct pri *ctrl, q931_call *call, const struct pri_party_i
 
 void pri_cc_enable(struct pri *ctrl, int enable)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->cc_support = enable ? 1 : 0;
 	}
 }
 
 void pri_cc_recall_mode(struct pri *ctrl, int mode)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->cc.option.recall_mode = mode ? 1 : 0;
 	}
 }
 
 void pri_cc_retain_signaling_req(struct pri *ctrl, int signaling_retention)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl && 0 <= signaling_retention && signaling_retention < 3) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->cc.option.signaling_retention_req = signaling_retention;
 	}
 }
 
 void pri_cc_retain_signaling_rsp(struct pri *ctrl, int signaling_retention)
 {
-	ctrl = PRI_MASTER(ctrl);
 	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
 		ctrl->cc.option.signaling_retention_rsp = signaling_retention ? 1 : 0;
 	}
 }
