@@ -5100,17 +5100,32 @@ static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 	return res;
 }
 
-static int connect_acknowledge_ies[] = { -1 };
+static int connect_ack_ies[] = { -1 };
+static int connect_ack_w_chan_id_ies[] = { Q931_CHANNEL_IDENT, -1 };
+static int gr303_connect_ack_ies[] = { Q931_CHANNEL_IDENT, -1 };
 
-static int gr303_connect_acknowledge_ies[] = { Q931_CHANNEL_IDENT, -1 };
-
-static int q931_connect_acknowledge(struct pri *ctrl, q931_call *c)
+int q931_connect_acknowledge(struct pri *ctrl, q931_call *call, int channel)
 {
+	int *use_ies;
+
+	if (channel) {
+		call->ds1no = (channel & 0xff00) >> 8;
+		call->ds1explicit = (channel & 0x10000) >> 16;
+		call->channelno = channel & 0xff;
+	}
+	use_ies = NULL;
 	if (ctrl->subchannel && !ctrl->bri) {
-		if (ctrl->localtype == PRI_CPE)
-			return send_message(ctrl, c, Q931_CONNECT_ACKNOWLEDGE, gr303_connect_acknowledge_ies);
-	} else
-		return send_message(ctrl, c, Q931_CONNECT_ACKNOWLEDGE, connect_acknowledge_ies);
+		if (ctrl->localtype == PRI_CPE) {
+			use_ies = gr303_connect_ack_ies;
+		}
+	} else if (channel) {
+		use_ies = connect_ack_w_chan_id_ies;
+	} else {
+		use_ies = connect_ack_ies;
+	}
+	if (use_ies) {
+		return send_message(ctrl, call, Q931_CONNECT_ACKNOWLEDGE, use_ies);
+	}
 	return 0;
 }
 
@@ -7188,7 +7203,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		libpri_copy_string(ctrl->ev.answer.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.answer.useruserinfo));
 		c->useruserinfo[0] = '\0';
 
-		q931_connect_acknowledge(ctrl, c);
+		if (!PRI_MASTER(ctrl)->manual_connect_ack) {
+			q931_connect_acknowledge(ctrl, c, 0);
+		}
 
 		if (c->cis_auto_disconnect && c->cis_call) {
 			/* Make sure WE release when we initiate a signalling only connection */

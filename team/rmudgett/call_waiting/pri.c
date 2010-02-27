@@ -694,6 +694,22 @@ int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn)
 	return q931_connect(pri, call, channel, nonisdn);
 }
 
+int pri_connect_ack(struct pri *ctrl, q931_call *call, int channel)
+{
+	if (!ctrl || !call) {
+		return -1;
+	}
+	return q931_connect_acknowledge(ctrl, call, channel);
+}
+
+void pri_connect_ack_enable(struct pri *ctrl, int enable)
+{
+	if (ctrl) {
+		ctrl = PRI_MASTER(ctrl);
+		ctrl->manual_connect_ack = enable ? 1 : 0;
+	}
+}
+
 /*!
  * \internal
  * \brief Copy the PRI party name to the Q.931 party name structure.
