@@ -241,7 +241,7 @@ int pri_set_service_message_support(struct pri *pri, int supportflag)
 	if (!pri) {
 		return -1;
 	}
-	pri->service_message_support = supportflag;
+	pri->service_message_support = supportflag ? 1 : 0;
 	return 0;
 }
 
@@ -1347,18 +1347,23 @@ void pri_error(struct pri *pri, const char *fmt, ...)
 /* Set overlap mode */
 void pri_set_overlapdial(struct pri *pri,int state)
 {
-	pri->overlapdial = state;
+	if (pri) {
+		pri->overlapdial = state ? 1 : 0;
+	}
 }
 
 void pri_set_chan_mapping_logical(struct pri *pri, int state)
 {
-	if (pri->switchtype == PRI_SWITCH_QSIG)
-		pri->chan_mapping_logical = state;
+	if (pri && pri->switchtype == PRI_SWITCH_QSIG) {
+		pri->chan_mapping_logical = state ? 1 : 0;
+	}
 }
 
 void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable)
 {
-	pri->acceptinbanddisconnect = (enable != 0);
+	if (pri) {
+		pri->acceptinbanddisconnect = (enable != 0);
+	}
 }
 
 int pri_fd(struct pri *pri)
