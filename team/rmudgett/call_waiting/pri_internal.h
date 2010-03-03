@@ -99,6 +99,9 @@ struct pri {
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
 	unsigned int sendfacility:1;
+	unsigned int overlapdial:1;/* TRUE if we do overlap dialing */
+	unsigned int chan_mapping_logical:1;/* TRUE if do not skip channel 16 (Q.SIG) */
+	unsigned int service_message_support:1;/* TRUE if upper layer supports SERVICE messages */
 	unsigned int hold_support:1;/* TRUE if upper layer supports call hold. */
 	unsigned int deflection_support:1;/* TRUE if upper layer supports call deflection/rerouting. */
 	unsigned int cc_support:1;/* TRUE if upper layer supports call completion. */
@@ -157,15 +160,6 @@ struct pri {
 	 * D channel control structure.
 	 */
 	q931_call *dummy_call;
-
-	/* do we do overlap dialing */
-	int overlapdial;
-
-	/* do we support SERVICE messages */
-	int service_message_support;
-
-	/* do not skip channel 16 */
-	int chan_mapping_logical;
 
 #ifdef LIBPRI_COUNTERS
 	/* q921/q931 packet counters */
