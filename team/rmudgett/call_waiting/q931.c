@@ -5108,10 +5108,14 @@ int q931_connect_acknowledge(struct pri *ctrl, q931_call *call, int channel)
 {
 	int *use_ies;
 
+	UPDATE_OURCALLSTATE(ctrl, call, Q931_CALL_STATE_ACTIVE);
+	call->peercallstate = Q931_CALL_STATE_ACTIVE;
 	if (channel) {
 		call->ds1no = (channel & 0xff00) >> 8;
 		call->ds1explicit = (channel & 0x10000) >> 16;
 		call->channelno = channel & 0xff;
+		call->chanflags &= ~FLAG_PREFERRED;
+		call->chanflags |= FLAG_EXCLUSIVE;
 	}
 	use_ies = NULL;
 	if (ctrl->subchannel && !ctrl->bri) {
@@ -5635,6 +5639,13 @@ static int __q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 			 */
 			disconnect = 0;
 			release_compl = 1;
+			break;
+		case Q931_CALL_STATE_CONNECT_REQUEST:
+			/*
+			 * Send RELEASE because the B channel negotiation failed
+			 * for call waiting.
+			 */
+			disconnect = 0;
 			break;
 		default:
 			/*
@@ -7190,8 +7201,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_status(ctrl, c, PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
-		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_ACTIVE);
-		c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 
 		ctrl->ev.e = PRI_EVENT_ANSWER;
 		ctrl->ev.answer.subcmds = &ctrl->subcmds;
@@ -7205,6 +7214,9 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		if (!PRI_MASTER(ctrl)->manual_connect_ack) {
 			q931_connect_acknowledge(ctrl, c, 0);
+		} else {
+			UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CONNECT_REQUEST);
+			c->peercallstate = Q931_CALL_STATE_CONNECT_REQUEST;
 		}
 
 		if (c->cis_auto_disconnect && c->cis_call) {
