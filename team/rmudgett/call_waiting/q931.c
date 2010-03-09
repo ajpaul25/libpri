@@ -5100,39 +5100,6 @@ static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 	return res;
 }
 
-static int connect_ack_ies[] = { -1 };
-static int connect_ack_w_chan_id_ies[] = { Q931_CHANNEL_IDENT, -1 };
-static int gr303_connect_ack_ies[] = { Q931_CHANNEL_IDENT, -1 };
-
-int q931_connect_acknowledge(struct pri *ctrl, q931_call *call, int channel)
-{
-	int *use_ies;
-
-	UPDATE_OURCALLSTATE(ctrl, call, Q931_CALL_STATE_ACTIVE);
-	call->peercallstate = Q931_CALL_STATE_ACTIVE;
-	if (channel) {
-		call->ds1no = (channel & 0xff00) >> 8;
-		call->ds1explicit = (channel & 0x10000) >> 16;
-		call->channelno = channel & 0xff;
-		call->chanflags &= ~FLAG_PREFERRED;
-		call->chanflags |= FLAG_EXCLUSIVE;
-	}
-	use_ies = NULL;
-	if (ctrl->subchannel && !ctrl->bri) {
-		if (ctrl->localtype == PRI_CPE) {
-			use_ies = gr303_connect_ack_ies;
-		}
-	} else if (channel) {
-		use_ies = connect_ack_w_chan_id_ies;
-	} else {
-		use_ies = connect_ack_ies;
-	}
-	if (use_ies) {
-		return send_message(ctrl, call, Q931_CONNECT_ACKNOWLEDGE, use_ies);
-	}
-	return 0;
-}
-
 /*!
  * \internal
  * \brief Find the winning subcall if it exists or current call if not outboundbroadcast.
@@ -5157,6 +5124,49 @@ static struct q931_call *q931_find_winning_call(struct q931_call *call)
 		}
 	}
 	return call;
+}
+
+static int connect_ack_ies[] = { -1 };
+static int connect_ack_w_chan_id_ies[] = { Q931_CHANNEL_IDENT, -1 };
+static int gr303_connect_ack_ies[] = { Q931_CHANNEL_IDENT, -1 };
+
+int q931_connect_acknowledge(struct pri *ctrl, q931_call *call, int channel)
+{
+	int *use_ies;
+	struct q931_call *winner;
+
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
+
+	if (winner != call) {
+		UPDATE_OURCALLSTATE(ctrl, call, Q931_CALL_STATE_ACTIVE);
+		call->peercallstate = Q931_CALL_STATE_ACTIVE;
+	}
+	UPDATE_OURCALLSTATE(ctrl, winner, Q931_CALL_STATE_ACTIVE);
+	winner->peercallstate = Q931_CALL_STATE_ACTIVE;
+	if (channel) {
+		winner->ds1no = (channel & 0xff00) >> 8;
+		winner->ds1explicit = (channel & 0x10000) >> 16;
+		winner->channelno = channel & 0xff;
+		winner->chanflags &= ~FLAG_PREFERRED;
+		winner->chanflags |= FLAG_EXCLUSIVE;
+	}
+	use_ies = NULL;
+	if (ctrl->subchannel && !ctrl->bri) {
+		if (ctrl->localtype == PRI_CPE) {
+			use_ies = gr303_connect_ack_ies;
+		}
+	} else if (channel) {
+		use_ies = connect_ack_w_chan_id_ies;
+	} else {
+		use_ies = connect_ack_ies;
+	}
+	if (use_ies) {
+		return send_message(ctrl, winner, Q931_CONNECT_ACKNOWLEDGE, use_ies);
+	}
+	return 0;
 }
 
 /*!
