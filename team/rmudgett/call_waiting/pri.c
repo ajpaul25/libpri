@@ -507,6 +507,7 @@ char *pri_event2str(int id)
 		{ PRI_EVENT_RETRIEVE,       "Retrieve" },
 		{ PRI_EVENT_RETRIEVE_ACK,   "Retrieve ACK" },
 		{ PRI_EVENT_RETRIEVE_REJ,   "Retrieve Rej" },
+		{ PRI_EVENT_CONNECT_ACK,    "Connect ACK" },
 /* *INDENT-ON* */
 	};
 

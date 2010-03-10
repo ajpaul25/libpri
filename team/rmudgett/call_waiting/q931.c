@@ -7313,14 +7313,26 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			q931_release_complete(ctrl,c,PRI_CAUSE_INVALID_CALL_REFERENCE);
 			break;
 		}
-		if (!(c->ourcallstate == Q931_CALL_STATE_CONNECT_REQUEST) &&
-		    !(c->ourcallstate == Q931_CALL_STATE_ACTIVE &&
-		      (ctrl->localtype == PRI_NETWORK || ctrl->switchtype == PRI_SWITCH_QSIG))) {
-			q931_status(ctrl,c,PRI_CAUSE_WRONG_MESSAGE);
+		switch (c->ourcallstate) {
+		default:
+			if (ctrl->localtype == PRI_NETWORK || ctrl->switchtype == PRI_SWITCH_QSIG) {
+				q931_status(ctrl, c, PRI_CAUSE_WRONG_MESSAGE);
+				break;
+			}
+			/* Fall through */
+		case Q931_CALL_STATE_CONNECT_REQUEST:
+		case Q931_CALL_STATE_ACTIVE:
+			UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_ACTIVE);
+			c->peercallstate = Q931_CALL_STATE_ACTIVE;
+			if (PRI_MASTER(ctrl)->manual_connect_ack) {
+				ctrl->ev.e = PRI_EVENT_CONNECT_ACK;
+				ctrl->ev.connect_ack.subcmds = &ctrl->subcmds;
+				ctrl->ev.connect_ack.channel = q931_encode_channel(c);
+				ctrl->ev.connect_ack.call = c->master_call;
+				return Q931_RES_HAVEEVENT;
+			}
 			break;
 		}
-		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_ACTIVE);
-		c->peercallstate = Q931_CALL_STATE_ACTIVE;
 		break;
 	case Q931_STATUS:
 		if (missingmand) {
