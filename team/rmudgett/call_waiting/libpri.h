@@ -98,6 +98,7 @@
 #define PRI_EVENT_RETRIEVE		24	/* RETRIEVE request received */
 #define PRI_EVENT_RETRIEVE_ACK	25	/* RETRIEVE_ACKNOWLEDGE received */
 #define PRI_EVENT_RETRIEVE_REJ	26	/* RETRIEVE_REJECT received */
+#define PRI_EVENT_CONNECT_ACK	27	/* CONNECT_ACKNOWLEDGE received */
 
 /* Simple states */
 #define PRI_STATE_DOWN		0
@@ -1138,6 +1139,13 @@ struct pri_event_retrieve_rej {
 	struct pri_subcommands *subcmds;
 };
 
+struct pri_event_connect_ack {
+	int e;
+	int channel;
+	q931_call *call;
+	struct pri_subcommands *subcmds;
+};
+
 typedef union {
 	int e;
 	pri_event_generic gen;		/* Generic view */
@@ -1162,6 +1170,7 @@ typedef union {
 	struct pri_event_retrieve retrieve;
 	struct pri_event_retrieve_ack retrieve_ack;
 	struct pri_event_retrieve_rej retrieve_rej;
+	struct pri_event_connect_ack connect_ack;
 } pri_event;
 
 struct pri;
