@@ -1064,6 +1064,10 @@ static int transmit_channel_id(int full_ie, struct pri *ctrl, q931_call *call, i
 	}
 	if (call->chanflags & FLAG_EXCLUSIVE) {
 		/* Channel is exclusive */
+		if (!(ie->data[pos] & 0x03)) {
+			/* An exclusive no channel id ie is to be discarded. */
+			return 0;
+		}
 		ie->data[pos] |= 0x08;
 	} else if (!call->chanflags) {
 		/* Don't need this IE */
