@@ -677,5 +677,25 @@ void pri_aoc_events_enable(struct pri *ctrl, int enable)
 	}
 }
 
+int pri_aoc_d_send(struct pri *pri, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
+{
+	if (!pri || !call)
+		return -1;
+
+	/* TODO encode d message */
+	return 0;
+}
+
+int pri_aoc_e_send(struct pri *pri, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+{
+	if (!pri || !call)
+		return -1;
+
+	/* TODO encode e message */
+	return 0;
+}
+
+
+
 /* ------------------------------------------------------------------- */
 /* end pri_aoc.c */
