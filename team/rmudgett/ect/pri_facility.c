@@ -2094,7 +2094,7 @@ static int rose_reroute_request_encode(struct pri *ctrl, q931_call *call,
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		if (q931_is_ptmp(ctrl)) {
+		if (PTMP_MODE(ctrl)) {
 			end =
 				enc_etsi_call_deflection(ctrl, buffer, buffer + sizeof(buffer), call,
 					&deflection->to);
@@ -3233,7 +3233,7 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		if (q931_is_ptmp(ctrl)) {
+		if (PTMP_MODE(ctrl)) {
 			/* PTMP mode */
 			break;
 		}
