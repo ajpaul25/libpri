@@ -4620,18 +4620,6 @@ int q931_alerting(struct pri *ctrl, q931_call *c, int channel, int info)
 	return send_message(ctrl, c, Q931_ALERTING, alerting_ies);
 }
 
-int q931_aoc_d(struct pri *pri, q931_call *c, int channel, const struct pri_subcmd_aoc_d *aoc_d)
-{
-	/* TODO XXX make this actually send the message*/
-	return 0;
-}
-
-int q931_aoc_e(struct pri *pri, q931_call *c, int channel, const struct pri_subcmd_aoc_e *aoc_e)
-{
-	/* TODO XXX make this actually send the message*/
-	return 0;
-}
-
 static int setup_ack_ies[] = { Q931_CHANNEL_IDENT, Q931_IE_FACILITY, Q931_PROGRESS_INDICATOR, -1 };
  
 int q931_setup_ack(struct pri *ctrl, q931_call *c, int channel, int nonisdn)

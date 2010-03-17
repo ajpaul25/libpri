@@ -1468,10 +1468,10 @@ void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable);
 void pri_enslave(struct pri *master, struct pri *slave);
 
 /* Send AOC-D message */
-int pri_aoc_d(struct pri *pri, q931_call *c, int channel, const struct pri_subcmd_aoc_d *aoc_d);
+int pri_aoc_d_send(struct pri *pri, q931_call *c, const struct pri_subcmd_aoc_d *aoc_d);
 
 /* Send AOC-E message */
-int pri_aoc_e(struct pri *pri, q931_call *c, int channel, const struct pri_subcmd_aoc_e *aoc_e);
+int pri_aoc_e_send(struct pri *pri, q931_call *c, const struct pri_subcmd_aoc_e *aoc_e);
 
 #define PRI_GR303_SUPPORT
 #define PRI_ENSLAVE_SUPPORT

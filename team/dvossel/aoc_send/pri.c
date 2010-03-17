@@ -650,22 +650,6 @@ int pri_progress(struct pri *pri, q931_call *call, int channel, int info)
 	return q931_call_progress(pri, call, channel, info);
 }
 
-int pri_aoc_d(struct pri *pri, q931_call *call, int channel, const struct pri_subcmd_aoc_d *aoc_d)
-{
-	if (!pri || !call)
-		return -1;
-
-	return q931_aoc_d(pri, call, channel, aoc_d);
-}
-
-int pri_aoc_e(struct pri *pri, q931_call *call, int channel, const struct pri_subcmd_aoc_e *aoc_e)
-{
-	if (!pri || !call)
-		return -1;
-
-	return q931_aoc_e(pri, call, channel, aoc_e);
-}
-
 int pri_information(struct pri *pri, q931_call *call, char digit)
 {
 	if (!pri || !call)
