@@ -3557,23 +3557,38 @@ int pri_transfer_rsp(struct pri *ctrl, q931_call *call, int invoke_id, int is_su
 static int mcid_req_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_subcommand *subcmd;
+	int status;
+	int fail_code;
 
 	switch (reason) {
 	case APDU_CALLBACK_REASON_TIMEOUT:
+		status = 1;/* timeout */
+		fail_code = 0;
+		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
+		status = 0;/* success */
+		fail_code = 0;
+		break;
 	case APDU_CALLBACK_REASON_MSG_ERROR:
+		status = 2;/* error */
+		fail_code = msg->response.error->code;
+		break;
 	case APDU_CALLBACK_REASON_MSG_REJECT:
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			/* Oh, well. */
-			break;
-		}
-
-		/* Indicate that our MCID request has completed. */
-		subcmd->cmd = PRI_SUBCMD_MCID_REQ_COMPLETE;
+		status = 3;/* reject */
+		fail_code = 0;
+		fail_code = msg->response.reject->code;
 		break;
 	default:
-		break;
+		return 1;
+	}
+	subcmd = q931_alloc_subcommand(ctrl);
+	if (subcmd) {
+		/* Indicate that our MCID request has completed. */
+		subcmd->cmd = PRI_SUBCMD_MCID_RSP;
+		subcmd->u.mcid_rsp.status = status;
+		subcmd->u.mcid_rsp.fail_code = fail_code;
+	} else {
+		/* Oh, well. */
 	}
 	return 1;
 }
@@ -4535,7 +4550,8 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		}
 
 		subcmd->cmd = PRI_SUBCMD_MCID_REQ;
-		q931_party_id_copy_to_pri(&subcmd->u.mcid_req.caller, &call->local_id);
+		q931_party_id_copy_to_pri(&subcmd->u.mcid_req.originator, &call->local_id);
+		q931_party_id_copy_to_pri(&subcmd->u.mcid_req.answerer, &call->remote_id);
 
 		send_facility_result_ok(ctrl, call, invoke->invoke_id);
 		break;
