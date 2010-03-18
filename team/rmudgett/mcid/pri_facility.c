@@ -4536,24 +4536,28 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 				ROSE_ERROR_Gen_NotIncomingCall);
 			break;
 		}
-		if (call->ourcallstate != Q931_CALL_STATE_ACTIVE
-			&& call->ourcallstate != Q931_CALL_STATE_DISCONNECT_INDICATION) {
+		switch (call->ourcallstate) {
+		case Q931_CALL_STATE_ACTIVE:
+		case Q931_CALL_STATE_DISCONNECT_INDICATION:
+		case Q931_CALL_STATE_DISCONNECT_REQUEST:/* XXX We are really in the wrong state for this mode. */
+			subcmd = q931_alloc_subcommand(ctrl);
+			if (!subcmd) {
+				send_facility_error(ctrl, call, invoke->invoke_id,
+					ROSE_ERROR_Gen_NotAvailable);
+				break;
+			}
+
+			subcmd->cmd = PRI_SUBCMD_MCID_REQ;
+			q931_party_id_copy_to_pri(&subcmd->u.mcid_req.originator, &call->local_id);
+			q931_party_id_copy_to_pri(&subcmd->u.mcid_req.answerer, &call->remote_id);
+
+			send_facility_result_ok(ctrl, call, invoke->invoke_id);
+			break;
+		default:
 			send_facility_error(ctrl, call, invoke->invoke_id,
 				ROSE_ERROR_Gen_InvalidCallState);
 			break;
 		}
-		subcmd = q931_alloc_subcommand(ctrl);
-		if (!subcmd) {
-			send_facility_error(ctrl, call, invoke->invoke_id,
-				ROSE_ERROR_Gen_NotAvailable);
-			break;
-		}
-
-		subcmd->cmd = PRI_SUBCMD_MCID_REQ;
-		q931_party_id_copy_to_pri(&subcmd->u.mcid_req.originator, &call->local_id);
-		q931_party_id_copy_to_pri(&subcmd->u.mcid_req.answerer, &call->remote_id);
-
-		send_facility_result_ok(ctrl, call, invoke->invoke_id);
 		break;
 	case ROSE_QSIG_CallingName:
 		/* CallingName is put in remote_id.name */
