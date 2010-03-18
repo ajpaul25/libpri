@@ -544,7 +544,7 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_AOC_D					19	/*!< Advice Of Charge During information */
 #define PRI_SUBCMD_AOC_E					20	/*!< Advice Of Charge End information */
 #define PRI_SUBCMD_MCID_REQ					21	/*!< Malicious Call ID Request */
-#define PRI_SUBCMD_MCID_REQ_COMPLETE		22	/*!< Malicious Call ID Request completed */
+#define PRI_SUBCMD_MCID_RSP					22	/*!< Malicious Call ID Request response */
 
 #if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
@@ -862,7 +862,29 @@ struct pri_subcmd_mcid_req {
 	 * may be incomplete if the upper layer redacted some caller
 	 * information because it was restricted.
 	 */
-	struct pri_party_id caller;
+	struct pri_party_id originator;
+	/*! \brief Information libpri knows about the callee. */
+	struct pri_party_id answerer;
+};
+
+struct pri_subcmd_mcid_rsp {
+	/*!
+	 * \brief MCID request response status.
+	 * \details
+	 * success(0),
+	 * timeout(1),
+	 * error(2),
+	 * reject(3)
+	 */
+	int status;
+	/*!
+	 * \brief Failure code that can be converted to a string to further
+	 * explain the non-timeout failure.
+	 * \note Valid when status is error or reject.
+	 * \note Use pri_facility_error2str() to convert the error_code.
+	 * \note Use pri_facility_reject2str() to convert the reject_code.
+	 */
+	int fail_code;
 };
 
 struct pri_subcommand {
@@ -894,6 +916,7 @@ struct pri_subcommand {
 		struct pri_subcmd_aoc_d aoc_d;
 		struct pri_subcmd_aoc_e aoc_e;
 		struct pri_subcmd_mcid_req mcid_req;
+		struct pri_subcmd_mcid_rsp mcid_rsp;
 	} u;
 };
 
@@ -1730,7 +1753,7 @@ void pri_mcid_enable(struct pri *ctrl, int enable);
  * \param ctrl D channel controller.
  * \param call Q.931 call leg
  *
- * \retval 0 on success.  You should wait for a PRI_SUBCMD_MCID_REQ_COMPLETE
+ * \retval 0 on success.  You should wait for a PRI_SUBCMD_MCID_RSP
  * to continue clearing the call if it was in progress.
  * \retval -1 on error.
  */
