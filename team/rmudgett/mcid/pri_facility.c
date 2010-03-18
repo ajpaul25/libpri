@@ -3608,7 +3608,7 @@ static int mcid_req_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl,
 static unsigned char *enc_etsi_mcid_req(struct pri *ctrl, unsigned char *pos,
 	unsigned char *end, q931_call *call)
 {
-	struct rose_msg_result msg;
+	struct rose_msg_invoke msg;
 
 	pos = facility_encode_header(ctrl, pos, end, NULL);
 	if (!pos) {
@@ -3619,7 +3619,7 @@ static unsigned char *enc_etsi_mcid_req(struct pri *ctrl, unsigned char *pos,
 	msg.invoke_id = get_invokeid(ctrl);
 	msg.operation = ROSE_ETSI_MCIDRequest;
 
-	pos = rose_encode_result(ctrl, pos, end, &msg);
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
 }
