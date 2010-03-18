@@ -393,80 +393,6 @@ void aoc_etsi_aoc_d_charging_unit(struct pri *ctrl, const struct rose_msg_invoke
 
 /*!
  * \internal
- * \brief Encode the ETSI AOCEChargingUnit invoke message.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param pos Starting position to encode the facility ie contents.
- * \param end End of facility ie contents encoding data buffer.
- * \param chargedunits Number of units charged to encode.
- *
- * \retval Start of the next ASN.1 component to encode on success.
- * \retval NULL on error.
- */
-static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, long chargedunits)
-{
-	struct rose_msg_invoke msg;
-
-	pos = facility_encode_header(ctrl, pos, end, NULL);
-	if (!pos) {
-		return NULL;
-	}
-
-	memset(&msg, 0, sizeof(msg));
-	msg.operation = ROSE_ETSI_AOCEChargingUnit;
-	msg.invoke_id = get_invokeid(ctrl);
-	msg.args.etsi.AOCEChargingUnit.type = 1;	/* charging_unit */
-	if (chargedunits <= 0) {
-		msg.args.etsi.AOCEChargingUnit.charging_unit.free_of_charge = 1;
-	} else {
-		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.num_records = 1;
-		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[0].
-			number_of_units = chargedunits;
-	}
-	pos = rose_encode_invoke(ctrl, pos, end, &msg);
-
-	return pos;
-}
-
-/*!
- * \internal
- * \brief Send the ETSI AOCEChargingUnit invoke message.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param call Call leg from which to encode AOC.
- * \param chargedunits Number of units charged to encode.
- *
- * \retval 0 on success.
- * \retval -1 on error.
- */
-static int aoc_aoce_charging_unit_encode(struct pri *ctrl, q931_call *call,
-	long chargedunits)
-{
-	unsigned char buffer[255];
-	unsigned char *end;
-
-	/* sample data: [ 91 a1 12 02 02 3a 78 02 01 24 30 09 30 07 a1 05 30 03 02 01 01 ] */
-
-	end =
-		enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), chargedunits);
-	if (!end) {
-		return -1;
-	}
-
-	/* Remember that if we queue a facility IE for a facility message we
-	 * have to explicitly send the facility message ourselves */
-	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
-		|| q931_facility(call->pri, call)) {
-		pri_message(ctrl, "Could not schedule facility message for call %d\n", call->cr);
-		return -1;
-	}
-
-	return 0;
-}
-
-/*!
- * \internal
  * \brief Fill in the AOC-E subcmd charging association from the ETSI charging association.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -543,6 +469,62 @@ static enum PRI_AOC_E_BILLING_ID aoc_etsi_subcmd_aoc_e_billing_id(int billing_id
 		value = PRI_AOC_E_BILLING_ID_NOT_AVAILABLE;
 	}
 	return value;
+}
+
+/*!
+ * \internal
+ * \brief Determine the etsi aoc-e billing_id value from the subcmd.
+ *
+ * \param billing_id_present TRUE if billing_id valid.
+ * \param billing_id ETSI billing id from ROSE.
+ *
+ * \retval -1 failure
+ * \retval etsi billing id
+ */
+static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
+{
+	switch (billing_id) {
+	case PRI_AOC_E_BILLING_ID_NORMAL:
+		return 0;
+	case PRI_AOC_E_BILLING_ID_REVERSE:
+		return 1;
+	case PRI_AOC_E_BILLING_ID_CREDIT_CARD:
+		return 2;
+	case PRI_AOC_E_BILLING_ID_CALL_FORWARDING_UNCONDITIONAL:
+		return 4;
+	case PRI_AOC_E_BILLING_ID_CALL_FORWARDING_NO_REPLY:
+		return 5;
+	case PRI_AOC_E_BILLING_ID_CALL_DEFLECTION:
+		return 6;
+	case PRI_AOC_E_BILLING_ID_CALL_TRANSFER:
+		return 7;
+	};
+
+	return -1;
+}
+
+/*!
+ * \internal
+ * \brief Determine the etsi aoc-d billing_id value from the subcmd.
+ *
+ * \param billing_id_present TRUE if billing_id valid.
+ * \param billing_id ETSI billing id from ROSE.
+ *
+ * \retval -1 failure
+ * \retval etsi billing id
+ */
+static int aoc_subcmd_aoc_d_etsi_billing_id(int billing_id)
+{
+	switch (billing_id) {
+	case PRI_AOC_E_BILLING_ID_NORMAL:
+		return 0;
+	case PRI_AOC_E_BILLING_ID_REVERSE:
+		return 1;
+	case PRI_AOC_E_BILLING_ID_CREDIT_CARD:
+		return 2;
+	};
+
+	return -1;
 }
 
 /*!
@@ -625,11 +607,6 @@ void aoc_etsi_aoc_e_charging_unit(struct pri *ctrl, q931_call *call, const struc
 			}
 		}
 	}
-	/* the following function is currently not used - just to make the compiler happy */
-	if (0) {
-		/* use this function to forward the aoc-e on a bridged channel */
-		aoc_aoce_charging_unit_encode(ctrl, call, call->aoc_units);
-	}
 
 	if (!PRI_MASTER(ctrl)->aoc_support) {
 		return;
@@ -677,25 +654,390 @@ void pri_aoc_events_enable(struct pri *ctrl, int enable)
 	}
 }
 
-int pri_aoc_d_send(struct pri *pri, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCECurrency invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_e, the aoc-e data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_e *aoc_e)
 {
-	if (!pri || !call)
-		return -1;
+	struct rose_msg_invoke msg;
 
-	/* TODO encode d message */
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCECurrency;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (aoc_e->charge == PRI_AOC_DE_CHARGE_FREE) {
+		msg.args.etsi.AOCECurrency.type = 1;	/* currency info */
+		msg.args.etsi.AOCECurrency.currency_info.free_of_charge = 1;
+	} else if ((aoc_e->charge == PRI_AOC_DE_CHARGE_CURRENCY) && (aoc_e->recorded.money.amount.cost >= 0)) {
+		msg.args.etsi.AOCECurrency.type = 1;	/* currency info */
+		msg.args.etsi.AOCECurrency.currency_info.specific.recorded.amount.currency =
+			aoc_e->recorded.money.amount.cost;
+		msg.args.etsi.AOCECurrency.currency_info.specific.recorded.amount.multiplier =
+			aoc_e->recorded.money.amount.multiplier;
+		libpri_copy_string((char *) msg.args.etsi.AOCECurrency.currency_info.specific.recorded.currency,
+			aoc_e->recorded.money.currency,
+			sizeof(msg.args.etsi.AOCECurrency.currency_info.specific.recorded.currency));
+	} else {
+		msg.args.etsi.AOCECurrency.type = 0;	/* not_available */
+	}
+
+	if (aoc_e->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) >= 0)) {
+		msg.args.etsi.AOCECurrency.currency_info.specific.billing_id_present = 1;
+		msg.args.etsi.AOCECurrency.currency_info.specific.billing_id =
+			aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id);
+	}
+
+	switch (aoc_e->associated.charging_type) {
+	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
+		msg.args.etsi.AOCECurrency.currency_info.charging_association_present = 1;
+		msg.args.etsi.AOCECurrency.currency_info.charging_association.type = 1; /* number */
+		libpri_copy_string((char *) msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str,
+			aoc_e->associated.charge.number.str,
+			sizeof(msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str));
+		msg.args.etsi.AOCECurrency.currency_info.charging_association.number.plan =
+			aoc_e->associated.charge.number.plan;
+		msg.args.etsi.AOCECurrency.currency_info.charging_association.number.length =
+			strlen((char *) msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str);
+		break;
+	case PRI_AOC_E_CHARGING_ASSOCIATION_ID:
+		msg.args.etsi.AOCECurrency.currency_info.charging_association_present = 1;
+		msg.args.etsi.AOCECurrency.currency_info.charging_association.type = 0; /* identifier */
+		msg.args.etsi.AOCECurrency.currency_info.charging_association.id =
+			aoc_e->associated.charge.id;
+		break;
+	default:
+		/* do nothing */
+		break;
+	};
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCEChargingUnit invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_e, the aoc-e data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_e *aoc_e)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCEChargingUnit;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (aoc_e->charge == PRI_AOC_DE_CHARGE_FREE) {
+		msg.args.etsi.AOCEChargingUnit.type = 1;	/* charging_unit */
+		msg.args.etsi.AOCEChargingUnit.charging_unit.free_of_charge = 1;
+
+	} else if ((aoc_e->charge == PRI_AOC_DE_CHARGE_UNITS) &&  (aoc_e->recorded.unit.num_items > 0)) {
+		int i;
+		msg.args.etsi.AOCEChargingUnit.type = 1;	/* charging_unit */
+		for (i = 0; i < aoc_e->recorded.unit.num_items; i++) {
+			msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.num_records++;
+			msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].number_of_units =
+				aoc_e->recorded.unit.item[i].number;
+			if (aoc_e->recorded.unit.item[i].type > 0) {
+				msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].type_of_unit =
+					aoc_e->recorded.unit.item[i].type;
+				msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].type_of_unit_present = 1;
+			}
+		}
+	} else {
+		msg.args.etsi.AOCEChargingUnit.type = 0;	/* not_available */
+	}
+
+	if (aoc_e->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) >= 0)) {
+		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.billing_id_present = 1;
+		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.billing_id =
+			aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id);
+	}
+
+	switch (aoc_e->associated.charging_type) {
+	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association_present = 1;
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.type = 1; /* number */
+		libpri_copy_string((char *) msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str,
+			aoc_e->associated.charge.number.str,
+			sizeof(msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str));
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.plan =
+			aoc_e->associated.charge.number.plan;
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.length =
+			strlen((char *) msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str);
+		break;
+	case PRI_AOC_E_CHARGING_ASSOCIATION_ID:
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association_present = 1;
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.type = 0; /* identifier */
+		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.id =
+			aoc_e->associated.charge.id;
+		break;
+	default:
+		/* do nothing */
+		break;
+	};
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCDChargingUnit invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_d, the aoc-d data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aocd_charging_unit(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_d *aoc_d)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCDChargingUnit;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (aoc_d->charge == PRI_AOC_DE_CHARGE_FREE) {
+		msg.args.etsi.AOCDChargingUnit.type = 1;	/* free of charge */
+	} else if ((aoc_d->charge == PRI_AOC_DE_CHARGE_UNITS) &&  (aoc_d->recorded.unit.num_items > 0)) {
+		int i;
+		msg.args.etsi.AOCDChargingUnit.type = 2;	/* charging_unit */
+		for (i = 0; i < aoc_d->recorded.unit.num_items; i++) {
+			msg.args.etsi.AOCDChargingUnit.specific.recorded.num_records++;
+			msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].number_of_units =
+				aoc_d->recorded.unit.item[i].number;
+			if (aoc_d->recorded.unit.item[i].type > 0) {
+				msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].type_of_unit =
+					aoc_d->recorded.unit.item[i].type;
+				msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].type_of_unit_present = 1;
+			}
+		}
+	} else {
+		msg.args.etsi.AOCDChargingUnit.type = 0;	/* not_available */
+	}
+
+	if (aoc_d->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) >= 0)) {
+		msg.args.etsi.AOCDChargingUnit.specific.billing_id_present = 1;
+		msg.args.etsi.AOCDChargingUnit.specific.billing_id =
+			aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id);
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCDCurrency invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_d, the aoc-d data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_d *aoc_d)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCDCurrency;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (aoc_d->charge == PRI_AOC_DE_CHARGE_FREE) {
+		msg.args.etsi.AOCDCurrency.type = 1;	/* free of charge */
+	} else if ((aoc_d->charge == PRI_AOC_DE_CHARGE_CURRENCY) && (aoc_d->recorded.money.amount.cost >= 0)) {
+		msg.args.etsi.AOCDCurrency.type = 2;	/* specific currency */
+		msg.args.etsi.AOCDCurrency.specific.recorded.amount.currency =
+			aoc_d->recorded.money.amount.cost;
+		msg.args.etsi.AOCDCurrency.specific.recorded.amount.multiplier =
+			aoc_d->recorded.money.amount.multiplier;
+		libpri_copy_string((char *) msg.args.etsi.AOCDCurrency.specific.recorded.currency,
+			aoc_d->recorded.money.currency,
+			sizeof(msg.args.etsi.AOCDCurrency.specific.recorded.currency));
+	} else {
+		msg.args.etsi.AOCDCurrency.type = 0;	/* not_available */
+	}
+
+	if (aoc_d->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) >= 0)) {
+		msg.args.etsi.AOCDCurrency.specific.billing_id_present = 1;
+		msg.args.etsi.AOCDCurrency.specific.billing_id =
+			aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id);
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Send the ETSI AOCE invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param aoc_e, the aoc_e payload data to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+
+	switch (aoc_e->charge) {
+	case PRI_AOC_DE_CHARGE_NOT_AVAILABLE:
+	case PRI_AOC_DE_CHARGE_FREE:
+	case PRI_AOC_DE_CHARGE_CURRENCY:
+		end = enc_etsi_aoce_currency(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
+		break;
+	case PRI_AOC_DE_CHARGE_UNITS:
+		end = enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
+		break;
+	};
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoce charging unit facility message for call %d\n", call->cr);
+		return -1;
+	}
+
 	return 0;
 }
 
-int pri_aoc_e_send(struct pri *pri, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+/*!
+ * \internal
+ * \brief Send the ETSI AOCD invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param aoc_d, the aoc_d payload data to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
 {
-	if (!pri || !call)
-		return -1;
+	unsigned char buffer[255];
+	unsigned char *end = 0;
 
-	/* TODO encode e message */
+
+	switch (aoc_d->charge) {
+	case PRI_AOC_DE_CHARGE_NOT_AVAILABLE:
+	case PRI_AOC_DE_CHARGE_FREE:
+	case PRI_AOC_DE_CHARGE_CURRENCY:
+		end = enc_etsi_aocd_currency(ctrl, buffer, buffer + sizeof(buffer), aoc_d);
+		break;
+	case PRI_AOC_DE_CHARGE_UNITS:
+		end = enc_etsi_aocd_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_d);
+		break;
+	};
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoce charging unit facility message for call %d\n", call->cr);
+		return -1;
+	}
+
 	return 0;
 }
 
+int pri_aoc_d_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
+{
+	if (!ctrl || !call)
+		return -1;
 
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_aocd_encode(ctrl, call, aoc_d);
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
+		return -1;
+	}
+	return 0;
+}
 
+int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+{
+	if (!ctrl || !call)
+		return -1;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_aoce_encode(ctrl, call, aoc_e);
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
 /* ------------------------------------------------------------------- */
 /* end pri_aoc.c */
