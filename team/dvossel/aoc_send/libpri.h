@@ -542,6 +542,7 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_AOC_S					18	/*!< Advice Of Charge Start information (Rate list) */
 #define PRI_SUBCMD_AOC_D					19	/*!< Advice Of Charge During information */
 #define PRI_SUBCMD_AOC_E					20	/*!< Advice Of Charge End information */
+#define PRI_SUBCMD_AOC_CHARGING_REQUEST		21	/*!< Advice Of Charge Request information */
 
 #if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
@@ -649,6 +650,20 @@ struct pri_subcmd_transfer {
 	int is_call_2_held;
 	/*! Invocation ID to use when sending a reply to the transfer request. */
 	int invoke_id;
+};
+
+enum PRI_AOC_REQUEST {
+	PRI_AOC_REQUEST_S,
+	PRI_AOC_REQUEST_D,
+	PRI_AOC_REQUEST_E,
+};
+
+struct pri_subcmd_aoc_request {
+	/*!
+	 * \brief What types of aoc are being requested.
+	 * \see enum PRI_AOC_REQUEST
+	 */
+	int charging_request;
 };
 
 /*! \brief What is being charged. */
@@ -877,6 +892,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_id cc_call;
 		struct pri_subcmd_cc_cancel cc_cancel;
 		struct pri_subcmd_transfer transfer;
+		struct pri_subcmd_aoc_request aoc_request;
 		struct pri_subcmd_aoc_s aoc_s;
 		struct pri_subcmd_aoc_d aoc_d;
 		struct pri_subcmd_aoc_e aoc_e;
@@ -1466,6 +1482,9 @@ void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable);
 /* Enslave a PRI to another, so they share the same call list
    (and maybe some timers) */
 void pri_enslave(struct pri *master, struct pri *slave);
+
+/* Send AOC-Request message */
+int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
 
 /* Send AOC-D message */
 int pri_aoc_d_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_d *aoc_d);

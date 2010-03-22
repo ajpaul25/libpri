@@ -117,6 +117,43 @@ static void aoc_etsi_subcmd_recorded_units(struct pri_aoc_recorded_units *subcmd
 }
 
 /*!
+ * \brief Handle the ETSI ChargingRequest.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param invoke Decoded ROSE invoke message contents.
+ *
+ * \return Nothing
+ */
+void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke)
+{
+	struct pri_subcommand *subcmd;
+
+	if (!PRI_MASTER(ctrl)->aoc_support) {
+		return;
+	}
+	subcmd = q931_alloc_subcommand(ctrl);
+	if (!subcmd) {
+		return;
+	}
+
+	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST;
+
+	switch (invoke->args.etsi.ChargingRequest.charging_case) {
+	case 0:
+		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
+		break;
+	case 1:
+		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_D;
+		break;
+	case 2:
+		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_E;
+		break;
+	default:
+		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
+	}
+}
+
+/*!
  * \internal
  * \brief Fill in the AOC-S subcmd currency info list of chargeable items.
  *
@@ -921,6 +958,53 @@ static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *po
 
 /*!
  * \internal
+ * \brief Encode the ETSI ChargingRequest invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_request, the aoc charging request data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_ChargingRequest;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	switch (aoc_request->charging_request) {
+		case PRI_AOC_REQUEST_S:
+			msg.args.etsi.ChargingRequest.charging_case = 0;
+			break;
+		case PRI_AOC_REQUEST_D:
+			msg.args.etsi.ChargingRequest.charging_case = 1;
+			break;
+		case PRI_AOC_REQUEST_E:
+			msg.args.etsi.ChargingRequest.charging_case = 2;
+			break;
+		default:
+			/* no valid request parameters are present */
+			return NULL;
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+
+/*!
+ * \internal
  * \brief Send the ETSI AOCE invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -955,7 +1039,7 @@ static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	 * have to explicitly send the facility message ourselves */
 	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
 		|| q931_facility(call->pri, call)) {
-		pri_message(ctrl, "Could not schedule aoce charging unit facility message for call %d\n", call->cr);
+		pri_message(ctrl, "Could not schedule aoc-e facility message for call %d\n", call->cr);
 		return -1;
 	}
 
@@ -998,7 +1082,58 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	 * have to explicitly send the facility message ourselves */
 	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
 		|| q931_facility(call->pri, call)) {
-		pri_message(ctrl, "Could not schedule aoce charging unit facility message for call %d\n", call->cr);
+		pri_message(ctrl, "Could not schedule aoc-d facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*!
+ * \internal
+ * \brief Send the ETSI AOC Request invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param aoc_request, the aoc charging request payload data to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), aoc_request);
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoc charging request facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
+int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	if (!ctrl || !call)
+		return -1;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_charging_request_encode(ctrl, call, aoc_request);
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
 		return -1;
 	}
 

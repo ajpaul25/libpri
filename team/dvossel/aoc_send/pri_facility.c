@@ -4052,7 +4052,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		}
 		break;
 	case ROSE_ETSI_ChargingRequest:
-		/* Ignore messsage */
+		aoc_etsi_aoc_request(ctrl, invoke);
 		break;
 	case ROSE_ETSI_AOCSCurrency:
 		aoc_etsi_aoc_s_currency(ctrl, invoke);
