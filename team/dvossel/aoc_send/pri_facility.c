@@ -3157,6 +3157,22 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
+		{
+			struct pri_subcmd_aoc_request aoc_request;
+			/* ETSI requires a separate facility for each request */
+			if (call->aoc_charging_request_s) {
+				aoc_request.charging_request = PRI_AOC_REQUEST_S;
+				pri_aoc_charging_request_send(ctrl, call, &aoc_request);
+			}
+			if (call->aoc_charging_request_d) {
+				aoc_request.charging_request = PRI_AOC_REQUEST_D;
+				pri_aoc_charging_request_send(ctrl, call, &aoc_request);
+			}
+			if (call->aoc_charging_request_e) {
+				aoc_request.charging_request = PRI_AOC_REQUEST_E;
+				pri_aoc_charging_request_send(ctrl, call, &aoc_request);
+			}
+		}
 		if (PTMP_MODE(ctrl)) {
 			/* PTMP mode */
 			break;

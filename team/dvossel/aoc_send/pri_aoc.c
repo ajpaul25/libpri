@@ -1002,6 +1002,32 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 	return pos;
 }
 
+/*!
+ * \internal
+ * \brief Send the ETSI AOC Request invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param aoc_request, the aoc charging request payload data to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), aoc_request);
+
+	if (!end) {
+		return -1;
+	}
+
+	/* in the case of an AOC request message, we queue this on a SETUP message and
+	 * do not have to send it ourselves in this function */
+	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL);
+}
 
 /*!
  * \internal
@@ -1089,39 +1115,6 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	return 0;
 }
 
-/*!
- * \internal
- * \brief Send the ETSI AOC Request invoke message.
- *
- * \param ctrl D channel controller for diagnostic messages or global options.
- * \param call Call leg from which to encode AOC.
- * \param aoc_request, the aoc charging request payload data to encode.
- *
- * \retval 0 on success.
- * \retval -1 on error.
- */
-static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
-{
-	unsigned char buffer[255];
-	unsigned char *end = 0;
-
-	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), aoc_request);
-
-	if (!end) {
-		return -1;
-	}
-
-	/* Remember that if we queue a facility IE for a facility message we
-	 * have to explicitly send the facility message ourselves */
-	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
-		|| q931_facility(call->pri, call)) {
-		pri_message(ctrl, "Could not schedule aoc charging request facility message for call %d\n", call->cr);
-		return -1;
-	}
-
-	return 0;
-}
-
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
 {
 	if (!ctrl || !call)
@@ -1173,6 +1166,28 @@ int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	}
 
 	return 0;
+}
+
+int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request)
+{
+
+	switch(charging_request) {
+	case PRI_AOC_REQUEST_S:
+		sr->aoc_charging_request_s = 1;
+		break;
+	case PRI_AOC_REQUEST_D:
+		sr->aoc_charging_request_d = 1;
+		break;
+	case PRI_AOC_REQUEST_E:
+		sr->aoc_charging_request_e = 1;
+		break;
+	default:
+		/* not a valid request type */
+		return -1;
+	}
+
+	return 0;
+
 }
 /* ------------------------------------------------------------------- */
 /* end pri_aoc.c */

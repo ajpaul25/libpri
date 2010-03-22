@@ -5009,6 +5009,10 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	c->reversecharge = req->reversecharge;
 
+	c->aoc_charging_request_s = req->aoc_charging_request_s;
+	c->aoc_charging_request_d = req->aoc_charging_request_d;
+	c->aoc_charging_request_e = req->aoc_charging_request_e;
+
 	pri_call_add_standard_apdus(ctrl, c);
 
 	/* Save the initial cc-parties. */

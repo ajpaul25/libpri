@@ -1483,6 +1483,9 @@ void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable);
    (and maybe some timers) */
 void pri_enslave(struct pri *master, struct pri *slave);
 
+/* Request AOC on call setup */
+int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request);
+
 /* Send AOC-Request message */
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
 
