@@ -1026,7 +1026,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 
 	/* in the case of an AOC request message, we queue this on a SETUP message and
 	 * do not have to send it ourselves in this function */
-	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL);
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL); /*TODO change NULL to callback function to handle reply */
 }
 
 /*!
