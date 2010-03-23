@@ -970,10 +970,10 @@ static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *po
  * \retval NULL on error.
  */
 static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, int response, unsigned int invoke_id)
+	unsigned char *end, int response, int invoke_id)
 {
-	struct rose_msg_result msg_result;
-	struct rose_msg_error msg_error;
+	struct rose_msg_result msg_result = { 0, };
+	struct rose_msg_error msg_error = { 0, };
 	int is_error = 0;
 	pos = facility_encode_header(ctrl, pos, end, NULL);
 	if (!pos) {
@@ -981,23 +981,26 @@ static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned c
 	}
 
 	switch (response) {
-		case PRI_AOC_REQUEST_RESPONSE_NOT_IMPLEMENTED:
-			memset(&msg_error, 0, sizeof(msg_error));
-			is_error = 1;
-			msg_error.code = ROSE_ERROR_Gen_NotImplemented;
-			break;
-		case PRI_AOC_REQUEST_RESPONSE_NOT_AVAILABLE:
-			memset(&msg_error, 0, sizeof(msg_error));
-			msg_error.code = ROSE_ERROR_Gen_NotAvailable;
-			is_error = 1;
-			break;
-		case PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS:
-			memset(&msg_result, 0, sizeof(msg_result));
-			msg_result.args.etsi.ChargingRequest.type = 0;
-			break;
-		default:
-			/* no valid request parameters are present */
-			return NULL;
+	case PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST:
+		msg_result.args.etsi.ChargingRequest.type = 0;
+		break;
+	case PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG:
+		msg_result.args.etsi.ChargingRequest.type = 1;
+		break;
+	case PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS:
+		msg_result.args.etsi.ChargingRequest.type = 2;
+		break;
+	case PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED:
+		msg_error.code = ROSE_ERROR_Gen_NotImplemented;
+		is_error = 1;
+		break;
+	case PRI_AOC_REQUEST_RESPONSE_ERROR:
+	case PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE:
+	case PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT:
+	default:
+		is_error = 1;
+		msg_error.code = ROSE_ERROR_Gen_NotAvailable;
+		break;
 	}
 
 	if (is_error) {
@@ -1093,6 +1096,68 @@ static int aoc_charging_request_response_encode(struct pri *ctrl, q931_call *cal
 
 }
 
+
+static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
+{
+	struct pri_subcommand *subcmd;
+	struct pri_subcmd_aoc_request *aoc_request;
+	int errorcode;
+
+	if (!PRI_MASTER(ctrl)->aoc_support) {
+		return -1;
+	}
+
+	subcmd = q931_alloc_subcommand(ctrl);
+	if (!subcmd) {
+		return -1;
+	}
+
+	aoc_request = apdu->response.user.ptr;
+	subcmd->u.aoc_request_response.charging_request = aoc_request->charging_request;
+	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE;
+
+	switch (reason) {
+	case APDU_CALLBACK_REASON_ERROR:
+		errorcode = msg->response.error->code;
+		switch (errorcode) {
+		case ROSE_ERROR_Gen_NotImplemented:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED;
+			break;
+		case ROSE_ERROR_Gen_NotAvailable:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE;
+			break;
+		default:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+			break;
+		}
+		break;
+	case APDU_CALLBACK_REASON_TIMEOUT:
+		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT;
+		break;
+	case APDU_CALLBACK_REASON_MSG_RESULT:
+		switch (msg->response.result->args.etsi.ChargingRequest.type) {
+		case 0:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST;
+			break;
+		case 1:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG;
+			break;
+		case 2:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS;
+			break;
+		default:
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+			break;
+		}
+		break;
+	default:
+		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+		break;
+	}
+
+	return 0;
+}
+
 /*!
  * \internal
  * \brief Send the ETSI AOC Request invoke message.
@@ -1108,6 +1173,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
+	struct apdu_callback_data response;
 
 	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), aoc_request);
 
@@ -1115,9 +1181,15 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 		return -1;
 	}
 
+	memset(&response, 0, sizeof(response));
+	response.invoke_id = ctrl->last_invoke;
+	response.timeout_time = ctrl->timers[PRI_TIMER_T_CCBS1];
+	response.callback = pri_aoc_request_get_response;
+	response.user.ptr = (void *) aoc_request;
+
 	/* in the case of an AOC request message, we queue this on a SETUP message and
 	 * do not have to send it ourselves in this function */
-	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, NULL); /*TODO change NULL to callback function to handle reply */
+	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, &response);
 }
 
 /*!
