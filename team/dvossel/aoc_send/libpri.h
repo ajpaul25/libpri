@@ -652,6 +652,12 @@ struct pri_subcmd_transfer {
 	int invoke_id;
 };
 
+enum PRI_AOC_REQUEST_RESPONSE {
+	PRI_AOC_REQUEST_RESPONSE_NOT_IMPLEMENTED,
+	PRI_AOC_REQUEST_RESPONSE_NOT_AVAILABLE,
+	PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS,
+};
+
 enum PRI_AOC_REQUEST {
 	PRI_AOC_REQUEST_S,
 	PRI_AOC_REQUEST_D,
@@ -664,6 +670,11 @@ struct pri_subcmd_aoc_request {
 	 * \see enum PRI_AOC_REQUEST
 	 */
 	int charging_request;
+
+	/*!
+	 * \brief Value given by the initiating request.
+	 */
+	 unsigned int invoke_id;
 };
 
 /*! \brief What is being charged. */
@@ -1485,6 +1496,10 @@ void pri_enslave(struct pri *master, struct pri *slave);
 
 /* Request AOC on call setup */
 int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request);
+
+
+/* Send AOC-Request message */
+int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request);
 
 /* Send AOC-Request message */
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);

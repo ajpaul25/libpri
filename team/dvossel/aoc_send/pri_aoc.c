@@ -138,6 +138,7 @@ void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke
 
 	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST;
 
+	subcmd->u.aoc_request.invoke_id = invoke->invoke_id;
 	switch (invoke->args.etsi.ChargingRequest.charging_case) {
 	case 0:
 		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
@@ -958,6 +959,61 @@ static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *po
 
 /*!
  * \internal
+ * \brief Encode the ETSI ChargingRequest Response message
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_request, the aoc charging request data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, int response, unsigned int invoke_id)
+{
+	struct rose_msg_result msg_result;
+	struct rose_msg_error msg_error;
+	int is_error = 0;
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	switch (response) {
+		case PRI_AOC_REQUEST_RESPONSE_NOT_IMPLEMENTED:
+			memset(&msg_error, 0, sizeof(msg_error));
+			is_error = 1;
+			msg_error.code = ROSE_ERROR_Gen_NotImplemented;
+			break;
+		case PRI_AOC_REQUEST_RESPONSE_NOT_AVAILABLE:
+			memset(&msg_error, 0, sizeof(msg_error));
+			msg_error.code = ROSE_ERROR_Gen_NotAvailable;
+			is_error = 1;
+			break;
+		case PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS:
+			memset(&msg_result, 0, sizeof(msg_result));
+			msg_result.args.etsi.ChargingRequest.type = 0;
+			break;
+		default:
+			/* no valid request parameters are present */
+			return NULL;
+	}
+
+	if (is_error) {
+		msg_error.invoke_id = invoke_id;
+		pos = rose_encode_error(ctrl, pos, end, &msg_error);
+	} else {
+		msg_result.operation = ROSE_ETSI_ChargingRequest;
+		msg_result.invoke_id = invoke_id;
+		pos = rose_encode_result(ctrl, pos, end, &msg_result);
+	}
+
+	return pos;
+}
+
+/*!
+ * \internal
  * \brief Encode the ETSI ChargingRequest invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -1000,6 +1056,41 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
 	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Send the ETSI AOC Request Response message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param response code
+ * \param invoke_id
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_charging_request_response_encode(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, aoc_request->invoke_id);
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoc request response facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+
 }
 
 /*!
@@ -1109,6 +1200,24 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
 		|| q931_facility(call->pri, call)) {
 		pri_message(ctrl, "Could not schedule aoc-d facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
+int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request)
+{
+	if (!ctrl || !call)
+		return -1;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_charging_request_response_encode(ctrl, call, response, aoc_request);
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
 		return -1;
 	}
 
