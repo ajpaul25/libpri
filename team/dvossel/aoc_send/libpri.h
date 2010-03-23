@@ -543,6 +543,7 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_AOC_D					19	/*!< Advice Of Charge During information */
 #define PRI_SUBCMD_AOC_E					20	/*!< Advice Of Charge End information */
 #define PRI_SUBCMD_AOC_CHARGING_REQUEST		21	/*!< Advice Of Charge Request information */
+#define PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE	22	/*!< Advice Of Charge Request Response information */
 
 #if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
@@ -653,8 +654,17 @@ struct pri_subcmd_transfer {
 };
 
 enum PRI_AOC_REQUEST_RESPONSE {
-	PRI_AOC_REQUEST_RESPONSE_NOT_IMPLEMENTED,
-	PRI_AOC_REQUEST_RESPONSE_NOT_AVAILABLE,
+
+	/* Error Results */
+	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED,
+	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE,
+	PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT,
+	/* generic error result all other errors are lumped into */
+	PRI_AOC_REQUEST_RESPONSE_ERROR,
+
+	/* AOC Results */
+	PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST,
+	PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG,
 	PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS,
 };
 
@@ -662,6 +672,21 @@ enum PRI_AOC_REQUEST {
 	PRI_AOC_REQUEST_S,
 	PRI_AOC_REQUEST_D,
 	PRI_AOC_REQUEST_E,
+};
+
+struct pri_subcmd_aoc_request_response {
+	/*!
+	 * \brief What type of aoc was requested.
+	 * \see enum PRI_AOC_REQUEST
+	 */
+	int charging_request;
+
+	/*!
+	 * \brief response to the charging_request
+	 * \see enum PRI_AOC_REQUEST_RESPONSE
+	 */
+	int charging_response;
+
 };
 
 struct pri_subcmd_aoc_request {
@@ -674,7 +699,7 @@ struct pri_subcmd_aoc_request {
 	/*!
 	 * \brief Value given by the initiating request.
 	 */
-	 unsigned int invoke_id;
+	 int invoke_id;
 };
 
 /*! \brief What is being charged. */
@@ -904,6 +929,7 @@ struct pri_subcommand {
 		struct pri_subcmd_cc_cancel cc_cancel;
 		struct pri_subcmd_transfer transfer;
 		struct pri_subcmd_aoc_request aoc_request;
+		struct pri_subcmd_aoc_request_response aoc_request_response;
 		struct pri_subcmd_aoc_s aoc_s;
 		struct pri_subcmd_aoc_d aoc_d;
 		struct pri_subcmd_aoc_e aoc_e;
