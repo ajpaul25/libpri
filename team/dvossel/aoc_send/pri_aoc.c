@@ -529,6 +529,8 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
 	case PRI_AOC_E_BILLING_ID_CREDIT_CARD:
 		return 2;
 	case PRI_AOC_E_BILLING_ID_CALL_FORWARDING_UNCONDITIONAL:
+		return 3;
+	case PRI_AOC_E_BILLING_ID_CALL_FORWARDING_BUSY:
 		return 4;
 	case PRI_AOC_E_BILLING_ID_CALL_FORWARDING_NO_REPLY:
 		return 5;
@@ -536,7 +538,7 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
 		return 6;
 	case PRI_AOC_E_BILLING_ID_CALL_TRANSFER:
 		return 7;
-	};
+	}
 
 	return -1;
 }
@@ -560,7 +562,7 @@ static int aoc_subcmd_aoc_d_etsi_billing_id(int billing_id)
 		return 1;
 	case PRI_AOC_E_BILLING_ID_CREDIT_CARD:
 		return 2;
-	};
+	}
 
 	return -1;
 }
@@ -761,7 +763,7 @@ static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *po
 	default:
 		/* do nothing */
 		break;
-	};
+	}
 
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
@@ -842,7 +844,7 @@ static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned cha
 	default:
 		/* do nothing */
 		break;
-	};
+	}
 
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
@@ -1218,7 +1220,7 @@ static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	case PRI_AOC_DE_CHARGE_UNITS:
 		end = enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
 		break;
-	};
+	}
 
 	if (!end) {
 		return -1;
@@ -1261,7 +1263,7 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	case PRI_AOC_DE_CHARGE_UNITS:
 		end = enc_etsi_aocd_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_d);
 		break;
-	};
+	}
 
 	if (!end) {
 		return -1;
