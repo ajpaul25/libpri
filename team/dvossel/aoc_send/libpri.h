@@ -669,9 +669,9 @@ enum PRI_AOC_REQUEST_RESPONSE {
 };
 
 enum PRI_AOC_REQUEST {
-	PRI_AOC_REQUEST_S,
-	PRI_AOC_REQUEST_D,
-	PRI_AOC_REQUEST_E,
+	PRI_AOC_REQUEST_S = (1 << 0),
+	PRI_AOC_REQUEST_D = (1 << 1),
+	PRI_AOC_REQUEST_E = (1 << 2),
 };
 
 struct pri_subcmd_aoc_request_response {
