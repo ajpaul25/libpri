@@ -1105,11 +1105,14 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 	struct pri_subcmd_aoc_request *aoc_request;
 	int errorcode;
 
-	if (!PRI_MASTER(ctrl)->aoc_support) {
+	if (!PRI_MASTER(ctrl)->aoc_support ||
+		(reason == APDU_CALLBACK_REASON_ERROR) ||
+		(reason == APDU_CALLBACK_REASON_CLEANUP)) {
 		return -1;
 	}
 
 	subcmd = q931_alloc_subcommand(ctrl);
+
 	if (!subcmd) {
 		return -1;
 	}
@@ -1119,7 +1122,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE;
 
 	switch (reason) {
-	case APDU_CALLBACK_REASON_ERROR:
+	case APDU_CALLBACK_REASON_MSG_ERROR:
 		errorcode = msg->response.error->code;
 		switch (errorcode) {
 		case ROSE_ERROR_Gen_NotImplemented:
