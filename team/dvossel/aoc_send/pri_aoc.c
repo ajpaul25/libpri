@@ -1030,7 +1030,7 @@ static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned c
  * \retval NULL on error.
  */
 static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, const struct pri_subcmd_aoc_request *aoc_request)
+	unsigned char *end, const int request)
 {
 	struct rose_msg_invoke msg;
 
@@ -1043,7 +1043,7 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 	msg.operation = ROSE_ETSI_ChargingRequest;
 	msg.invoke_id = get_invokeid(ctrl);
 
-	switch (aoc_request->charging_request) {
+	switch (request) {
 		case PRI_AOC_REQUEST_S:
 			msg.args.etsi.ChargingRequest.charging_case = 0;
 			break;
@@ -1102,7 +1102,7 @@ static int aoc_charging_request_response_encode(struct pri *ctrl, q931_call *cal
 static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_subcommand *subcmd;
-	struct pri_subcmd_aoc_request *aoc_request;
+	int *request;
 	int errorcode;
 
 	if (!PRI_MASTER(ctrl)->aoc_support ||
@@ -1117,8 +1117,8 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 		return -1;
 	}
 
-	aoc_request = apdu->response.user.ptr;
-	subcmd->u.aoc_request_response.charging_request = aoc_request->charging_request;
+	request = apdu->response.user.ptr;
+	subcmd->u.aoc_request_response.charging_request = *request;
 	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE;
 
 	switch (reason) {
@@ -1174,13 +1174,13 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
+static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const int request)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
 	struct apdu_callback_data response;
 
-	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), aoc_request);
+	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), request);
 
 	if (!end) {
 		return -1;
@@ -1190,7 +1190,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 	response.invoke_id = ctrl->last_invoke;
 	response.timeout_time = ctrl->timers[PRI_TIMER_T_CCBS1];
 	response.callback = pri_aoc_request_get_response;
-	response.user.ptr = (void *) aoc_request;
+	response.user.ptr = (void *) &request;
 
 	/* in the case of an AOC request message, we queue this on a SETUP message and
 	 * do not have to send it ourselves in this function */
@@ -1309,7 +1309,19 @@ int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struc
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_charging_request_encode(ctrl, call, aoc_request);
+	{
+		int res = 0;
+		if (aoc_request->charging_request & PRI_AOC_REQUEST_S) {
+			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_S);
+		}
+		if (aoc_request->charging_request & PRI_AOC_REQUEST_D) {
+			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_D);
+		}
+		if (aoc_request->charging_request & PRI_AOC_REQUEST_E) {
+			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_E);
+		}
+		return res;
+	}
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
@@ -1357,19 +1369,14 @@ int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request)
 {
 
-	switch(charging_request) {
-	case PRI_AOC_REQUEST_S:
-		sr->aoc_charging_request_s = 1;
-		break;
-	case PRI_AOC_REQUEST_D:
-		sr->aoc_charging_request_d = 1;
-		break;
-	case PRI_AOC_REQUEST_E:
-		sr->aoc_charging_request_e = 1;
-		break;
-	default:
-		/* not a valid request type */
-		return -1;
+	if (charging_request & PRI_AOC_REQUEST_S) {
+		sr->aoc_charging_request |= PRI_AOC_REQUEST_S;
+	}
+	if (charging_request & PRI_AOC_REQUEST_D) {
+		sr->aoc_charging_request |= PRI_AOC_REQUEST_D;
+	}
+	if (charging_request & PRI_AOC_REQUEST_E) {
+		sr->aoc_charging_request |= PRI_AOC_REQUEST_E;
 	}
 
 	return 0;

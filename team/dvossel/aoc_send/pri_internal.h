@@ -363,9 +363,7 @@ struct pri_sr {
 	const char *keypad_digits;
 	int transferable;
 	int reversecharge;
-	int aoc_charging_request_s;
-	int aoc_charging_request_d;
-	int aoc_charging_request_e;
+	int aoc_charging_request;
 };
 
 /* Internal switch types */
@@ -636,10 +634,7 @@ struct q931_call {
 	} cc;
 
 	/* AOC charge requesting on Setup */
-	int aoc_charging_request_s;
-	int aoc_charging_request_d;
-	int aoc_charging_request_e;
-
+	int aoc_charging_request;
 };
 
 enum CC_STATES {
