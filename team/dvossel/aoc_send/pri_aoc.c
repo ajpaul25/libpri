@@ -57,6 +57,21 @@ static void aoc_etsi_subcmd_amount(struct pri_aoc_amount *subcmd_amount, const s
 
 /*!
  * \internal
+ * \brief Fill in the ETSI amount from the AOC subcmd amount.
+ *
+ * \param subcmd_amount AOC subcmd amount.
+ * \param etsi_amount AOC ETSI amount.
+ *
+ * \return Nothing
+ */
+static void aoc_enc_etsi_subcmd_amount(const struct pri_aoc_amount *subcmd_amount, struct roseEtsiAOCAmount *etsi_amount)
+{
+	etsi_amount->currency = subcmd_amount->cost;
+	etsi_amount->multiplier = subcmd_amount->multiplier;
+}
+
+/*!
+ * \internal
  * \brief Fill in the AOC subcmd time from the ETSI time.
  *
  * \param subcmd_time AOC subcmd time.
@@ -68,6 +83,21 @@ static void aoc_etsi_subcmd_time(struct pri_aoc_time *subcmd_time, const struct 
 {
 	subcmd_time->length = etsi_time->length;
 	subcmd_time->scale = etsi_time->scale;
+}
+
+/*!
+ * \internal
+ * \brief Fill in the ETSI Time from the AOC subcmd time.
+ *
+ * \param subcmd_time AOC subcmd time.
+ * \param etsi_time AOC ETSI time.
+ *
+ * \return Nothing
+ */
+static void aoc_enc_etsi_subcmd_time(const struct pri_aoc_time *subcmd_time, struct roseEtsiAOCTime *etsi_time)
+{
+	etsi_time->length = subcmd_time->length;
+	etsi_time->scale = subcmd_time->scale;
 }
 
 /*!
@@ -244,6 +274,94 @@ static void aoc_etsi_subcmd_aoc_s_currency_info(struct pri_subcmd_aoc_s *aoc_s, 
 		}
 	}
 	aoc_s->num_items = idx;
+}
+
+/*!
+ * \internal
+ * \brief Fill in the currency info list of chargeable items from a aoc_s subcmd
+ *
+ * \param aoc_s AOC-S info list of chargeable items.
+ * \param info ETSI info list of chargeable items.
+ *
+ * \return Nothing
+ */
+static void enc_etsi_subcmd_aoc_s_currency_info(const struct pri_subcmd_aoc_s *aoc_s, struct roseEtsiAOCSCurrencyInfoList *info)
+{
+	int idx;
+
+	for (idx = 0; idx < aoc_s->num_items && idx < ARRAY_LEN(info->list); ++idx) {
+		/* What is being charged. */
+		switch (aoc_s->item[idx].chargeable) {
+		default:
+		case PRI_AOC_CHARGED_ITEM_BASIC_COMMUNICATION:
+			info->list[idx].charged_item = 0;
+			break;
+		case PRI_AOC_CHARGED_ITEM_CALL_ATTEMPT:
+			info->list[idx].charged_item = 1;
+			break;
+		case PRI_AOC_CHARGED_ITEM_CALL_SETUP:
+			info->list[idx].charged_item = 2;
+			break;
+		case PRI_AOC_CHARGED_ITEM_USER_USER_INFO:
+			info->list[idx].charged_item = 3;
+			break;
+		case PRI_AOC_CHARGED_ITEM_SUPPLEMENTARY_SERVICE:
+			info->list[idx].charged_item = 4;
+			break;
+		}
+
+		/* Rate method being used. */
+		switch (aoc_s->item[idx].rate_type) {
+		case PRI_AOC_RATE_TYPE_SPECIAL_CODE:
+			info->list[idx].currency_type = 0;
+			info->list[idx].u.special_charging_code = aoc_s->item[idx].rate.special;
+			break;
+		case PRI_AOC_RATE_TYPE_DURATION:
+			info->list[idx].currency_type = 1;
+			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.duration.amount,
+				&info->list[idx].u.duration.amount);
+			aoc_enc_etsi_subcmd_time(&aoc_s->item[idx].rate.duration.time,
+				&info->list[idx].u.duration.time);
+			if (aoc_s->item[idx].rate.duration.granularity.length) {
+				info->list[idx].u.duration.granularity_present = 1;
+				aoc_enc_etsi_subcmd_time(&aoc_s->item[idx].rate.duration.granularity,
+					&info->list[idx].u.duration.granularity);
+			} else {
+				info->list[idx].u.duration.granularity_present = 0;
+			}
+			info->list[idx].u.duration.charging_type = aoc_s->item[idx].rate.duration.charging_type;
+			libpri_copy_string((char *) info->list[idx].u.duration.currency,
+				aoc_s->item[idx].rate.duration.currency,
+				sizeof((char *) info->list[idx].u.duration.currency));
+			break;
+		case PRI_AOC_RATE_TYPE_FLAT:
+			info->list[idx].currency_type = 2;
+
+			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.flat.amount,
+				&info->list[idx].u.flat_rate.amount);
+			libpri_copy_string((char *) info->list[idx].u.flat_rate.currency,
+				aoc_s->item[idx].rate.flat.currency,
+				sizeof((char *) info->list[idx].u.flat_rate.currency));
+			break;
+		case PRI_AOC_RATE_TYPE_VOLUME:
+			info->list[idx].currency_type = 3;
+			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.volume.amount,
+				&info->list[idx].u.volume_rate.amount);
+			info->list[idx].u.volume_rate.unit = aoc_s->item[idx].rate.volume.unit;
+			libpri_copy_string((char *) info->list[idx].u.volume_rate.currency,
+				aoc_s->item[idx].rate.volume.currency,
+				sizeof((char *) info->list[idx].u.volume_rate.currency));
+			break;
+		case PRI_AOC_RATE_TYPE_FREE:
+			info->list[idx].currency_type = 4;
+			break;
+		case PRI_AOC_RATE_TYPE_NOT_AVAILABLE:
+		default:
+			info->list[idx].currency_type = 5;
+			break;
+		}
+		info->num_records++;
+	}
 }
 
 /*!
@@ -961,6 +1079,82 @@ static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *po
 
 /*!
  * \internal
+ * \brief Encode the ETSI AOCSSpecialArr invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_s, the aoc-s data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aocs_special_arrangement(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_s *aoc_s)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCSSpecialArr;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (!aoc_s->num_items || (aoc_s->item[0].rate_type != PRI_AOC_RATE_TYPE_SPECIAL_CODE)) {
+		msg.args.etsi.AOCSSpecialArr.type = 0;
+	} else {
+		msg.args.etsi.AOCSSpecialArr.type = 1;
+		msg.args.etsi.AOCSSpecialArr.special_arrangement = aoc_s->item[0].rate.special;
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
+ * \brief Encode the ETSI AOCSCurrency invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param pos Starting position to encode the facility ie contents.
+ * \param end End of facility ie contents encoding data buffer.
+ * \param aoc_s, the aoc-s data to encode.
+ *
+ * \retval Start of the next ASN.1 component to encode on success.
+ * \retval NULL on error.
+ */
+static unsigned char *enc_etsi_aocs_currency(struct pri *ctrl, unsigned char *pos,
+	unsigned char *end, const struct pri_subcmd_aoc_s *aoc_s)
+{
+	struct rose_msg_invoke msg;
+
+	pos = facility_encode_header(ctrl, pos, end, NULL);
+	if (!pos) {
+		return NULL;
+	}
+
+	memset(&msg, 0, sizeof(msg));
+	msg.operation = ROSE_ETSI_AOCSCurrency;
+	msg.invoke_id = get_invokeid(ctrl);
+
+	if (aoc_s->num_items) {
+		msg.args.etsi.AOCSCurrency.type = 1; /* charge list is present */
+		enc_etsi_subcmd_aoc_s_currency_info(aoc_s, &msg.args.etsi.AOCSCurrency.currency_info);
+	} else {
+		msg.args.etsi.AOCSCurrency.type = 0; /* charge not available */
+	}
+
+	pos = rose_encode_invoke(ctrl, pos, end, &msg);
+
+	return pos;
+}
+
+/*!
+ * \internal
  * \brief Encode the ETSI ChargingRequest Response message
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -1197,32 +1391,27 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 	return pri_call_apdu_queue(call, Q931_SETUP, buffer, end - buffer, &response);
 }
 
+
 /*!
  * \internal
- * \brief Send the ETSI AOCE invoke message.
+ * \brief Send the ETSI AOCS invoke message.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode AOC.
- * \param aoc_e, the aoc_e payload data to encode.
+ * \param aoc_s, the AOC-S payload data to encode.
  *
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+static int aoc_aocs_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
 
-
-	switch (aoc_e->charge) {
-	case PRI_AOC_DE_CHARGE_NOT_AVAILABLE:
-	case PRI_AOC_DE_CHARGE_FREE:
-	case PRI_AOC_DE_CHARGE_CURRENCY:
-		end = enc_etsi_aoce_currency(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
-		break;
-	case PRI_AOC_DE_CHARGE_UNITS:
-		end = enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
-		break;
+	if (aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
+		end = enc_etsi_aocs_special_arrangement(ctrl, buffer, buffer + sizeof(buffer), aoc_s);
+	} else {
+		end = enc_etsi_aocs_currency(ctrl, buffer, buffer + sizeof(buffer), aoc_s);
 	}
 
 	if (!end) {
@@ -1233,7 +1422,7 @@ static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	 * have to explicitly send the facility message ourselves */
 	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
 		|| q931_facility(call->pri, call)) {
-		pri_message(ctrl, "Could not schedule aoc-e facility message for call %d\n", call->cr);
+		pri_message(ctrl, "Could not schedule aoc-s facility message for call %d\n", call->cr);
 		return -1;
 	}
 
@@ -1283,6 +1472,49 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	return 0;
 }
 
+/*!
+ * \internal
+ * \brief Send the ETSI AOCE invoke message.
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param aoc_e, the aoc_e payload data to encode.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+
+	switch (aoc_e->charge) {
+	case PRI_AOC_DE_CHARGE_NOT_AVAILABLE:
+	case PRI_AOC_DE_CHARGE_FREE:
+	case PRI_AOC_DE_CHARGE_CURRENCY:
+		end = enc_etsi_aoce_currency(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
+		break;
+	case PRI_AOC_DE_CHARGE_UNITS:
+		end = enc_etsi_aoce_charging_unit(ctrl, buffer, buffer + sizeof(buffer), aoc_e);
+		break;
+	}
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoc-e facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
 int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request)
 {
 	if (!ctrl || !call)
@@ -1322,6 +1554,24 @@ int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struc
 		}
 		return res;
 	}
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+int pri_aoc_s_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_s *aoc_s)
+{
+	if (!ctrl || !call)
+		return -1;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_aocs_encode(ctrl, call, aoc_s);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
