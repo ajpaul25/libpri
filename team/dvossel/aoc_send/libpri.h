@@ -1530,6 +1530,9 @@ int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int res
 /* Send AOC-Request message */
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
 
+/* Send AOC-S message */
+int pri_aoc_s_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_s *aoc_s);
+
 /* Send AOC-D message */
 int pri_aoc_d_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_d *aoc_d);
 
