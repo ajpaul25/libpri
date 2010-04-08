@@ -1483,7 +1483,7 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e, int msgtype)
+static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1504,7 +1504,7 @@ static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 		return -1;
 	}
 
-	if (pri_call_apdu_queue(call, msgtype, buffer, end - buffer, NULL)) {
+	if (pri_call_apdu_queue(call, Q931_ANY_MESSAGE, buffer, end - buffer, NULL)) {
 		pri_message(ctrl, "Could not schedule aoc-e facility message for call %d\n", call->cr);
 		return -1;
 	}
@@ -1595,7 +1595,7 @@ int pri_aoc_d_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	return 0;
 }
 
-int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e, int on_release)
+int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
 {
 	if (!ctrl || !call)
 		return -1;
@@ -1603,7 +1603,7 @@ int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_aoce_encode(ctrl, call, aoc_e, on_release ? Q931_RELEASE : Q931_DISCONNECT);
+		return aoc_aoce_encode(ctrl, call, aoc_e);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
