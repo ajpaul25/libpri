@@ -1536,8 +1536,8 @@ int pri_aoc_s_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_s
 /* Send AOC-D message */
 int pri_aoc_d_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_d *aoc_d);
 
-/* Send AOC-E message */
-int pri_aoc_e_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_e *aoc_e);
+/* Send AOC-E message. set on_release to queue on Q931 Release msg, other wise it is queued on Q931 Disconnect */
+int pri_aoc_e_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_e *aoc_e, int on_release);
 
 #define PRI_GR303_SUPPORT
 #define PRI_ENSLAVE_SUPPORT
