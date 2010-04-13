@@ -653,55 +653,6 @@ struct pri_subcmd_transfer {
 	int invoke_id;
 };
 
-enum PRI_AOC_REQUEST_RESPONSE {
-
-	/* Error Results */
-	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED,
-	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE,
-	PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT,
-	/* generic error result all other errors are lumped into */
-	PRI_AOC_REQUEST_RESPONSE_ERROR,
-
-	/* AOC Results */
-	PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST,
-	PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG,
-	PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS,
-};
-
-enum PRI_AOC_REQUEST {
-	PRI_AOC_REQUEST_S = (1 << 0),
-	PRI_AOC_REQUEST_D = (1 << 1),
-	PRI_AOC_REQUEST_E = (1 << 2),
-};
-
-struct pri_subcmd_aoc_request_response {
-	/*!
-	 * \brief What type of aoc was requested.
-	 * \see enum PRI_AOC_REQUEST
-	 */
-	int charging_request;
-
-	/*!
-	 * \brief response to the charging_request
-	 * \see enum PRI_AOC_REQUEST_RESPONSE
-	 */
-	int charging_response;
-
-};
-
-struct pri_subcmd_aoc_request {
-	/*!
-	 * \brief What types of aoc are being requested.
-	 * \see enum PRI_AOC_REQUEST
-	 */
-	int charging_request;
-
-	/*!
-	 * \brief Value given by the initiating request.
-	 */
-	 int invoke_id;
-};
-
 /*! \brief What is being charged. */
 enum PRI_AOC_CHARGED_ITEM {
 	PRI_AOC_CHARGED_ITEM_NOT_AVAILABLE,
@@ -712,6 +663,7 @@ enum PRI_AOC_CHARGED_ITEM {
 	PRI_AOC_CHARGED_ITEM_USER_USER_INFO,
 	PRI_AOC_CHARGED_ITEM_SUPPLEMENTARY_SERVICE,
 };
+
 /*! \brief Rate method being used. */
 enum PRI_AOC_RATE_TYPE {
 	PRI_AOC_RATE_TYPE_NOT_AVAILABLE,
@@ -722,6 +674,7 @@ enum PRI_AOC_RATE_TYPE {
 	PRI_AOC_RATE_TYPE_VOLUME,
 	PRI_AOC_RATE_TYPE_SPECIAL_CODE,
 };
+
 enum PRI_AOC_TIME_SCALE {
 	PRI_AOC_TIME_SCALE_HUNDREDTH_SECOND,
 	PRI_AOC_TIME_SCALE_TENTH_SECOND,
@@ -731,12 +684,14 @@ enum PRI_AOC_TIME_SCALE {
 	PRI_AOC_TIME_SCALE_HOUR,
 	PRI_AOC_TIME_SCALE_DAY,
 };
+
 struct pri_aoc_time {
 	/*! LengthOfTimeUnit (Not valid if length is zero.) */
 	long length;
 	/*! \see enum PRI_AOC_TIME_SCALE */
 	int scale;
 };
+
 enum PRI_AOC_MULTIPLIER {
 	PRI_AOC_MULTIPLIER_THOUSANDTH,
 	PRI_AOC_MULTIPLIER_HUNDREDTH,
@@ -746,11 +701,13 @@ enum PRI_AOC_MULTIPLIER {
 	PRI_AOC_MULTIPLIER_HUNDRED,
 	PRI_AOC_MULTIPLIER_THOUSAND,
 };
+
 struct pri_aoc_amount {
 	long cost;
 	/*! \see enum PRI_AOC_MULTIPLIER */
 	int multiplier;
 };
+
 struct pri_aoc_duration {
 	struct pri_aoc_amount amount;
 	struct pri_aoc_time time;
@@ -766,16 +723,19 @@ struct pri_aoc_duration {
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 struct pri_aoc_flat {
 	struct pri_aoc_amount amount;
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 enum PRI_AOC_VOLUME_UNIT {
 	PRI_AOC_VOLUME_UNIT_OCTET,
 	PRI_AOC_VOLUME_UNIT_SEGMENT,
 	PRI_AOC_VOLUME_UNIT_MESSAGE,
 };
+
 struct pri_aoc_volume {
 	struct pri_aoc_amount amount;
 	/*! \see enum PRI_AOC_VOLUME_UNIT */
@@ -803,6 +763,7 @@ struct pri_aoc_s_element {
 		int special;
 	} rate;
 };
+
 struct pri_subcmd_aoc_s {
 	int num_items;
 	struct pri_aoc_s_element item[10];
@@ -814,17 +775,20 @@ enum PRI_AOC_DE_CHARGE {
 	PRI_AOC_DE_CHARGE_CURRENCY,
 	PRI_AOC_DE_CHARGE_UNITS,
 };
+
 struct pri_aoc_recorded_currency {
 	struct pri_aoc_amount amount;
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 struct pri_aoc_units_element {
 	/*! Number of units recorded. -1 if not available. */
 	long number;
 	/*! Type of unit recorded. -1 if not available. */
 	int type;
 };
+
 struct pri_aoc_recorded_units {
 	int num_items;
 	struct pri_aoc_units_element item[32];
@@ -870,11 +834,13 @@ enum PRI_AOC_E_BILLING_ID {
 	PRI_AOC_E_BILLING_ID_CALL_DEFLECTION,
 	PRI_AOC_E_BILLING_ID_CALL_TRANSFER,
 };
+
 enum PRI_AOC_E_CHARGING_ASSOCIATION {
 	PRI_AOC_E_CHARGING_ASSOCIATION_NOT_AVAILABLE,
 	PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER,
 	PRI_AOC_E_CHARGING_ASSOCIATION_ID,
 };
+
 struct pri_aoc_e_charging_association {
 	union {
 		/*! Charged number */
@@ -885,6 +851,7 @@ struct pri_aoc_e_charging_association {
 	/*! \see enum PRI_AOC_E_CHARGING_ASSOCIATION */
 	int charging_type;
 };
+
 struct pri_subcmd_aoc_e {
 	/*!
 	 * \brief What is being charged.
@@ -901,6 +868,65 @@ struct pri_subcmd_aoc_e {
 	} recorded;
 	/*! Charging association. */
 	struct pri_aoc_e_charging_association associated;
+};
+
+enum PRI_AOC_REQUEST_RESPONSE {
+
+	/* Error Results */
+	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED,
+	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE,
+	PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT,
+	/* generic error result all other errors are lumped into */
+	PRI_AOC_REQUEST_RESPONSE_ERROR,
+
+	/* AOC Results */
+	PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS,
+	PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST,
+	PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG,
+};
+
+enum PRI_AOC_REQUEST {
+	PRI_AOC_REQUEST_S = (1 << 0),
+	PRI_AOC_REQUEST_D = (1 << 1),
+	PRI_AOC_REQUEST_E = (1 << 2),
+};
+
+struct pri_subcmd_aoc_request_response {
+
+	/*!
+	 * \brief aoc_s data from response
+	 */
+	struct pri_subcmd_aoc_s aoc_s;
+
+	/*!
+	 * \brief if the aoc_s msg is present, this will be set
+	 */
+	int valid_aoc_s;
+
+	/*!
+	 * \brief What type of aoc was requested.
+	 * \see enum PRI_AOC_REQUEST
+	 */
+	int charging_request;
+
+	/*!
+	 * \brief response to the charging_request
+	 * \see enum PRI_AOC_REQUEST_RESPONSE
+	 */
+	int charging_response;
+};
+
+struct pri_subcmd_aoc_request {
+	/*!
+	 * \brief What types of aoc are being requested.
+	 * \see enum PRI_AOC_REQUEST
+	 */
+	int charging_request;
+
+	/*!
+	 * \brief Value given by the initiating request.
+	 */
+	 int invoke_id;
 };
 
 struct pri_subcommand {
@@ -1523,9 +1549,11 @@ void pri_enslave(struct pri *master, struct pri *slave);
 /* Request AOC on call setup */
 int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request);
 
+/* Send AOC Request Response to a request for AOC-S */
+int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s);
 
-/* Send AOC-Request message */
-int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request);
+/* Send AOC Request Response to a request for AOC-D or AOC-E */
+int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, const int response, const int invoke_id);
 
 /* Send AOC-Request message */
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
