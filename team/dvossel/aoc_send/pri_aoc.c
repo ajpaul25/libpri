@@ -170,6 +170,7 @@ void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke
 
 	subcmd->u.aoc_request.invoke_id = invoke->invoke_id;
 	switch (invoke->args.etsi.ChargingRequest.charging_case) {
+	default:
 	case 0:
 		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
 		break;
@@ -179,8 +180,6 @@ void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke
 	case 2:
 		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_E;
 		break;
-	default:
-		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
 	}
 }
 
@@ -1160,28 +1159,39 @@ static unsigned char *enc_etsi_aocs_currency(struct pri *ctrl, unsigned char *po
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param pos Starting position to encode the facility ie contents.
  * \param end End of facility ie contents encoding data buffer.
- * \param aoc_request, the aoc charging request data to encode.
+ * \param response, the response to the request
+ * \param invoke_id, the request's invoke id
+ * \param aoc_s, the rate list associated with a response to AOC-S request
  *
  * \retval Start of the next ASN.1 component to encode on success.
  * \retval NULL on error.
  */
 static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, int response, int invoke_id)
+	unsigned char *end, int response, int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	struct rose_msg_result msg_result = { 0, };
 	struct rose_msg_error msg_error = { 0, };
 	int is_error = 0;
 	pos = facility_encode_header(ctrl, pos, end, NULL);
+
 	if (!pos) {
 		return NULL;
 	}
 
 	switch (response) {
 	case PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST:
+		if (!aoc_s) {
+			return NULL;
+		}
+		enc_etsi_subcmd_aoc_s_currency_info(aoc_s, &msg_result.args.etsi.ChargingRequest.u.currency_info);
 		msg_result.args.etsi.ChargingRequest.type = 0;
 		break;
 	case PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG:
+		if (!aoc_s) {
+			return NULL;
+		}
 		msg_result.args.etsi.ChargingRequest.type = 1;
+		msg_result.args.etsi.ChargingRequest.u.special_arrangement = aoc_s->item[0].rate.special;
 		break;
 	case PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS:
 		msg_result.args.etsi.ChargingRequest.type = 2;
@@ -1259,7 +1269,7 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 
 /*!
  * \internal
- * \brief Send the ETSI AOC Request Response message.
+ * \brief Send the ETSI AOC Request Response message for an AOC-S request
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode AOC.
@@ -1269,12 +1279,19 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_charging_request_response_encode(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request)
+static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
+	int response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE;
 
-	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, aoc_request->invoke_id);
+	if (aoc_s && aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
+		response = PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG;
+	} else if (aoc_s) {
+		response = PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST;
+	}
+
+	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, invoke_id, aoc_s);
 
 	if (!end) {
 		return -1;
@@ -1289,10 +1306,55 @@ static int aoc_charging_request_response_encode(struct pri *ctrl, q931_call *cal
 	}
 
 	return 0;
-
 }
 
 
+/*!
+ * \internal
+ * \brief Send the ETSI AOC Request Response message for AOC-D and AOC-E requests
+ *
+ * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Call leg from which to encode AOC.
+ * \param response code
+ * \param invoke_id
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+static int aoc_de_request_response_encode(struct pri *ctrl, q931_call *call, const int response, const int invoke_id)
+{
+	unsigned char buffer[255];
+	unsigned char *end = 0;
+
+	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, invoke_id, NULL);
+
+	if (!end) {
+		return -1;
+	}
+
+	/* Remember that if we queue a facility IE for a facility message we
+	 * have to explicitly send the facility message ourselves */
+	if (pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, NULL)
+		|| q931_facility(call->pri, call)) {
+		pri_message(ctrl, "Could not schedule aoc request response facility message for call %d\n", call->cr);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*!
+ * \internal
+ * \brief AOC-Request response callback function.
+ *
+ * \param reason Reason callback is called.
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param apdu APDU queued entry.  Do not change!
+ * \param msg APDU response message data.  (NULL if was not the reason called.)
+ *
+ * \return TRUE if no more responses are expected.
+ */
 static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_subcommand *subcmd;
@@ -1336,10 +1398,19 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 	case APDU_CALLBACK_REASON_MSG_RESULT:
 		switch (msg->response.result->args.etsi.ChargingRequest.type) {
 		case 0:
+			subcmd->u.aoc_request_response.valid_aoc_s = 1;
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST;
+			aoc_etsi_subcmd_aoc_s_currency_info(&subcmd->u.aoc_request_response.aoc_s,
+				&msg->response.result->args.etsi.ChargingRequest.u.currency_info);
 			break;
 		case 1:
+			subcmd->u.aoc_request_response.valid_aoc_s = 1;
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG;
+			subcmd->u.aoc_request_response.aoc_s.num_items = 1;
+			subcmd->u.aoc_request_response.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT;
+			subcmd->u.aoc_request_response.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_CODE;
+			subcmd->u.aoc_request_response.aoc_s.item[0].rate.special =
+				msg->response.result->args.etsi.ChargingRequest.u.special_arrangement;
 			break;
 		case 2:
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS;
@@ -1354,7 +1425,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 		break;
 	}
 
-	return 0;
+	return 1;
 }
 
 /*!
@@ -1382,7 +1453,9 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 
 	memset(&response, 0, sizeof(response));
 	response.invoke_id = ctrl->last_invoke;
-	response.timeout_time = ctrl->timers[PRI_TIMER_T_CCBS1];
+	 /* Set a custom timeout period. Wait 60 seconds for AOC-S response
+	  * TODO, this may need to be configurable */
+	response.timeout_time = 60000;
 	response.callback = pri_aoc_request_get_response;
 	response.user.ptr = (void *) &request;
 
@@ -1512,7 +1585,7 @@ static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_s
 	return 0;
 }
 
-int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int response, const struct pri_subcmd_aoc_request *aoc_request)
+int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, const int response, const int invoke_id)
 {
 	if (!ctrl || !call)
 		return -1;
@@ -1520,7 +1593,25 @@ int pri_aoc_charging_request_response(struct pri *ctrl, q931_call *call, int res
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_charging_request_response_encode(ctrl, call, response, aoc_request);
+		return aoc_de_request_response_encode(ctrl, call, response, invoke_id);
+	case PRI_SWITCH_QSIG:
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
+{
+	if (!ctrl || !call)
+		return -1;
+
+	switch (ctrl->switchtype) {
+	case PRI_SWITCH_EUROISDN_E1:
+	case PRI_SWITCH_EUROISDN_T1:
+		return aoc_s_request_response_encode(ctrl, call, invoke_id, aoc_s);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
