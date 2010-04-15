@@ -1378,7 +1378,6 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 {
 	struct pri_subcommand *subcmd;
 	int *request;
-	int errorcode;
 
 	if (!PRI_MASTER(ctrl)->aoc_support ||
 		(reason == APDU_CALLBACK_REASON_ERROR) ||
@@ -1399,8 +1398,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 
 	switch (reason) {
 	case APDU_CALLBACK_REASON_MSG_ERROR:
-		errorcode = msg->response.error->code;
-		switch (errorcode) {
+		switch (msg->response.error->code) {
 		case ROSE_ERROR_Gen_NotImplemented:
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR_NOT_IMPLEMENTED;
 			break;
