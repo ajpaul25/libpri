@@ -963,16 +963,6 @@ int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_E
 void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
 /*!
- * \brief Copy the PRI party number to the Q.931 party number structure.
- *
- * \param q931_number Q.931 party number structure
- * \param pri_number PRI party number structure
- *
- * \return Nothing
- */
-void pri_copy_party_number_to_q931(struct q931_party_number *q931_number, const struct pri_party_number *pri_number);
-
-/*!
  * \brief Get the master PRI control structure.
  *
  * \param ctrl D channel controller.
