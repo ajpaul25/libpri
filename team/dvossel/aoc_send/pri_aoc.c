@@ -119,6 +119,23 @@ static void aoc_etsi_subcmd_recorded_currency(struct pri_aoc_recorded_currency *
 
 /*!
  * \internal
+ * \brief Fill in the the ETSI recorded currency from the subcmd currency info 
+ *
+ * \param subcmd_recorded AOC subcmd recorded currency.
+ * \param etsi_recorded AOC ETSI recorded currency.
+ *
+ * \return Nothing
+ */
+static void aoc_enc_etsi_subcmd_recorded_currency(const struct pri_aoc_recorded_currency *subcmd_recorded, struct roseEtsiAOCRecordedCurrency *etsi_recorded)
+{
+	aoc_enc_etsi_subcmd_amount(&subcmd_recorded->amount, &etsi_recorded->amount);
+	libpri_copy_string((char *) etsi_recorded->currency,
+			subcmd_recorded->currency,
+			sizeof(etsi_recorded->currency));
+}
+
+/*!
+ * \internal
  * \brief Fill in the AOC subcmd recorded units from the ETSI recorded units.
  *
  * \param subcmd_recorded AOC subcmd recorded units list.
@@ -148,6 +165,30 @@ static void aoc_etsi_subcmd_recorded_units(struct pri_aoc_recorded_units *subcmd
 }
 
 /*!
+ * \internal
+ * \brief Fill in the ETSI recorded units from the AOC subcmd recorded units. 
+ *
+ * \param subcmd_recorded AOC subcmd recorded units list.
+ * \param etsi_recorded AOC ETSI recorded units list.
+ *
+ * \return Nothing
+ */
+static void aoc_enc_etsi_subcmd_recorded_units(const struct pri_aoc_recorded_units *subcmd_recorded, struct roseEtsiAOCRecordedUnitsList *etsi_recorded)
+{
+	int i;
+
+	/* Fill in the itemized list of recorded units. */
+	for (i = 0; i < subcmd_recorded->num_items; i++) {
+		etsi_recorded->num_records++;
+		etsi_recorded->list[i].number_of_units = subcmd_recorded->item[i].number;
+		if (subcmd_recorded->item[i].type > 0) {
+			etsi_recorded->list[i].type_of_unit = subcmd_recorded->item[i].type;
+			etsi_recorded->list[i].type_of_unit_present = 1;
+		}
+	}
+}
+
+/*!
  * \brief Handle the ETSI ChargingRequest.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -158,30 +199,33 @@ static void aoc_etsi_subcmd_recorded_units(struct pri_aoc_recorded_units *subcmd
 void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke)
 {
 	struct pri_subcommand *subcmd;
+	int request;
 
 	if (!PRI_MASTER(ctrl)->aoc_support) {
 		return;
 	}
+	switch (invoke->args.etsi.ChargingRequest.charging_case) {
+	case 0:
+		request = PRI_AOC_REQUEST_S;
+		break;
+	case 1:
+		request = PRI_AOC_REQUEST_D;
+		break;
+	case 2:
+		request = PRI_AOC_REQUEST_E;
+		break;
+	default:
+		return;
+	}
+
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
 		return;
 	}
 
-	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST;
-
+	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQ;
 	subcmd->u.aoc_request.invoke_id = invoke->invoke_id;
-	switch (invoke->args.etsi.ChargingRequest.charging_case) {
-	default:
-	case 0:
-		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_S;
-		break;
-	case 1:
-		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_D;
-		break;
-	case 2:
-		subcmd->u.aoc_request.charging_request = PRI_AOC_REQUEST_E;
-		break;
-	}
+	subcmd->u.aoc_request.charging_request = request;
 }
 
 /*!
@@ -674,11 +718,11 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
 static int aoc_subcmd_aoc_d_etsi_billing_id(int billing_id)
 {
 	switch (billing_id) {
-	case PRI_AOC_E_BILLING_ID_NORMAL:
+	case PRI_AOC_D_BILLING_ID_NORMAL:
 		return 0;
-	case PRI_AOC_E_BILLING_ID_REVERSE:
+	case PRI_AOC_D_BILLING_ID_REVERSE:
 		return 1;
-	case PRI_AOC_E_BILLING_ID_CREDIT_CARD:
+	case PRI_AOC_D_BILLING_ID_CREDIT_CARD:
 		return 2;
 	}
 
@@ -828,6 +872,7 @@ static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *po
 	unsigned char *end, const struct pri_subcmd_aoc_e *aoc_e)
 {
 	struct rose_msg_invoke msg;
+	struct q931_party_number q931_number;
 
 	pos = facility_encode_header(ctrl, pos, end, NULL);
 	if (!pos) {
@@ -843,18 +888,13 @@ static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *po
 		msg.args.etsi.AOCECurrency.currency_info.free_of_charge = 1;
 	} else if ((aoc_e->charge == PRI_AOC_DE_CHARGE_CURRENCY) && (aoc_e->recorded.money.amount.cost >= 0)) {
 		msg.args.etsi.AOCECurrency.type = 1;	/* currency info */
-		msg.args.etsi.AOCECurrency.currency_info.specific.recorded.amount.currency =
-			aoc_e->recorded.money.amount.cost;
-		msg.args.etsi.AOCECurrency.currency_info.specific.recorded.amount.multiplier =
-			aoc_e->recorded.money.amount.multiplier;
-		libpri_copy_string((char *) msg.args.etsi.AOCECurrency.currency_info.specific.recorded.currency,
-			aoc_e->recorded.money.currency,
-			sizeof(msg.args.etsi.AOCECurrency.currency_info.specific.recorded.currency));
+		aoc_enc_etsi_subcmd_recorded_currency(&aoc_e->recorded.money,
+			&msg.args.etsi.AOCECurrency.currency_info.specific.recorded);
 	} else {
 		msg.args.etsi.AOCECurrency.type = 0;	/* not_available */
 	}
 
-	if (aoc_e->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) >= 0)) {
+	if (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) != -1) {
 		msg.args.etsi.AOCECurrency.currency_info.specific.billing_id_present = 1;
 		msg.args.etsi.AOCECurrency.currency_info.specific.billing_id =
 			aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id);
@@ -864,13 +904,11 @@ static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *po
 	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
 		msg.args.etsi.AOCECurrency.currency_info.charging_association_present = 1;
 		msg.args.etsi.AOCECurrency.currency_info.charging_association.type = 1; /* number */
-		libpri_copy_string((char *) msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str,
-			aoc_e->associated.charge.number.str,
-			sizeof(msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str));
-		msg.args.etsi.AOCECurrency.currency_info.charging_association.number.plan =
-			aoc_e->associated.charge.number.plan;
-		msg.args.etsi.AOCECurrency.currency_info.charging_association.number.length =
-			strlen((char *) msg.args.etsi.AOCECurrency.currency_info.charging_association.number.str);
+		q931_party_number_init(&q931_number);
+		pri_copy_party_number_to_q931(&q931_number, &aoc_e->associated.charge.number);
+		q931_copy_number_to_rose(ctrl,
+			&msg.args.etsi.AOCECurrency.currency_info.charging_association.number,
+			&q931_number);
 		break;
 	case PRI_AOC_E_CHARGING_ASSOCIATION_ID:
 		msg.args.etsi.AOCECurrency.currency_info.charging_association_present = 1;
@@ -904,6 +942,7 @@ static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned cha
 	unsigned char *end, const struct pri_subcmd_aoc_e *aoc_e)
 {
 	struct rose_msg_invoke msg;
+	struct q931_party_number q931_number;
 
 	pos = facility_encode_header(ctrl, pos, end, NULL);
 	if (!pos) {
@@ -919,39 +958,29 @@ static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned cha
 		msg.args.etsi.AOCEChargingUnit.charging_unit.free_of_charge = 1;
 
 	} else if ((aoc_e->charge == PRI_AOC_DE_CHARGE_UNITS) &&  (aoc_e->recorded.unit.num_items > 0)) {
-		int i;
 		msg.args.etsi.AOCEChargingUnit.type = 1;	/* charging_unit */
-		for (i = 0; i < aoc_e->recorded.unit.num_items; i++) {
-			msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.num_records++;
-			msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].number_of_units =
-				aoc_e->recorded.unit.item[i].number;
-			if (aoc_e->recorded.unit.item[i].type > 0) {
-				msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].type_of_unit =
-					aoc_e->recorded.unit.item[i].type;
-				msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded.list[i].type_of_unit_present = 1;
-			}
-		}
+		aoc_enc_etsi_subcmd_recorded_units(&aoc_e->recorded.unit,
+			&msg.args.etsi.AOCEChargingUnit.charging_unit.specific.recorded);
 	} else {
 		msg.args.etsi.AOCEChargingUnit.type = 0;	/* not_available */
 	}
 
-	if (aoc_e->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) >= 0)) {
+	if (aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id) != -1) {
 		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.billing_id_present = 1;
 		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.billing_id =
 			aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id);
 	}
 
+
 	switch (aoc_e->associated.charging_type) {
 	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
 		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association_present = 1;
 		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.type = 1; /* number */
-		libpri_copy_string((char *) msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str,
-			aoc_e->associated.charge.number.str,
-			sizeof(msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str));
-		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.plan =
-			aoc_e->associated.charge.number.plan;
-		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.length =
-			strlen((char *) msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number.str);
+		q931_party_number_init(&q931_number);
+		pri_copy_party_number_to_q931(&q931_number, &aoc_e->associated.charge.number);
+		q931_copy_number_to_rose(ctrl,
+			&msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number,
+			&q931_number);
 		break;
 	case PRI_AOC_E_CHARGING_ASSOCIATION_ID:
 		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association_present = 1;
@@ -998,27 +1027,19 @@ static unsigned char *enc_etsi_aocd_charging_unit(struct pri *ctrl, unsigned cha
 	if (aoc_d->charge == PRI_AOC_DE_CHARGE_FREE) {
 		msg.args.etsi.AOCDChargingUnit.type = 1;	/* free of charge */
 	} else if ((aoc_d->charge == PRI_AOC_DE_CHARGE_UNITS) &&  (aoc_d->recorded.unit.num_items > 0)) {
-		int i;
 		msg.args.etsi.AOCDChargingUnit.type = 2;	/* charging_unit */
-		for (i = 0; i < aoc_d->recorded.unit.num_items; i++) {
-			msg.args.etsi.AOCDChargingUnit.specific.recorded.num_records++;
-			msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].number_of_units =
-				aoc_d->recorded.unit.item[i].number;
-			if (aoc_d->recorded.unit.item[i].type > 0) {
-				msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].type_of_unit =
-					aoc_d->recorded.unit.item[i].type;
-				msg.args.etsi.AOCDChargingUnit.specific.recorded.list[i].type_of_unit_present = 1;
-			}
-		}
+		aoc_enc_etsi_subcmd_recorded_units(&aoc_d->recorded.unit,
+			&msg.args.etsi.AOCDChargingUnit.specific.recorded);
 	} else {
 		msg.args.etsi.AOCDChargingUnit.type = 0;	/* not_available */
 	}
 
-	if (aoc_d->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) >= 0)) {
+	if (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) != -1) {
 		msg.args.etsi.AOCDChargingUnit.specific.billing_id_present = 1;
 		msg.args.etsi.AOCDChargingUnit.specific.billing_id =
 			aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id);
 	}
+
 
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
 
@@ -1055,18 +1076,13 @@ static unsigned char *enc_etsi_aocd_currency(struct pri *ctrl, unsigned char *po
 		msg.args.etsi.AOCDCurrency.type = 1;	/* free of charge */
 	} else if ((aoc_d->charge == PRI_AOC_DE_CHARGE_CURRENCY) && (aoc_d->recorded.money.amount.cost >= 0)) {
 		msg.args.etsi.AOCDCurrency.type = 2;	/* specific currency */
-		msg.args.etsi.AOCDCurrency.specific.recorded.amount.currency =
-			aoc_d->recorded.money.amount.cost;
-		msg.args.etsi.AOCDCurrency.specific.recorded.amount.multiplier =
-			aoc_d->recorded.money.amount.multiplier;
-		libpri_copy_string((char *) msg.args.etsi.AOCDCurrency.specific.recorded.currency,
-			aoc_d->recorded.money.currency,
-			sizeof(msg.args.etsi.AOCDCurrency.specific.recorded.currency));
+		aoc_enc_etsi_subcmd_recorded_currency(&aoc_d->recorded.money,
+			&msg.args.etsi.AOCDCurrency.specific.recorded);
 	} else {
 		msg.args.etsi.AOCDCurrency.type = 0;	/* not_available */
 	}
 
-	if (aoc_d->billing_id != PRI_AOC_E_BILLING_ID_NOT_AVAILABLE && (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) >= 0)) {
+	if (aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id) != -1) {
 		msg.args.etsi.AOCDCurrency.specific.billing_id_present = 1;
 		msg.args.etsi.AOCDCurrency.specific.billing_id =
 			aoc_subcmd_aoc_d_etsi_billing_id(aoc_d->billing_id);
@@ -1180,30 +1196,30 @@ static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned c
 	}
 
 	switch (response) {
-	case PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST:
+	case PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST:
 		if (!aoc_s) {
 			return NULL;
 		}
 		enc_etsi_subcmd_aoc_s_currency_info(aoc_s, &msg_result.args.etsi.ChargingRequest.u.currency_info);
 		msg_result.args.etsi.ChargingRequest.type = 0;
 		break;
-	case PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG:
+	case PRI_AOC_REQ_RSP_SPECIAL_ARR:
 		if (!aoc_s) {
 			return NULL;
 		}
 		msg_result.args.etsi.ChargingRequest.type = 1;
 		msg_result.args.etsi.ChargingRequest.u.special_arrangement = aoc_s->item[0].rate.special;
 		break;
-	case PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS:
+	case PRI_AOC_REQ_RSP_CHARGING_INFO_FOLLOWS:
 		msg_result.args.etsi.ChargingRequest.type = 2;
 		break;
-	case PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED:
+	case PRI_AOC_REQ_RSP_ERROR_NOT_IMPLEMENTED:
 		msg_error.code = ROSE_ERROR_Gen_NotImplemented;
 		is_error = 1;
 		break;
-	case PRI_AOC_REQUEST_RESPONSE_ERROR:
-	case PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE:
-	case PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT:
+	case PRI_AOC_REQ_RSP_ERROR:
+	case PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE:
+	case PRI_AOC_REQ_RSP_ERROR_TIMEOUT:
 	default:
 		is_error = 1;
 		msg_error.code = ROSE_ERROR_Gen_NotAvailable;
@@ -1249,18 +1265,18 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 	msg.invoke_id = get_invokeid(ctrl);
 
 	switch (request) {
-		case PRI_AOC_REQUEST_S:
-			msg.args.etsi.ChargingRequest.charging_case = 0;
-			break;
-		case PRI_AOC_REQUEST_D:
-			msg.args.etsi.ChargingRequest.charging_case = 1;
-			break;
-		case PRI_AOC_REQUEST_E:
-			msg.args.etsi.ChargingRequest.charging_case = 2;
-			break;
-		default:
-			/* no valid request parameters are present */
-			return NULL;
+	case PRI_AOC_REQUEST_S:
+		msg.args.etsi.ChargingRequest.charging_case = 0;
+		break;
+	case PRI_AOC_REQUEST_D:
+		msg.args.etsi.ChargingRequest.charging_case = 1;
+		break;
+	case PRI_AOC_REQUEST_E:
+		msg.args.etsi.ChargingRequest.charging_case = 2;
+		break;
+	default:
+		/* no valid request parameters are present */
+		return NULL;
 	}
 
 	pos = rose_encode_invoke(ctrl, pos, end, &msg);
@@ -1274,8 +1290,10 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
  * \param call Call leg from which to encode AOC.
- * \param response code
  * \param invoke_id
+ * \param aoc_s Optional AOC-S rate list for response
+ *
+ * \note if aoc_s is NULL, then a response will be sent back as AOC-S not available. 
  *
  * \retval 0 on success.
  * \retval -1 on error.
@@ -1284,12 +1302,12 @@ static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, cons
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
-	int response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE;
+	int response = PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE;
 
 	if (aoc_s && aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
-		response = PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG;
+		response = PRI_AOC_REQ_RSP_SPECIAL_ARR;
 	} else if (aoc_s) {
-		response = PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST;
+		response = PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST;
 	}
 
 	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, invoke_id, aoc_s);
@@ -1365,48 +1383,52 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 	if (!PRI_MASTER(ctrl)->aoc_support ||
 		(reason == APDU_CALLBACK_REASON_ERROR) ||
 		(reason == APDU_CALLBACK_REASON_CLEANUP)) {
-		return -1;
+		return 1;
 	}
 
 	subcmd = q931_alloc_subcommand(ctrl);
 
 	if (!subcmd) {
-		return -1;
+		return 1;
 	}
 
 	request = apdu->response.user.ptr;
+	memset(&subcmd->u.aoc_request_response, 0, sizeof(subcmd->u.aoc_request_response));
 	subcmd->u.aoc_request_response.charging_request = *request;
-	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE;
+	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQ_RSP;
 
 	switch (reason) {
 	case APDU_CALLBACK_REASON_MSG_ERROR:
 		errorcode = msg->response.error->code;
 		switch (errorcode) {
 		case ROSE_ERROR_Gen_NotImplemented:
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR_NOT_IMPLEMENTED;
 			break;
 		case ROSE_ERROR_Gen_NotAvailable:
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE;
 			break;
 		default:
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR;
 			break;
 		}
 		break;
+	case APDU_CALLBACK_REASON_MSG_REJECT:
+		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR_REJECT;
+		break;
 	case APDU_CALLBACK_REASON_TIMEOUT:
-		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT;
+		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR_TIMEOUT;
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
 		switch (msg->response.result->args.etsi.ChargingRequest.type) {
 		case 0:
 			subcmd->u.aoc_request_response.valid_aoc_s = 1;
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST;
 			aoc_etsi_subcmd_aoc_s_currency_info(&subcmd->u.aoc_request_response.aoc_s,
 				&msg->response.result->args.etsi.ChargingRequest.u.currency_info);
 			break;
 		case 1:
 			subcmd->u.aoc_request_response.valid_aoc_s = 1;
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_SPECIAL_ARR;
 			subcmd->u.aoc_request_response.aoc_s.num_items = 1;
 			subcmd->u.aoc_request_response.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT;
 			subcmd->u.aoc_request_response.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_CODE;
@@ -1414,15 +1436,15 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 				msg->response.result->args.etsi.ChargingRequest.u.special_arrangement;
 			break;
 		case 2:
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_CHARGING_INFO_FOLLOWS;
 			break;
 		default:
-			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR;
 			break;
 		}
 		break;
 	default:
-		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQUEST_RESPONSE_ERROR;
+		subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_ERROR;
 		break;
 	}
 
@@ -1477,7 +1499,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_aocs_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_s *aoc_s)
+static int aoc_s_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1514,7 +1536,7 @@ static int aoc_aocs_encode(struct pri *ctrl, q931_call *call, const struct pri_s
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
+static int aoc_d_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_d *aoc_d)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1557,7 +1579,7 @@ static int aoc_aocd_encode(struct pri *ctrl, q931_call *call, const struct pri_s
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_aoce_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
+static int aoc_e_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_e *aoc_e)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1660,7 +1682,7 @@ int pri_aoc_s_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_aocs_encode(ctrl, call, aoc_s);
+		return aoc_s_encode(ctrl, call, aoc_s);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
@@ -1678,7 +1700,7 @@ int pri_aoc_d_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_aocd_encode(ctrl, call, aoc_d);
+		return aoc_d_encode(ctrl, call, aoc_d);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
@@ -1695,7 +1717,7 @@ int pri_aoc_e_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_ao
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-		return aoc_aoce_encode(ctrl, call, aoc_e);
+		return aoc_e_encode(ctrl, call, aoc_e);
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
