@@ -180,11 +180,20 @@ static void aoc_enc_etsi_subcmd_recorded_units(const struct pri_aoc_recorded_uni
 	/* Fill in the itemized list of recorded units. */
 	for (i = 0; i < subcmd_recorded->num_items; i++) {
 		etsi_recorded->num_records++;
-		etsi_recorded->list[i].number_of_units = subcmd_recorded->item[i].number;
+		if (subcmd_recorded->item[i].number >= 0) {
+			etsi_recorded->list[i].number_of_units = subcmd_recorded->item[i].number;
+		} else {
+			etsi_recorded->list[i].not_available = 1;
+		}
 		if (subcmd_recorded->item[i].type > 0) {
 			etsi_recorded->list[i].type_of_unit = subcmd_recorded->item[i].type;
 			etsi_recorded->list[i].type_of_unit_present = 1;
 		}
+	}
+
+	if (!etsi_recorded->num_records) {
+		etsi_recorded->list[0].not_available = 1;
+		etsi_recorded->list[i].type_of_unit_present = 0;
 	}
 }
 
@@ -970,7 +979,6 @@ static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned cha
 		msg.args.etsi.AOCEChargingUnit.charging_unit.specific.billing_id =
 			aoc_subcmd_aoc_e_etsi_billing_id(aoc_e->billing_id);
 	}
-
 
 	switch (aoc_e->associated.charging_type) {
 	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
