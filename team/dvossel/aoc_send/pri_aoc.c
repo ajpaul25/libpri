@@ -179,7 +179,6 @@ static void aoc_enc_etsi_subcmd_recorded_units(const struct pri_aoc_recorded_uni
 
 	/* Fill in the itemized list of recorded units. */
 	for (i = 0; i < subcmd_recorded->num_items; i++) {
-		etsi_recorded->num_records++;
 		if (subcmd_recorded->item[i].number >= 0) {
 			etsi_recorded->list[i].number_of_units = subcmd_recorded->item[i].number;
 		} else {
@@ -190,10 +189,12 @@ static void aoc_enc_etsi_subcmd_recorded_units(const struct pri_aoc_recorded_uni
 			etsi_recorded->list[i].type_of_unit_present = 1;
 		}
 	}
+	etsi_recorded->num_records = i;
 
 	if (!etsi_recorded->num_records) {
 		etsi_recorded->list[0].not_available = 1;
-		etsi_recorded->list[i].type_of_unit_present = 0;
+		etsi_recorded->list[0].type_of_unit_present = 0;
+		etsi_recorded->num_records = 1;
 	}
 }
 
