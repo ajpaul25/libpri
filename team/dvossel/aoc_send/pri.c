@@ -694,7 +694,6 @@ int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn)
 }
 
 /*!
- * \internal
  * \brief Copy the PRI party name to the Q.931 party name structure.
  *
  * \param q931_name Q.931 party name structure
@@ -702,7 +701,7 @@ int pri_answer(struct pri *pri, q931_call *call, int channel, int nonisdn)
  *
  * \return Nothing
  */
-static void pri_copy_party_name_to_q931(struct q931_party_name *q931_name, const struct pri_party_name *pri_name)
+void pri_copy_party_name_to_q931(struct q931_party_name *q931_name, const struct pri_party_name *pri_name)
 {
 	q931_party_name_init(q931_name);
 	if (pri_name->valid) {
@@ -733,7 +732,6 @@ void pri_copy_party_number_to_q931(struct q931_party_number *q931_number, const 
 }
 
 /*!
- * \internal
  * \brief Copy the PRI party subaddress to the Q.931 party subaddress structure.
  *
  * \param q931_subaddress Q.931 party subaddress structure
@@ -741,7 +739,7 @@ void pri_copy_party_number_to_q931(struct q931_party_number *q931_number, const 
  *
  * \return Nothing
  */
-static void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931_subaddress, const struct pri_party_subaddress *pri_subaddress)
+void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931_subaddress, const struct pri_party_subaddress *pri_subaddress)
 {
 	int length;
 	int maxlen = sizeof(q931_subaddress->data) - 1;
@@ -767,7 +765,6 @@ static void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931
 }
 
 /*!
- * \internal
  * \brief Copy the PRI party id to the Q.931 party id structure.
  *
  * \param q931_id Q.931 party id structure
@@ -775,7 +772,7 @@ static void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931
  *
  * \return Nothing
  */
-static void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struct pri_party_id *pri_id)
+void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struct pri_party_id *pri_id)
 {
 	pri_copy_party_name_to_q931(&q931_id->name, &pri_id->name);
 	pri_copy_party_number_to_q931(&q931_id->number, &pri_id->number);
