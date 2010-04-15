@@ -542,8 +542,8 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_AOC_S					18	/*!< Advice Of Charge Start information (Rate list) */
 #define PRI_SUBCMD_AOC_D					19	/*!< Advice Of Charge During information */
 #define PRI_SUBCMD_AOC_E					20	/*!< Advice Of Charge End information */
-#define PRI_SUBCMD_AOC_CHARGING_REQUEST		21	/*!< Advice Of Charge Request information */
-#define PRI_SUBCMD_AOC_CHARGING_REQUEST_RESPONSE	22	/*!< Advice Of Charge Request Response information */
+#define PRI_SUBCMD_AOC_CHARGING_REQ			21	/*!< Advice Of Charge Request information */
+#define PRI_SUBCMD_AOC_CHARGING_REQ_RSP		22	/*!< Advice Of Charge Request Response information */
 
 #if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
@@ -870,19 +870,20 @@ struct pri_subcmd_aoc_e {
 	struct pri_aoc_e_charging_association associated;
 };
 
-enum PRI_AOC_REQUEST_RESPONSE {
+enum PRI_AOC_REQ_RSP {
 
 	/* Error Results */
-	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_IMPLEMENTED,
-	PRI_AOC_REQUEST_RESPONSE_ERROR_NOT_AVAILABLE,
-	PRI_AOC_REQUEST_RESPONSE_ERROR_TIMEOUT,
+	PRI_AOC_REQ_RSP_ERROR_NOT_IMPLEMENTED,
+	PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE,
+	PRI_AOC_REQ_RSP_ERROR_TIMEOUT,
+	PRI_AOC_REQ_RSP_ERROR_REJECT,
 	/* generic error result all other errors are lumped into */
-	PRI_AOC_REQUEST_RESPONSE_ERROR,
+	PRI_AOC_REQ_RSP_ERROR,
 
 	/* AOC Results */
-	PRI_AOC_REQUEST_RESPONSE_CHARGING_INFO_FOLLOWS,
-	PRI_AOC_REQUEST_RESPONSE_CURRENCY_INFO_LIST,
-	PRI_AOC_REQUEST_RESPONSE_SPECIAL_ARG,
+	PRI_AOC_REQ_RSP_CHARGING_INFO_FOLLOWS,
+	PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST,
+	PRI_AOC_REQ_RSP_SPECIAL_ARR,
 };
 
 enum PRI_AOC_REQUEST {
@@ -911,7 +912,7 @@ struct pri_subcmd_aoc_request_response {
 
 	/*!
 	 * \brief response to the charging_request
-	 * \see enum PRI_AOC_REQUEST_RESPONSE
+	 * \see enum PRI_AOC_REQ_RSP
 	 */
 	int charging_response;
 };
@@ -1546,25 +1547,89 @@ void pri_set_inbanddisconnect(struct pri *pri, unsigned int enable);
    (and maybe some timers) */
 void pri_enslave(struct pri *master, struct pri *slave);
 
-/* Request AOC on call setup */
+/*!
+ * \brief  Request AOC on call setup
+ *
+ * \param call setup struct to set charging request info on
+ * \param charging request to set on setup struct
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
 int pri_sr_set_aoc_charging_request(struct pri_sr *sr, int charging_request);
 
-/* Send AOC Request Response to a request for AOC-S */
-int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s);
+/*!
+ * \brief Send AOC Request Response to a request for AOC-S
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param invoke_id for response message
+ * \param aoc_s message for response
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
+int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, int invoke_id, const struct pri_subcmd_aoc_s *aoc_s);
 
-/* Send AOC Request Response to a request for AOC-D or AOC-E */
-int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, const int response, const int invoke_id);
+/*!
+ * \brief Send AOC Request Response to a request for AOC-D or AOC-E
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param response in form of enum PRI_AOC_REQ_RSP
+ * \param invoke_id for response message
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
+int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, int response, const int invoke_id);
 
-/* Send AOC-Request message */
+/*!
+ * \brief Send AOC request message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param aoc request message to send
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
 
-/* Send AOC-S message */
+/*!
+ * \brief Send AOC-S message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param aoc_s message to send
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
 int pri_aoc_s_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_s *aoc_s);
 
-/* Send AOC-D message */
+/*!
+ * \brief Send AOC-D message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param aoc_d message to send
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
 int pri_aoc_d_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_d *aoc_d);
 
-/* Send AOC-E message. set on_release to queue on Q931 Release msg, other wise it is queued on Q931 Disconnect */
+/*!
+ * \brief Send AOC-E message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param aoc_e message to send
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
 int pri_aoc_e_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_e *aoc_e);
 
 #define PRI_GR303_SUPPORT

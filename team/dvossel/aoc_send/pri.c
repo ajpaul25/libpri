@@ -714,7 +714,6 @@ static void pri_copy_party_name_to_q931(struct q931_party_name *q931_name, const
 }
 
 /*!
- * \internal
  * \brief Copy the PRI party number to the Q.931 party number structure.
  *
  * \param q931_number Q.931 party number structure
@@ -722,7 +721,7 @@ static void pri_copy_party_name_to_q931(struct q931_party_name *q931_name, const
  *
  * \return Nothing
  */
-static void pri_copy_party_number_to_q931(struct q931_party_number *q931_number, const struct pri_party_number *pri_number)
+void pri_copy_party_number_to_q931(struct q931_party_number *q931_number, const struct pri_party_number *pri_number)
 {
 	q931_party_number_init(q931_number);
 	if (pri_number->valid) {
