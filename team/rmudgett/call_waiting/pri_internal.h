@@ -942,6 +942,7 @@ int q931_party_id_presentation(const struct q931_party_id *id);
 const char *q931_call_state_str(enum Q931_CALL_STATE callstate);
 const char *msg2str(int msg);
 
+struct q931_call *q931_find_winning_call(struct q931_call *call);
 int q931_master_pass_event(struct pri *ctrl, struct q931_call *subcall, int msg_type);
 struct pri_subcommand *q931_alloc_subcommand(struct pri *ctrl);
 
