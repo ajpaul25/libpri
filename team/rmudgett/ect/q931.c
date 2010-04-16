@@ -5118,7 +5118,6 @@ static int q931_connect_acknowledge(struct pri *ctrl, q931_call *c)
 }
 
 /*!
- * \internal
  * \brief Find the winning subcall if it exists or current call if not outboundbroadcast.
  *
  * \param call Starting Q.931 call record of search.
@@ -5126,7 +5125,7 @@ static int q931_connect_acknowledge(struct pri *ctrl, q931_call *c)
  * \retval winning-call or given call if not outboundbroadcast.
  * \retval NULL if no winning call yet.
  */
-static struct q931_call *q931_find_winning_call(struct q931_call *call)
+struct q931_call *q931_find_winning_call(struct q931_call *call)
 {
 	struct q931_call *master;
 
