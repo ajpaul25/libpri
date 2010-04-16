@@ -4317,30 +4317,12 @@ int maintenance_service(struct pri *ctrl, int span, int channel, int changestatu
 
 static int status_ies[] = { Q931_CAUSE, Q931_IE_CALL_STATE, -1 };
 
-static int q931_status(struct pri *ctrl, q931_call *c, int cause)
+static int q931_status(struct pri *ctrl, q931_call *call, int cause)
 {
-	q931_call *cur = NULL;
-	if (!cause)
-		cause = PRI_CAUSE_RESPONSE_TO_STATUS_ENQUIRY;
-	if (c->cr > -1)
-		cur = *ctrl->callpool;
-	while(cur) {
-		if (cur->cr == c->cr) {
-			cur->cause=cause;
-			cur->causecode = CODE_CCITT;
-			cur->causeloc = LOC_USER;
-			break;
-		}
-		cur = cur->next;
-	}
-	if (!cur) {
-		pri_message(ctrl, "YYY Here we get reset YYY\n");
-		/* something went wrong, respond with "no such call" */
-		c->ourcallstate = Q931_CALL_STATE_NULL;
-		c->peercallstate = Q931_CALL_STATE_NULL;
-		cur=c;
-	}
-	return send_message(ctrl, cur, Q931_STATUS, status_ies);
+	call->cause = cause;
+	call->causecode = CODE_CCITT;
+	call->causeloc = LOC_USER;
+	return send_message(ctrl, call, Q931_STATUS, status_ies);
 }
 
 static int information_ies[] = { Q931_CALLED_PARTY_NUMBER, -1 };
@@ -7614,7 +7596,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, PRI_CAUSE_INVALID_CALL_REFERENCE);
 		} else
-			q931_status(ctrl,c, 0);
+			q931_status(ctrl,c, PRI_CAUSE_RESPONSE_TO_STATUS_ENQUIRY);
 		break;
 	case Q931_SETUP_ACKNOWLEDGE:
 		stop_t303(c);
@@ -8041,7 +8023,8 @@ static void pri_dl_down_cancelcall(void *data)
 /* Receive an indication from Layer 2 */
 void q931_dl_indication(struct pri *ctrl, int event)
 {
-	q931_call *cur = NULL;
+	struct q931_call *cur;
+	struct q931_call *winner;
 
 	/* Just return if T309 is not enabled. */
 	if (!ctrl || ctrl->timers[PRI_TIMER_T309] < 0)
@@ -8092,14 +8075,23 @@ void q931_dl_indication(struct pri *ctrl, int event)
 				}
 				pri_schedule_del(ctrl, cur->retranstimer);
 				cur->retranstimer = 0;
-				q931_status(ctrl, cur, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				winner = q931_find_winning_call(cur);
+				if (winner) {
+					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				}
 			} else if (cur->ourcallstate != Q931_CALL_STATE_NULL &&
 				cur->ourcallstate != Q931_CALL_STATE_DISCONNECT_REQUEST &&
 				cur->ourcallstate != Q931_CALL_STATE_DISCONNECT_INDICATION &&
 				cur->ourcallstate != Q931_CALL_STATE_RELEASE_REQUEST) {
-
-				/* The STATUS message sent here is not required by Q.931, but it may help anyway. */
-				q931_status(ctrl, cur, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				/*
+				 * The STATUS message sent here is not required by Q.931,
+				 * but it may help anyway.
+				 * This looks like a new call started while the link was down.
+				 */
+				winner = q931_find_winning_call(cur);
+				if (winner) {
+					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				}
 			}
 			cur = cur->next;
 		}
