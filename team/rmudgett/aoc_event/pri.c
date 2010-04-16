@@ -1016,15 +1016,27 @@ int pri_disconnect(struct pri *pri, q931_call *call, int cause)
 
 int pri_channel_bridge(q931_call *call1, q931_call *call2)
 {
+	struct q931_call *winner;
+
 	if (!call1 || !call2)
 		return -1;
 
+	winner = q931_find_winning_call(call1);
+	if (!winner) {
+		/* Cannot transfer: Call 1 does not have a winner yet. */
+		return -1;
+	}
+	call1 = winner;
+
+	winner = q931_find_winning_call(call2);
+	if (!winner) {
+		/* Cannot transfer: Call 2 does not have a winner yet. */
+		return -1;
+	}
+	call2 = winner;
+
 	/* Check to see if we're on the same PRI */
 	if (call1->pri != call2->pri)
-		return -1;
-
-	/* Make sure we have compatible switchtypes */
-	if (call1->pri->switchtype != call2->pri->switchtype)
 		return -1;
 
 	/* Check for bearer capability */
