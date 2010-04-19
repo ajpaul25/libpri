@@ -4048,7 +4048,7 @@ static char *disc2str(int disc)
 	return code2str(disc, discs, sizeof(discs) / sizeof(discs[0]));
 }
 
-void q931_dump(struct pri *ctrl, q931_h *h, int len, int txrx)
+void q931_dump(struct pri *ctrl, int tei, q931_h *h, int len, int txrx)
 {
 	q931_mh *mh;
 	char c;
@@ -4060,9 +4060,9 @@ void q931_dump(struct pri *ctrl, q931_h *h, int len, int txrx)
 	c = txrx ? '>' : '<';
 	pri_message(ctrl, "%c Protocol Discriminator: %s (%d)  len=%d\n", c, disc2str(h->pd), h->pd, len);
 	cref = q931_cr(h);
-	pri_message(ctrl, "%c Call Ref: len=%2d (reference %d/0x%X) (%s)\n",
-		c, h->crlen, cref & ~Q931_CALL_REFERENCE_FLAG, cref & ~Q931_CALL_REFERENCE_FLAG,
-		(cref == Q931_DUMMY_CALL_REFERENCE)
+	pri_message(ctrl, "%c TEI=%d Call Ref: len=%2d (reference %d/0x%X) (%s)\n",
+		c, tei, h->crlen, cref & ~Q931_CALL_REFERENCE_FLAG,
+		cref & ~Q931_CALL_REFERENCE_FLAG, (cref == Q931_DUMMY_CALL_REFERENCE)
 			? "Dummy"
 			: (cref & Q931_CALL_REFERENCE_FLAG)
 				? "Sent to originator" : "Sent from originator");
@@ -4200,7 +4200,7 @@ static int q931_xmit(struct pri *ctrl, int tei, q931_h *h, int len, int cr, int 
 	   message body after the transmit puts the sections of the message in the
 	   right order in the log */
 	if (ctrl->debug & PRI_DEBUG_Q931_DUMP)
-		q931_dump(ctrl, h, len, 1);
+		q931_dump(ctrl, tei, h, len, 1);
 #ifdef LIBPRI_COUNTERS
 	ctrl->q931_txcount++;
 #endif
@@ -6186,7 +6186,7 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 
 	memset(last_ie, 0, sizeof(last_ie));
 	if (ctrl->debug & PRI_DEBUG_Q931_DUMP)
-		q931_dump(ctrl, h, len, 0);
+		q931_dump(ctrl, tei, h, len, 0);
 #ifdef LIBPRI_COUNTERS
 	ctrl->q931_rxcount++;
 #endif
