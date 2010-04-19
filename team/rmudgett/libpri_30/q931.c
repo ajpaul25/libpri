@@ -3530,7 +3530,7 @@ static inline int q931_cr(q931_h *h)
 		cr = h->crv[0];
 		if (cr & 0x80) {
 			cr &= ~0x80;
-			cr |= 0x8000;
+			cr |= Q931_CALL_REFERENCE_FLAG;
 		}
 		break;
 	case 0:
@@ -3638,6 +3638,51 @@ void q931_init_call_record(struct pri *ctrl, struct q931_call *call, int cr)
 }
 
 /*!
+ * \internal
+ * \brief Create a new call record.
+ *
+ * \param ctrl D channel controller.
+ * \param cr Call Reference identifier.
+ *
+ * \retval record on success.
+ * \retval NULL on error.
+ */
+static struct q931_call *q931_create_call_record(struct pri *ctrl, int cr)
+{
+	struct q931_call *call;
+	struct q931_call *prev;
+	struct pri *master;
+
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "-- Making new call for cref %d\n", cr);
+	}
+
+	call = calloc(1, sizeof(*call));
+	if (!call) {
+		return NULL;
+	}
+
+	/* Initialize call structure. */
+	q931_init_call_record(ctrl, call, cr);
+
+	/* Find the master - He has the call pool */
+	master = PRI_MASTER(ctrl);
+
+	/* Append to the list end */
+	if (*master->callpool) {
+		/* Find the list end. */
+		for (prev = *master->callpool; prev->next; prev = prev->next) {
+		}
+		prev->next = call;
+	} else {
+		/* List was empty. */
+		*master->callpool = call;
+	}
+
+	return call;
+}
+
+/*!
  * \brief Find a call in the active call pool.
  *
  * \param ctrl D channel controller.
@@ -3648,33 +3693,49 @@ void q931_init_call_record(struct pri *ctrl, struct q931_call *call, int cr)
  */
 q931_call *q931_find_call(struct pri *ctrl, int cr)
 {
-	q931_call *cur;
+	struct q931_call *cur;
 	struct pri *master;
 
 	if (cr == Q931_DUMMY_CALL_REFERENCE) {
 		return ctrl->dummy_call;
 	}
 
-	/* Find the master  - He has the call pool */
+	/* Find the master - He has the call pool */
 	master = PRI_MASTER(ctrl);
 
-	for (cur = *master->callpool; cur; cur = cur->next) {
-		if (cur->cr == cr) {
-			/* Found existing call. */
-			switch (ctrl->switchtype) {
-			case PRI_SWITCH_GR303_EOC:
-			case PRI_SWITCH_GR303_EOC_PATH:
-			case PRI_SWITCH_GR303_TMC:
-			case PRI_SWITCH_GR303_TMC_SWITCHING:
+	if (BRI_NT_PTMP(ctrl) && !(cr & Q931_CALL_REFERENCE_FLAG)) {
+		if (ctrl->tei == Q921_TEI_GROUP) {
+			/* Broadcast TEI.  This is bad.  We are using the wrong ctrl structure. */
+			pri_error(ctrl, "Looking for cref %d when using broadcast TEI.\n", cr);
+			return NULL;
+		}
+
+		/* We are looking for a call reference value that the other side allocated. */
+		for (cur = *master->callpool; cur; cur = cur->next) {
+			if (cur->cr == cr && cur->pri == ctrl) {
+				/* Found existing call.  The call reference and TEI matched. */
 				break;
-			default:
-				if (!ctrl->bri) {
-					/* PRI is set to whoever called us */
-					cur->pri = ctrl;
+			}
+		}
+	} else {
+		for (cur = *master->callpool; cur; cur = cur->next) {
+			if (cur->cr == cr) {
+				/* Found existing call. */
+				switch (ctrl->switchtype) {
+				case PRI_SWITCH_GR303_EOC:
+				case PRI_SWITCH_GR303_EOC_PATH:
+				case PRI_SWITCH_GR303_TMC:
+				case PRI_SWITCH_GR303_TMC_SWITCHING:
+					break;
+				default:
+					if (!ctrl->bri) {
+						/* PRI is set to whoever called us */
+						cur->pri = ctrl;
+					}
+					break;
 				}
 				break;
 			}
-			break;
 		}
 	}
 	return cur;
@@ -3682,86 +3743,58 @@ q931_call *q931_find_call(struct pri *ctrl, int cr)
 
 static q931_call *q931_getcall(struct pri *ctrl, int cr)
 {
-	q931_call *cur;
-	q931_call *prev;
-	struct pri *master;
+	struct q931_call *cur;
 
-	if (cr == Q931_DUMMY_CALL_REFERENCE) {
-		return ctrl->dummy_call;
+	cur = q931_find_call(ctrl, cr);
+	if (cur) {
+		return cur;
 	}
 
-	/* Find the master  - He has the call pool */
-	master = PRI_MASTER(ctrl);
-
-	cur = *master->callpool;
-	prev = NULL;
-	while (cur) {
-		if (cur->cr == cr) {
-			/* Found existing call. */
-			switch (ctrl->switchtype) {
-			case PRI_SWITCH_GR303_EOC:
-			case PRI_SWITCH_GR303_EOC_PATH:
-			case PRI_SWITCH_GR303_TMC:
-			case PRI_SWITCH_GR303_TMC_SWITCHING:
-				break;
-			default:
-				if (!ctrl->bri) {
-					/* PRI is set to whoever called us */
-					cur->pri = ctrl;
-				}
-				break;
-			}
-			return cur;
-		}
-		prev = cur;
-		cur = cur->next;
-	}
-
-	/* No call exists, make a new one */
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "-- Making new call for cr %d\n", cr);
-	}
-
-	cur = calloc(1, sizeof(*cur));
-	if (!cur) {
-		return NULL;
-	}
-
-	/* Initialize call structure. */
-	q931_init_call_record(ctrl, cur, cr);
-
-	/* Append to end of list */
-	if (prev) {
-		prev->next = cur;
-	} else {
-		*master->callpool = cur;
-	}
-
-	return cur;
+	/* No call record exists, make a new one */
+	return q931_create_call_record(ctrl, cr);
 }
 
 q931_call *q931_new_call(struct pri *ctrl)
 {
-	q931_call *cur;
+	struct q931_call *cur;
+	struct pri *master;
+	int first_cref;
+	int cref;
 
+	/* Find the master - He has the call pool */
+	master = PRI_MASTER(ctrl);
+
+	/* Find a new call reference value. */
+	first_cref = master->cref;
 	do {
-		cur = *ctrl->callpool;
-		ctrl->cref++;
-		if (!ctrl->bri) {
-			if (ctrl->cref > 32767)
-				ctrl->cref = 1;
-		} else {
-			if (ctrl->cref > 127)
-				ctrl->cref = 1;
-		}
-		while(cur) {
-			if (cur->cr == (0x8000 | ctrl->cref))
-				break;
-			cur = cur->next;
-		}
-	} while(cur);
+		cref = Q931_CALL_REFERENCE_FLAG | master->cref;
 
-	return q931_getcall(ctrl, ctrl->cref | 0x8000);
+		/* Next call reference. */
+		++master->cref;
+		if (!master->bri) {
+			if (master->cref > 32767) {
+				master->cref = 1;
+			}
+		} else {
+			if (master->cref > 127) {
+				master->cref = 1;
+			}
+		}
+
+		/* Is the call reference value in use? */
+		for (cur = *master->callpool; cur; cur = cur->next) {
+			if (cur->cr == cref) {
+				/* Yes it is in use. */
+				if (first_cref == master->cref) {
+					/* All call reference values are in use! */
+					return NULL;
+				}
+				break;
+			}
+		}
+	} while (cur);
+
+	return q931_create_call_record(ctrl, cref);
 }
 
 static void stop_t303(struct q931_call *call);
@@ -4028,10 +4061,11 @@ void q931_dump(struct pri *ctrl, q931_h *h, int len, int txrx)
 	pri_message(ctrl, "%c Protocol Discriminator: %s (%d)  len=%d\n", c, disc2str(h->pd), h->pd, len);
 	cref = q931_cr(h);
 	pri_message(ctrl, "%c Call Ref: len=%2d (reference %d/0x%X) (%s)\n",
-		c, h->crlen, cref & 0x7FFF, cref & 0x7FFF,
+		c, h->crlen, cref & ~Q931_CALL_REFERENCE_FLAG, cref & ~Q931_CALL_REFERENCE_FLAG,
 		(cref == Q931_DUMMY_CALL_REFERENCE)
 			? "Dummy"
-			: (cref & 0x8000) ? "Terminator" : "Originator");
+			: (cref & Q931_CALL_REFERENCE_FLAG)
+				? "Sent to originator" : "Sent from originator");
 
 	/* Message header begins at the end of the call reference number */
 	mh = (q931_mh *)(h->contents + h->crlen);
@@ -4130,19 +4164,20 @@ static void init_header(struct pri *ctrl, q931_call *call, unsigned char *buf, q
 	} else if (!ctrl->bri) {
 		/* Two bytes of Call Reference. */
 		h->crlen = 2;
-		/* Invert the top bit to make it from our sense */
-		crv = (unsigned) call->cr;
-		h->crv[0] = ((crv >> 8) ^ 0x80) & 0xff;
-		h->crv[1] = crv & 0xff;
-		if (ctrl->subchannel && !ctrl->bri) {
-			/* On GR-303, top bit is always 0 */
-			h->crv[0] &= 0x7f;
+		if (ctrl->subchannel) {
+			/* On GR-303, Q931_CALL_REFERENCE_FLAG is always 0 */
+			crv = ((unsigned) call->cr) & ~Q931_CALL_REFERENCE_FLAG;
+		} else {
+			/* Invert the Q931_CALL_REFERENCE_FLAG to make it from our sense */
+			crv = ((unsigned) call->cr) ^ Q931_CALL_REFERENCE_FLAG;
 		}
+		h->crv[0] = (crv >> 8) & 0xff;
+		h->crv[1] = crv & 0xff;
 	} else {
 		h->crlen = 1;
-		/* Invert the top bit to make it from our sense */
-		crv = (unsigned) call->cr;
-		h->crv[0] = (((crv >> 8) ^ 0x80) & 0x80) | (crv & 0x7f);
+		/* Invert the Q931_CALL_REFERENCE_FLAG to make it from our sense */
+		crv = ((unsigned) call->cr) ^ Q931_CALL_REFERENCE_FLAG;
+		h->crv[0] = ((crv >> 8) & 0x80) | (crv & 0x7f);
 	}
 	*hb = h;
 
@@ -4293,7 +4328,7 @@ int maintenance_service(struct pri *ctrl, int span, int channel, int changestatu
 	int pd = MAINTENANCE_PROTOCOL_DISCRIMINATOR_1;
 	int mt = ATT_SERVICE;
 
-	c = q931_getcall(ctrl, 0 | 0x8000);
+	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c) {
 		return -1;
 	}
@@ -4786,7 +4821,7 @@ int q931_restart(struct pri *ctrl, int channel)
 {
 	struct q931_call *c;
 
-	c = q931_getcall(ctrl, 0 | 0x8000);
+	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c)
 		return -1;
 	if (!channel)
@@ -8035,8 +8070,7 @@ void q931_dl_indication(struct pri *ctrl, int event)
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 			pri_message(ctrl, DBGHEAD "link is DOWN\n", DBGINFO);
 		}
-		cur = *ctrl->callpool;
-		while(cur) {
+		for (cur = *ctrl->callpool; cur; cur = cur->next) {
 			if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
 				/* For a call in Active state, activate T309 only if there is no timer already running. */
 				if (!cur->retranstimer) {
@@ -8058,15 +8092,13 @@ void q931_dl_indication(struct pri *ctrl, int event)
 				pri_schedule_del(ctrl, cur->retranstimer);
 				cur->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, cur);
 			}
-			cur = cur->next;
 		}
 		break;
 	case PRI_EVENT_DCHAN_UP:
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 			pri_message(ctrl, DBGHEAD "link is UP\n", DBGINFO);
 		}
-		cur = *ctrl->callpool;
-		while(cur) {
+		for (cur = *ctrl->callpool; cur; cur = cur->next) {
 			if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE && cur->retranstimer) {
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 					pri_message(ctrl,
@@ -8093,7 +8125,6 @@ void q931_dl_indication(struct pri *ctrl, int event)
 					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
 				}
 			}
-			cur = cur->next;
 		}
 		break;
 	default:
