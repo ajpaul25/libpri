@@ -3691,7 +3691,7 @@ static struct q931_call *q931_create_call_record(struct pri *ctrl, int cr)
  * \retval call if found.
  * \retval NULL if not found.
  */
-q931_call *q931_find_call(struct pri *ctrl, int cr)
+struct q931_call *q931_find_call(struct pri *ctrl, int cr)
 {
 	struct q931_call *cur;
 	struct pri *master;
@@ -3741,7 +3741,7 @@ q931_call *q931_find_call(struct pri *ctrl, int cr)
 	return cur;
 }
 
-static q931_call *q931_getcall(struct pri *ctrl, int cr)
+static struct q931_call *q931_getcall(struct pri *ctrl, int cr)
 {
 	struct q931_call *cur;
 
@@ -3754,7 +3754,7 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	return q931_create_call_record(ctrl, cr);
 }
 
-q931_call *q931_new_call(struct pri *ctrl)
+struct q931_call *q931_new_call(struct pri *ctrl)
 {
 	struct q931_call *cur;
 	struct pri *master;
@@ -6172,7 +6172,7 @@ static struct q931_call *q931_get_subcall(struct pri *ctrl, struct q931_call *ma
 int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 {
 	q931_mh *mh;
-	q931_call *c;
+	struct q931_call *c;
 	q931_ie *ie;
 	unsigned int x;
 	int y;
