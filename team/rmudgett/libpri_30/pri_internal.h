@@ -593,8 +593,6 @@ struct q931_call {
 							   -1 - No reverse charging
 							    1 - Reverse charging
 							0,2-7 - Reserved for future use */
-	/*! \brief TEI associated with call */
-	int tei;
 	int t303_timer;
 	int t303_expirycnt;
 
