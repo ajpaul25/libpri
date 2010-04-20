@@ -962,6 +962,18 @@ int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_E
 void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
 /*!
+ * \brief Send AOC request message.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg.
+ * \param aoc types to request
+ *
+ * \retval 0 on success
+ * \retval -1 on failure
+ */
+int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, enum PRI_AOC_REQUEST aoc_request_flag);
+
+/*!
  * \brief Get the master PRI control structure.
  *
  * \param ctrl D channel controller.

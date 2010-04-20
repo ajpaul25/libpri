@@ -1582,19 +1582,7 @@ int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, int invok
  * \retval 0 on success
  * \retval -1 on failure
  */
-int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, int response, const int invoke_id);
-
-/*!
- * \brief Send AOC request message.
- *
- * \param ctrl D channel controller.
- * \param call Q.931 call leg.
- * \param aoc request message to send
- *
- * \retval 0 on success
- * \retval -1 on failure
- */
-int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *c, const struct pri_subcmd_aoc_request *aoc_request);
+int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, int response, int invoke_id);
 
 /*!
  * \brief Send AOC-S message.

@@ -691,7 +691,7 @@ static enum PRI_AOC_E_BILLING_ID aoc_etsi_subcmd_aoc_e_billing_id(int billing_id
  * \retval -1 failure
  * \retval etsi billing id
  */
-static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
+static int aoc_subcmd_aoc_e_etsi_billing_id(enum PRI_AOC_E_BILLING_ID billing_id)
 {
 	switch (billing_id) {
 	case PRI_AOC_E_BILLING_ID_NORMAL:
@@ -710,6 +710,8 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
 		return 6;
 	case PRI_AOC_E_BILLING_ID_CALL_TRANSFER:
 		return 7;
+	case PRI_AOC_E_BILLING_ID_NOT_AVAILABLE:
+		break;
 	}
 
 	return -1;
@@ -725,7 +727,7 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(int billing_id)
  * \retval -1 failure
  * \retval etsi billing id
  */
-static int aoc_subcmd_aoc_d_etsi_billing_id(int billing_id)
+static int aoc_subcmd_aoc_d_etsi_billing_id(enum PRI_AOC_D_BILLING_ID billing_id)
 {
 	switch (billing_id) {
 	case PRI_AOC_D_BILLING_ID_NORMAL:
@@ -734,6 +736,8 @@ static int aoc_subcmd_aoc_d_etsi_billing_id(int billing_id)
 		return 1;
 	case PRI_AOC_D_BILLING_ID_CREDIT_CARD:
 		return 2;
+	case PRI_AOC_D_BILLING_ID_NOT_AVAILABLE:
+		break;
 	}
 
 	return -1;
@@ -1260,7 +1264,7 @@ static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned c
  * \retval NULL on error.
  */
 static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
-	unsigned char *end, const int request)
+	unsigned char *end, int request)
 {
 	struct rose_msg_invoke msg;
 
@@ -1307,7 +1311,7 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
+static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1349,7 +1353,7 @@ static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, cons
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_de_request_response_encode(struct pri *ctrl, q931_call *call, const int response, const int invoke_id)
+static int aoc_de_request_response_encode(struct pri *ctrl, q931_call *call, int response, int invoke_id)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1386,10 +1390,8 @@ static int aoc_de_request_response_encode(struct pri *ctrl, q931_call *call, con
 static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct pri *ctrl, struct q931_call *call, struct apdu_event *apdu, const struct apdu_msg_data *msg)
 {
 	struct pri_subcommand *subcmd;
-	int *request;
 
-	if (!PRI_MASTER(ctrl)->aoc_support ||
-		(reason == APDU_CALLBACK_REASON_ERROR) ||
+	if ((reason == APDU_CALLBACK_REASON_ERROR) ||
 		(reason == APDU_CALLBACK_REASON_CLEANUP)) {
 		return 1;
 	}
@@ -1400,9 +1402,8 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 		return 1;
 	}
 
-	request = apdu->response.user.ptr;
 	memset(&subcmd->u.aoc_request_response, 0, sizeof(subcmd->u.aoc_request_response));
-	subcmd->u.aoc_request_response.charging_request = *request;
+	subcmd->u.aoc_request_response.charging_request = apdu->response.user.value;
 	subcmd->cmd = PRI_SUBCMD_AOC_CHARGING_REQ_RSP;
 
 	switch (reason) {
@@ -1469,7 +1470,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
  * \retval 0 on success.
  * \retval -1 on error.
  */
-static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const int request)
+static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, int request)
 {
 	unsigned char buffer[255];
 	unsigned char *end = 0;
@@ -1487,7 +1488,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, const 
 	  * TODO, this may need to be configurable */
 	response.timeout_time = 60000;
 	response.callback = pri_aoc_request_get_response;
-	response.user.ptr = (void *) &request;
+	response.user.value = request;
 
 	/* in the case of an AOC request message, we queue this on a SETUP message and
 	 * do not have to send it ourselves in this function */
@@ -1615,7 +1616,7 @@ static int aoc_e_encode(struct pri *ctrl, q931_call *call, const struct pri_subc
 	return 0;
 }
 
-int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, const int response, const int invoke_id)
+int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, int response, int invoke_id)
 {
 	if (!ctrl || !call)
 		return -1;
@@ -1633,7 +1634,7 @@ int pri_aoc_de_request_response_send(struct pri *ctrl, q931_call *call, const in
 	return 0;
 }
 
-int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, const int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
+int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	if (!ctrl || !call)
 		return -1;
@@ -1651,7 +1652,7 @@ int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, const int
 	return 0;
 }
 
-int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_request *aoc_request)
+int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, enum PRI_AOC_REQUEST aoc_request_flag)
 {
 	if (!ctrl || !call)
 		return -1;
@@ -1661,13 +1662,13 @@ int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, const struc
 	case PRI_SWITCH_EUROISDN_T1:
 	{
 		int res = 0;
-		if (aoc_request->charging_request & PRI_AOC_REQUEST_S) {
+		if (aoc_request_flag & PRI_AOC_REQUEST_S) {
 			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_S);
 		}
-		if (aoc_request->charging_request & PRI_AOC_REQUEST_D) {
+		if (aoc_request_flag & PRI_AOC_REQUEST_D) {
 			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_D);
 		}
-		if (aoc_request->charging_request & PRI_AOC_REQUEST_E) {
+		if (aoc_request_flag & PRI_AOC_REQUEST_E) {
 			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_E);
 		}
 		return res;
