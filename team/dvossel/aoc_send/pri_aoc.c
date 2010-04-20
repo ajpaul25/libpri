@@ -119,7 +119,7 @@ static void aoc_etsi_subcmd_recorded_currency(struct pri_aoc_recorded_currency *
 
 /*!
  * \internal
- * \brief Fill in the the ETSI recorded currency from the subcmd currency info 
+ * \brief Fill in the the ETSI recorded currency from the subcmd currency info
  *
  * \param subcmd_recorded AOC subcmd recorded currency.
  * \param etsi_recorded AOC ETSI recorded currency.
@@ -166,7 +166,7 @@ static void aoc_etsi_subcmd_recorded_units(struct pri_aoc_recorded_units *subcmd
 
 /*!
  * \internal
- * \brief Fill in the ETSI recorded units from the AOC subcmd recorded units. 
+ * \brief Fill in the ETSI recorded units from the AOC subcmd recorded units.
  *
  * \param subcmd_recorded AOC subcmd recorded units list.
  * \param etsi_recorded AOC ETSI recorded units list.
@@ -202,16 +202,18 @@ static void aoc_enc_etsi_subcmd_recorded_units(const struct pri_aoc_recorded_uni
  * \brief Handle the ETSI ChargingRequest.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
+ * \param call Q.931 call leg.
  * \param invoke Decoded ROSE invoke message contents.
  *
  * \return Nothing
  */
-void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke)
+void aoc_etsi_aoc_request(struct pri *ctrl, q931_call *call, const struct rose_msg_invoke *invoke)
 {
 	struct pri_subcommand *subcmd;
 	int request;
 
 	if (!PRI_MASTER(ctrl)->aoc_support) {
+		send_facility_error(ctrl, call, invoke->invoke_id, ROSE_ERROR_Gen_NotSubscribed);
 		return;
 	}
 	switch (invoke->args.etsi.ChargingRequest.charging_case) {
@@ -225,11 +227,13 @@ void aoc_etsi_aoc_request(struct pri *ctrl, const struct rose_msg_invoke *invoke
 		request = PRI_AOC_REQUEST_E;
 		break;
 	default:
+		send_facility_error(ctrl, call, invoke->invoke_id, ROSE_ERROR_Gen_NotImplemented);
 		return;
 	}
 
 	subcmd = q931_alloc_subcommand(ctrl);
 	if (!subcmd) {
+		send_facility_error(ctrl, call, invoke->invoke_id, ROSE_ERROR_Gen_NotAvailable);
 		return;
 	}
 
@@ -685,8 +689,7 @@ static enum PRI_AOC_E_BILLING_ID aoc_etsi_subcmd_aoc_e_billing_id(int billing_id
  * \internal
  * \brief Determine the etsi aoc-e billing_id value from the subcmd.
  *
- * \param billing_id_present TRUE if billing_id valid.
- * \param billing_id ETSI billing id from ROSE.
+ * \param PRI_AOC_E_BILLING_ID billing_id
  *
  * \retval -1 failure
  * \retval etsi billing id
@@ -721,8 +724,7 @@ static int aoc_subcmd_aoc_e_etsi_billing_id(enum PRI_AOC_E_BILLING_ID billing_id
  * \internal
  * \brief Determine the etsi aoc-d billing_id value from the subcmd.
  *
- * \param billing_id_present TRUE if billing_id valid.
- * \param billing_id ETSI billing id from ROSE.
+ * \param PRI_AOC_D_BILLING_ID billing_id
  *
  * \retval -1 failure
  * \retval etsi billing id
@@ -918,7 +920,6 @@ static unsigned char *enc_etsi_aoce_currency(struct pri *ctrl, unsigned char *po
 	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
 		msg.args.etsi.AOCECurrency.currency_info.charging_association_present = 1;
 		msg.args.etsi.AOCECurrency.currency_info.charging_association.type = 1; /* number */
-		q931_party_number_init(&q931_number);
 		pri_copy_party_number_to_q931(&q931_number, &aoc_e->associated.charge.number);
 		q931_copy_number_to_rose(ctrl,
 			&msg.args.etsi.AOCECurrency.currency_info.charging_association.number,
@@ -989,7 +990,6 @@ static unsigned char *enc_etsi_aoce_charging_unit(struct pri *ctrl, unsigned cha
 	case PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER:
 		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association_present = 1;
 		msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.type = 1; /* number */
-		q931_party_number_init(&q931_number);
 		pri_copy_party_number_to_q931(&q931_number, &aoc_e->associated.charge.number);
 		q931_copy_number_to_rose(ctrl,
 			&msg.args.etsi.AOCEChargingUnit.charging_unit.charging_association.number,
@@ -1306,7 +1306,7 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
  * \param invoke_id
  * \param aoc_s Optional AOC-S rate list for response
  *
- * \note if aoc_s is NULL, then a response will be sent back as AOC-S not available. 
+ * \note if aoc_s is NULL, then a response will be sent back as AOC-S not available.
  *
  * \retval 0 on success.
  * \retval -1 on error.
@@ -1485,7 +1485,8 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, int re
 	memset(&response, 0, sizeof(response));
 	response.invoke_id = ctrl->last_invoke;
 	 /* Set a custom timeout period. Wait 60 seconds for AOC-S response
-	  * TODO, this may need to be configurable */
+	  * TODO, "Timing out" when a specific message comes in would be a
+	  * better solution than a simple timout in this case */
 	response.timeout_time = 60000;
 	response.callback = pri_aoc_request_get_response;
 	response.user.value = request;
