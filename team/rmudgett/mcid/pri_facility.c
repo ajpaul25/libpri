@@ -3654,7 +3654,7 @@ static int rose_mcid_req_encode(struct pri *ctrl, q931_call *call)
 
 	memset(&response, 0, sizeof(response));
 	response.invoke_id = ctrl->last_invoke;
-	response.timeout_time = -1;
+	response.timeout_time = ctrl->timers[PRI_TIMER_T_RESPONSE];
 	response.callback = mcid_req_response;
 
 	return pri_call_apdu_queue(call, Q931_FACILITY, buffer, end - buffer, &response);
