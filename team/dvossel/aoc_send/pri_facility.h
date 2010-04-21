@@ -128,15 +128,21 @@ union apdu_callback_param {
 /* So calls to pri_call_apdu_find() will not find an aliased event. */
 #define APDU_INVALID_INVOKE_ID  0x10000
 
+#define APDU_TIMEOUT_MSGS_ONLY	-1
+
 struct apdu_callback_data {
 	/*! APDU invoke id to match with any response messages. (Result/Error/Reject) */
 	int invoke_id;
 	/*!
 	 * \brief Time to wait for responses to APDU in ms.
 	 * \note Set to 0 if send the message only.
-	 * \note Set to less than 0 for PRI_TIMER_T_RESPONSE time.
+	 * \note Set to APDU_TIMEOUT_MSGS_ONLY to "timeout" with the message_type list only.
 	 */
 	int timeout_time;
+	/*! Number of Q.931 messages the APDU can "timeout" on. */
+	unsigned num_messages;
+	/*! Q.931 message list to "timeout" on. */
+	int message_type[5];
 	/*!
 	 * \brief APDU callback function.
 	 *
