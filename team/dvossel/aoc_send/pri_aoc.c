@@ -1477,17 +1477,15 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, int re
 	struct apdu_callback_data response;
 
 	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), request);
-
 	if (!end) {
 		return -1;
 	}
 
 	memset(&response, 0, sizeof(response));
 	response.invoke_id = ctrl->last_invoke;
-	 /* Set a custom timeout period. Wait 60 seconds for AOC-S response
-	  * TODO, "Timing out" when a specific message comes in would be a
-	  * better solution than a simple timout in this case */
-	response.timeout_time = 60000;
+	response.timeout_time = APDU_TIMEOUT_MSGS_ONLY;
+	response.num_messages = 1;
+	response.message_type[0] = Q931_CONNECT;
 	response.callback = pri_aoc_request_get_response;
 	response.user.value = request;
 
@@ -1655,14 +1653,19 @@ int pri_aoc_s_request_response_send(struct pri *ctrl, q931_call *call, int invok
 
 int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, enum PRI_AOC_REQUEST aoc_request_flag)
 {
-	if (!ctrl || !call)
-		return -1;
+	int res;
 
 	switch (ctrl->switchtype) {
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
-	{
-		int res = 0;
+		if (BRI_NT_PTMP(ctrl)) {
+			/*
+			 * We are not setup to handle responses from multiple phones.
+			 * Besides, it is silly to ask for AOC from a phone.
+			 */
+			return -1;
+		}
+		res = 0;
 		if (aoc_request_flag & PRI_AOC_REQUEST_S) {
 			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_S);
 		}
@@ -1673,7 +1676,6 @@ int pri_aoc_charging_request_send(struct pri *ctrl, q931_call *call, enum PRI_AO
 			res |= aoc_charging_request_encode(ctrl, call, PRI_AOC_REQUEST_E);
 		}
 		return res;
-	}
 	case PRI_SWITCH_QSIG:
 		break;
 	default:
