@@ -2496,7 +2496,7 @@ int etsi_initiate_transfer(struct pri *ctrl, q931_call *call_1, q931_call *call_
 
 	memset(&response, 0, sizeof(response));
 	response.invoke_id = ctrl->last_invoke;
-	response.timeout_time = -1;
+	response.timeout_time = ctrl->timers[PRI_TIMER_T_RESPONSE];
 	response.callback = etsi_ect_link_id_rsp;
 	response.user.value = call_2->cr;
 
