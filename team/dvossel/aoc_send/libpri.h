@@ -871,7 +871,6 @@ struct pri_subcmd_aoc_e {
 };
 
 enum PRI_AOC_REQ_RSP {
-
 	/* Error Results */
 	PRI_AOC_REQ_RSP_ERROR_NOT_IMPLEMENTED,
 	PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE,
@@ -893,7 +892,6 @@ enum PRI_AOC_REQUEST {
 };
 
 struct pri_subcmd_aoc_request_response {
-
 	/*!
 	 * \brief aoc_s data from response
 	 */

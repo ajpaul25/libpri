@@ -3157,8 +3157,7 @@ int pri_call_add_standard_apdus(struct pri *ctrl, q931_call *call)
 	case PRI_SWITCH_EUROISDN_E1:
 	case PRI_SWITCH_EUROISDN_T1:
 		if (call->aoc_charging_request) {
-
-			pri_aoc_charging_request_send(ctrl, call, call->aoc_charging_request);
+			aoc_charging_request_send(ctrl, call, call->aoc_charging_request);
 		}
 		if (PTMP_MODE(ctrl)) {
 			/* PTMP mode */
