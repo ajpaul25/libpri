@@ -765,6 +765,10 @@ struct pri_aoc_s_element {
 };
 
 struct pri_subcmd_aoc_s {
+	/*!
+	 * \brief Number of items in the rate list.
+	 * \note If the list is empty then the charging information is not available.
+	 */
 	int num_items;
 	struct pri_aoc_s_element item[10];
 };
