@@ -1036,8 +1036,9 @@ int pri_channel_bridge(q931_call *call1, q931_call *call2)
 	call2 = winner;
 
 	/* Check to see if we're on the same PRI */
-	if (call1->pri != call2->pri)
+	if (call1->pri != call2->pri) {
 		return -1;
+	}
 
 	/* Check for bearer capability */
 	if (call1->bc.transcapability != call2->bc.transcapability)
