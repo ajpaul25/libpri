@@ -352,30 +352,30 @@ static void enc_etsi_subcmd_aoc_s_currency_info(const struct pri_subcmd_aoc_s *a
 		switch (aoc_s->item[idx].chargeable) {
 		default:
 		case PRI_AOC_CHARGED_ITEM_BASIC_COMMUNICATION:
-			info->list[idx].charged_item = 0;
+			info->list[idx].charged_item = 0;/* basicCommunication */
 			break;
 		case PRI_AOC_CHARGED_ITEM_CALL_ATTEMPT:
-			info->list[idx].charged_item = 1;
+			info->list[idx].charged_item = 1;/* callAttempt */
 			break;
 		case PRI_AOC_CHARGED_ITEM_CALL_SETUP:
-			info->list[idx].charged_item = 2;
+			info->list[idx].charged_item = 2;/* callSetup */
 			break;
 		case PRI_AOC_CHARGED_ITEM_USER_USER_INFO:
-			info->list[idx].charged_item = 3;
+			info->list[idx].charged_item = 3;/* userToUserInfo */
 			break;
 		case PRI_AOC_CHARGED_ITEM_SUPPLEMENTARY_SERVICE:
-			info->list[idx].charged_item = 4;
+			info->list[idx].charged_item = 4;/* operationOfSupplementaryServ */
 			break;
 		}
 
 		/* Rate method being used. */
 		switch (aoc_s->item[idx].rate_type) {
 		case PRI_AOC_RATE_TYPE_SPECIAL_CODE:
-			info->list[idx].currency_type = 0;
+			info->list[idx].currency_type = 0;/* specialChargingCode */
 			info->list[idx].u.special_charging_code = aoc_s->item[idx].rate.special;
 			break;
 		case PRI_AOC_RATE_TYPE_DURATION:
-			info->list[idx].currency_type = 1;
+			info->list[idx].currency_type = 1;/* durationCurrency */
 			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.duration.amount,
 				&info->list[idx].u.duration.amount);
 			aoc_enc_etsi_subcmd_time(&aoc_s->item[idx].rate.duration.time,
@@ -393,8 +393,7 @@ static void enc_etsi_subcmd_aoc_s_currency_info(const struct pri_subcmd_aoc_s *a
 				sizeof((char *) info->list[idx].u.duration.currency));
 			break;
 		case PRI_AOC_RATE_TYPE_FLAT:
-			info->list[idx].currency_type = 2;
-
+			info->list[idx].currency_type = 2;/* flatRateCurrency */
 			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.flat.amount,
 				&info->list[idx].u.flat_rate.amount);
 			libpri_copy_string((char *) info->list[idx].u.flat_rate.currency,
@@ -402,7 +401,7 @@ static void enc_etsi_subcmd_aoc_s_currency_info(const struct pri_subcmd_aoc_s *a
 				sizeof((char *) info->list[idx].u.flat_rate.currency));
 			break;
 		case PRI_AOC_RATE_TYPE_VOLUME:
-			info->list[idx].currency_type = 3;
+			info->list[idx].currency_type = 3;/* volumeRateCurrency */
 			aoc_enc_etsi_subcmd_amount(&aoc_s->item[idx].rate.volume.amount,
 				&info->list[idx].u.volume_rate.amount);
 			info->list[idx].u.volume_rate.unit = aoc_s->item[idx].rate.volume.unit;
@@ -411,15 +410,21 @@ static void enc_etsi_subcmd_aoc_s_currency_info(const struct pri_subcmd_aoc_s *a
 				sizeof((char *) info->list[idx].u.volume_rate.currency));
 			break;
 		case PRI_AOC_RATE_TYPE_FREE:
-			info->list[idx].currency_type = 4;
+			info->list[idx].currency_type = 4;/* freeOfCharge */
 			break;
-		case PRI_AOC_RATE_TYPE_NOT_AVAILABLE:
 		default:
-			info->list[idx].currency_type = 5;
+		case PRI_AOC_RATE_TYPE_NOT_AVAILABLE:
+			info->list[idx].currency_type = 5;/* currencyInfoNotAvailable */
 			break;
 		}
-		info->num_records++;
 	}
+	if (!idx) {
+		/* We cannot send an empty list so create a dummy list element. */
+		info->list[idx].charged_item = 0;/* basicCommunication */
+		info->list[idx].currency_type = 5;/* currencyInfoNotAvailable */
+		++idx;
+	}
+	info->num_records = idx;
 }
 
 /*!
@@ -1227,10 +1232,8 @@ static unsigned char *enc_etsi_aoc_request_response(struct pri *ctrl, unsigned c
 		msg_error.code = ROSE_ERROR_Gen_NotImplemented;
 		is_error = 1;
 		break;
-	case PRI_AOC_REQ_RSP_ERROR:
-	case PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE:
-	case PRI_AOC_REQ_RSP_ERROR_TIMEOUT:
 	default:
+	case PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE:
 		is_error = 1;
 		msg_error.code = ROSE_ERROR_Gen_NotAvailable;
 		break;
@@ -1311,12 +1314,15 @@ static unsigned char *enc_etsi_aoc_request(struct pri *ctrl, unsigned char *pos,
 static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, int invoke_id, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
-	unsigned char *end = 0;
-	int response = PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE;
+	unsigned char *end = NULL;
+	int response;
 
-	if (aoc_s && aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
+	if (!aoc_s) {
+		response = PRI_AOC_REQ_RSP_ERROR_NOT_AVAILABLE;
+	} else if (aoc_s->num_items
+		&& aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
 		response = PRI_AOC_REQ_RSP_SPECIAL_ARR;
-	} else if (aoc_s) {
+	} else {
 		response = PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST;
 	}
 
@@ -1351,7 +1357,7 @@ static int aoc_s_request_response_encode(struct pri *ctrl, q931_call *call, int 
 static int aoc_de_request_response_encode(struct pri *ctrl, q931_call *call, enum PRI_AOC_REQ_RSP response, int invoke_id)
 {
 	unsigned char buffer[255];
-	unsigned char *end = 0;
+	unsigned char *end = NULL;
 
 	end = enc_etsi_aoc_request_response(ctrl, buffer, buffer + sizeof(buffer), response, invoke_id, NULL);
 	if (!end) {
@@ -1421,13 +1427,13 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 		break;
 	case APDU_CALLBACK_REASON_MSG_RESULT:
 		switch (msg->response.result->args.etsi.ChargingRequest.type) {
-		case 0:
+		case 0:/* currency_info_list */
 			subcmd->u.aoc_request_response.valid_aoc_s = 1;
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_CURRENCY_INFO_LIST;
 			aoc_etsi_subcmd_aoc_s_currency_info(&subcmd->u.aoc_request_response.aoc_s,
 				&msg->response.result->args.etsi.ChargingRequest.u.currency_info);
 			break;
-		case 1:
+		case 1:/* special_arrangement_info */
 			subcmd->u.aoc_request_response.valid_aoc_s = 1;
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_SPECIAL_ARR;
 			subcmd->u.aoc_request_response.aoc_s.num_items = 1;
@@ -1436,7 +1442,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 			subcmd->u.aoc_request_response.aoc_s.item[0].rate.special =
 				msg->response.result->args.etsi.ChargingRequest.u.special_arrangement;
 			break;
-		case 2:
+		case 2:/* charging_info_follows */
 			subcmd->u.aoc_request_response.charging_response = PRI_AOC_REQ_RSP_CHARGING_INFO_FOLLOWS;
 			break;
 		default:
@@ -1466,7 +1472,7 @@ static int pri_aoc_request_get_response(enum APDU_CALLBACK_REASON reason, struct
 static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, enum PRI_AOC_REQUEST request)
 {
 	unsigned char buffer[255];
-	unsigned char *end = 0;
+	unsigned char *end = NULL;
 	struct apdu_callback_data response;
 
 	end = enc_etsi_aoc_request(ctrl, buffer, buffer + sizeof(buffer), request);
@@ -1501,7 +1507,7 @@ static int aoc_charging_request_encode(struct pri *ctrl, q931_call *call, enum P
 static int aoc_s_encode(struct pri *ctrl, q931_call *call, const struct pri_subcmd_aoc_s *aoc_s)
 {
 	unsigned char buffer[255];
-	unsigned char *end = 0;
+	unsigned char *end = NULL;
 
 	if (aoc_s->item[0].chargeable == PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT) {
 		end = enc_etsi_aocs_special_arrangement(ctrl, buffer, buffer + sizeof(buffer), aoc_s);
