@@ -2569,10 +2569,8 @@ static int etsi_ect_link_id_rsp(enum APDU_CALLBACK_REASON reason, struct pri *ct
 
 		/* Remember that if we queue a facility IE for a facility message we
 		 * have to explicitly send the facility message ourselves */
-		if (pri_call_apdu_queue(call_2, Q931_FACILITY, buffer, end - buffer, NULL)) {
-			break;
-		}
-		if (q931_facility(call->pri, call_2)) {
+		if (pri_call_apdu_queue(call_2, Q931_FACILITY, buffer, end - buffer, NULL)
+			|| q931_facility(call_2->pri, call_2)) {
 			pri_message(ctrl, "Could not schedule facility message for call %d\n",
 				call_2->cr);
 		}
@@ -2580,7 +2578,7 @@ static int etsi_ect_link_id_rsp(enum APDU_CALLBACK_REASON reason, struct pri *ct
 	default:
 		break;
 	}
-	return 0;
+	return 1;
 }
 
 /*!
@@ -2644,7 +2642,8 @@ int etsi_initiate_transfer(struct pri *ctrl, q931_call *call_1, q931_call *call_
 	 * have to explicitly send the facility message ourselves */
 	if (pri_call_apdu_queue(call_1, Q931_FACILITY, buffer, end - buffer, &response)
 		|| q931_facility(call_1->pri, call_1)) {
-		pri_message(ctrl, "Could not schedule facility message for call %d\n", call_1->cr);
+		pri_message(ctrl, "Could not schedule facility message for call %d\n",
+			call_1->cr);
 		return -1;
 	}
 
