@@ -664,6 +664,7 @@ enum PRI_AOC_CHARGED_ITEM {
 	PRI_AOC_CHARGED_ITEM_USER_USER_INFO,
 	PRI_AOC_CHARGED_ITEM_SUPPLEMENTARY_SERVICE,
 };
+
 /*! \brief Rate method being used. */
 enum PRI_AOC_RATE_TYPE {
 	PRI_AOC_RATE_TYPE_NOT_AVAILABLE,
@@ -674,6 +675,7 @@ enum PRI_AOC_RATE_TYPE {
 	PRI_AOC_RATE_TYPE_VOLUME,
 	PRI_AOC_RATE_TYPE_SPECIAL_CODE,
 };
+
 enum PRI_AOC_TIME_SCALE {
 	PRI_AOC_TIME_SCALE_HUNDREDTH_SECOND,
 	PRI_AOC_TIME_SCALE_TENTH_SECOND,
@@ -683,12 +685,14 @@ enum PRI_AOC_TIME_SCALE {
 	PRI_AOC_TIME_SCALE_HOUR,
 	PRI_AOC_TIME_SCALE_DAY,
 };
+
 struct pri_aoc_time {
 	/*! LengthOfTimeUnit (Not valid if length is zero.) */
 	long length;
 	/*! \see enum PRI_AOC_TIME_SCALE */
 	int scale;
 };
+
 enum PRI_AOC_MULTIPLIER {
 	PRI_AOC_MULTIPLIER_THOUSANDTH,
 	PRI_AOC_MULTIPLIER_HUNDREDTH,
@@ -698,11 +702,13 @@ enum PRI_AOC_MULTIPLIER {
 	PRI_AOC_MULTIPLIER_HUNDRED,
 	PRI_AOC_MULTIPLIER_THOUSAND,
 };
+
 struct pri_aoc_amount {
 	long cost;
 	/*! \see enum PRI_AOC_MULTIPLIER */
 	int multiplier;
 };
+
 struct pri_aoc_duration {
 	struct pri_aoc_amount amount;
 	struct pri_aoc_time time;
@@ -718,16 +724,19 @@ struct pri_aoc_duration {
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 struct pri_aoc_flat {
 	struct pri_aoc_amount amount;
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 enum PRI_AOC_VOLUME_UNIT {
 	PRI_AOC_VOLUME_UNIT_OCTET,
 	PRI_AOC_VOLUME_UNIT_SEGMENT,
 	PRI_AOC_VOLUME_UNIT_MESSAGE,
 };
+
 struct pri_aoc_volume {
 	struct pri_aoc_amount amount;
 	/*! \see enum PRI_AOC_VOLUME_UNIT */
@@ -755,7 +764,12 @@ struct pri_aoc_s_element {
 		int special;
 	} rate;
 };
+
 struct pri_subcmd_aoc_s {
+	/*!
+	 * \brief Number of items in the rate list.
+	 * \note If the list is empty then the charging information is not available.
+	 */
 	int num_items;
 	struct pri_aoc_s_element item[10];
 };
@@ -766,17 +780,20 @@ enum PRI_AOC_DE_CHARGE {
 	PRI_AOC_DE_CHARGE_CURRENCY,
 	PRI_AOC_DE_CHARGE_UNITS,
 };
+
 struct pri_aoc_recorded_currency {
 	struct pri_aoc_amount amount;
 	/*! Name of currency involved.  Null terminated. */
 	char currency[10 + 1];
 };
+
 struct pri_aoc_units_element {
 	/*! Number of units recorded. -1 if not available. */
 	long number;
 	/*! Type of unit recorded. -1 if not available. */
 	int type;
 };
+
 struct pri_aoc_recorded_units {
 	int num_items;
 	struct pri_aoc_units_element item[32];
@@ -822,11 +839,13 @@ enum PRI_AOC_E_BILLING_ID {
 	PRI_AOC_E_BILLING_ID_CALL_DEFLECTION,
 	PRI_AOC_E_BILLING_ID_CALL_TRANSFER,
 };
+
 enum PRI_AOC_E_CHARGING_ASSOCIATION {
 	PRI_AOC_E_CHARGING_ASSOCIATION_NOT_AVAILABLE,
 	PRI_AOC_E_CHARGING_ASSOCIATION_NUMBER,
 	PRI_AOC_E_CHARGING_ASSOCIATION_ID,
 };
+
 struct pri_aoc_e_charging_association {
 	union {
 		/*! Charged number */
@@ -837,6 +856,7 @@ struct pri_aoc_e_charging_association {
 	/*! \see enum PRI_AOC_E_CHARGING_ASSOCIATION */
 	int charging_type;
 };
+
 struct pri_subcmd_aoc_e {
 	/*!
 	 * \brief What is being charged.
