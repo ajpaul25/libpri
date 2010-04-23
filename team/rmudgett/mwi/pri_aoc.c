@@ -230,9 +230,7 @@ void aoc_etsi_aoc_s_currency(struct pri *ctrl, const struct rose_msg_invoke *inv
 
 	subcmd->cmd = PRI_SUBCMD_AOC_S;
 	if (!invoke->args.etsi.AOCSCurrency.type) {
-		subcmd->u.aoc_s.num_items = 1;
-		subcmd->u.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_NOT_AVAILABLE;
-		subcmd->u.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_NOT_AVAILABLE;
+		subcmd->u.aoc_s.num_items = 0;
 		return;
 	}
 
@@ -261,12 +259,11 @@ void aoc_etsi_aoc_s_special_arrangement(struct pri *ctrl, const struct rose_msg_
 		return;
 	}
 	subcmd->cmd = PRI_SUBCMD_AOC_S;
-	subcmd->u.aoc_s.num_items = 1;
 	if (!invoke->args.etsi.AOCSSpecialArr.type) {
-		subcmd->u.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_NOT_AVAILABLE;
-		subcmd->u.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_NOT_AVAILABLE;
+		subcmd->u.aoc_s.num_items = 0;
 		return;
 	}
+	subcmd->u.aoc_s.num_items = 1;
 	subcmd->u.aoc_s.item[0].chargeable = PRI_AOC_CHARGED_ITEM_SPECIAL_ARRANGEMENT;
 	subcmd->u.aoc_s.item[0].rate_type = PRI_AOC_RATE_TYPE_SPECIAL_CODE;
 	subcmd->u.aoc_s.item[0].rate.special =
