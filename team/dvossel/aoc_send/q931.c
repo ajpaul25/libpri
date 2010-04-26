@@ -3525,6 +3525,25 @@ static inline unsigned int ielen(q931_ie *ie)
 		return 2 + ie->len;
 }
 
+static inline int ielen_checked(q931_ie *ie, int len_remaining)
+{
+	int len;
+
+	if (ie->ie & 0x80) {
+		len = 1;
+	} else if (len_remaining < 2) {
+		/* There is no length octet when there should be. */
+		len = -1;
+	} else {
+		len = 2 + ie->len;
+		if (len_remaining < len) {
+			/* There is not enough room left in the packet for this ie. */
+			len = -1;
+		}
+	}
+	return len;
+}
+
 const char *msg2str(int msg)
 {
 	unsigned int x;
@@ -4089,23 +4108,42 @@ static char *disc2str(int disc)
 	static struct msgtype discs[] = {
 		{ Q931_PROTOCOL_DISCRIMINATOR, "Q.931" },
 		{ GR303_PROTOCOL_DISCRIMINATOR, "GR-303" },
-		{ 0x3, "AT&T Maintenance" },
-		{ 0x43, "New AT&T Maintenance" },
+		{ MAINTENANCE_PROTOCOL_DISCRIMINATOR_1, "AT&T Maintenance" },
+		{ MAINTENANCE_PROTOCOL_DISCRIMINATOR_2, "New AT&T Maintenance" },
 	};
 	return code2str(disc, discs, sizeof(discs) / sizeof(discs[0]));
 }
 
+/*!
+ * \brief Debug dump the given Q.931 packet.
+ *
+ * \param ctrl D channel controller.
+ * \param tei TEI the packet is associated with.
+ * \param h Q.931 packet contents/header.
+ * \param len Received length of the Q.931 packet
+ * \param txrx TRUE if packet is transmitted/outgoing
+ *
+ * \return Nothing
+ */
 void q931_dump(struct pri *ctrl, int tei, q931_h *h, int len, int txrx)
 {
 	q931_mh *mh;
 	char c;
-	int x=0, r;
+	int x;
+	int r;
 	int cur_codeset;
 	int codeset;
 	int cref;
 
 	c = txrx ? '>' : '<';
+
 	pri_message(ctrl, "%c Protocol Discriminator: %s (%d)  len=%d\n", c, disc2str(h->pd), h->pd, len);
+
+	if (len < 2 || len < 2 + h->crlen) {
+		pri_message(ctrl, "%c Message too short for call reference. len=%d\n",
+			c, len);
+		return;
+	}
 	cref = q931_cr(h);
 	pri_message(ctrl, "%c TEI=%d Call Ref: len=%2d (reference %d/0x%X) (%s)\n",
 		c, tei, h->crlen, cref & ~Q931_CALL_REFERENCE_FLAG,
@@ -4114,18 +4152,37 @@ void q931_dump(struct pri *ctrl, int tei, q931_h *h, int len, int txrx)
 			: (cref & Q931_CALL_REFERENCE_FLAG)
 				? "Sent to originator" : "Sent from originator");
 
+	if (len < 3 + h->crlen) {
+		pri_message(ctrl, "%c Message too short for supported protocols. len=%d\n",
+			c, len);
+		return;
+	}
+
 	/* Message header begins at the end of the call reference number */
 	mh = (q931_mh *)(h->contents + h->crlen);
-	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
+	switch (h->pd) {
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_1:
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_2:
 		pri_message(ctrl, "%c Message Type: %s (%d)\n", c, maintenance_msg2str(mh->msg, h->pd), mh->msg);
-	} else {
+		break;
+	default:
+		/* Unknown protocol discriminator but we will treat it as Q.931 anyway. */
+	case GR303_PROTOCOL_DISCRIMINATOR:
+	case Q931_PROTOCOL_DISCRIMINATOR:
 		pri_message(ctrl, "%c Message Type: %s (%d)\n", c, msg2str(mh->msg), mh->msg);
+		break;
 	}
 	/* Drop length of header, including call reference */
 	len -= (h->crlen + 3);
 	codeset = cur_codeset = 0;
-	while(x < len) {
-		r = ielen((q931_ie *)(mh->data + x));
+	for (x = 0; x < len; x += r) {
+		r = ielen_checked((q931_ie *) (mh->data + x), len - x);
+		if (r < 0) {
+			/* We have garbage on the end of the packet. */
+			pri_message(ctrl, "Not enough room for codeset:%d ie:%d(%02x)\n", cur_codeset,
+				mh->data[x], mh->data[x]);
+			break;
+		}
 		q931_dumpie(ctrl, cur_codeset, (q931_ie *)(mh->data + x), c);
 		switch (mh->data[x] & 0xf8) {
 		case Q931_LOCKING_SHIFT:
@@ -4138,11 +4195,9 @@ void q931_dump(struct pri *ctrl, int tei, q931_h *h, int len, int txrx)
 		default:
 			/* Reset temporary codeset change */
 			cur_codeset = codeset;
+			break;
 		}
-		x += r;
 	}
-	if (x > len) 
-		pri_error(ctrl, "XXX Message longer than it should be?? XXX\n");
 }
 
 static int q931_handle_ie(int codeset, struct pri *ctrl, q931_call *c, int msg, q931_ie *ie)
@@ -6195,6 +6250,8 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 	int codeset, cur_codeset;
 	int last_ie[8];
 	int cref;
+	int allow_event;
+	int allow_posthandle;
 
 	memset(last_ie, 0, sizeof(last_ie));
 	if (ctrl->debug & PRI_DEBUG_Q931_DUMP)
@@ -6202,21 +6259,33 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 #ifdef LIBPRI_COUNTERS
 	ctrl->q931_rxcount++;
 #endif
-	mh = (q931_mh *)(h->contents + h->crlen);
-	if ((h->pd != ctrl->protodisc) && (h->pd != MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) && (h->pd != MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
-		pri_error(ctrl, "Warning: unknown/inappropriate protocol discriminator received (%02x/%d)\n", h->pd, h->pd);
-		return 0;
+	if (len < 3 || len < 3 + h->crlen) {
+		/* Message too short for supported protocols. */
+		return -1;
 	}
-	if (((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) && (!ctrl->service_message_support)) {
-		/* Real service message support has not been enabled (and is OFF in libpri by default),
- 		 * so we have to revert to the 'traditional' KLUDGE of changing byte 4 from a 0xf (SERVICE)
- 		 * to a 0x7 (SERVICE ACKNOWLEDGE) */
-		/* This is the weird maintenance stuff.  We majorly
-		   KLUDGE this by changing byte 4 from a 0xf (SERVICE) 
-		   to a 0x7 (SERVICE ACKNOWLEDGE) */
-		h->raw[h->crlen + 2] -= 0x8;
-		q931_xmit(ctrl, ctrl->tei, h, len, 1, 0);
-		return 0;
+	switch (h->pd) {
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_1:
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_2:
+		if (!ctrl->service_message_support) {
+			/* Real service message support has not been enabled (and is OFF in libpri by default),
+			 * so we have to revert to the 'traditional' KLUDGE of changing byte 4 from a 0xf (SERVICE)
+			 * to a 0x7 (SERVICE ACKNOWLEDGE) */
+			/* This is the weird maintenance stuff.  We majorly
+			   KLUDGE this by changing byte 4 from a 0xf (SERVICE)
+			   to a 0x7 (SERVICE ACKNOWLEDGE) */
+			h->raw[h->crlen + 2] -= 0x8;
+			q931_xmit(ctrl, ctrl->tei, h, len, 1, 0);
+			return 0;
+		}
+		break;
+	default:
+		if (h->pd != ctrl->protodisc) {
+			pri_error(ctrl,
+				"Warning: unknown/inappropriate protocol discriminator received (%02x/%d)\n",
+				h->pd, h->pd);
+			return 0;
+		}
+		break;
 	}
 
 	cref = q931_cr(h);
@@ -6245,34 +6314,47 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 	ctrl->facility.count = 0;
 	c->connected_number_in_message = 0;
 	c->redirecting_number_in_message = 0;
-	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
+	mh = (q931_mh *)(h->contents + h->crlen);
+	switch (h->pd) {
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_1:
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_2:
 		prepare_to_handle_maintenance_message(ctrl, mh, c);
-	} else {
+		break;
+	default:
+		/* Unknown protocol discriminator but we will treat it as Q.931 anyway. */
+	case GR303_PROTOCOL_DISCRIMINATOR:
+	case Q931_PROTOCOL_DISCRIMINATOR:
 		prepare_to_handle_q931_message(ctrl, mh, c);
+		break;
 	}
 	q931_clr_subcommands(ctrl);
 	
 	/* Handle IEs */
 	memset(mandies, 0, sizeof(mandies));
-	for (x=0;x<sizeof(msgs) / sizeof(msgs[0]); x++)  {
+	for (x = 0; x < ARRAY_LEN(msgs); ++x)  {
 		if (msgs[x].msgnum == mh->msg) {
 			memcpy(mandies, msgs[x].mandies, sizeof(mandies));
+			break;
 		}
 	}
-	x = 0;
 	/* Do real IE processing */
 	len -= (h->crlen + 3);
 	codeset = cur_codeset = 0;
-	while(len) {
+	for (x = 0; x < len; x += r) {
 		ie = (q931_ie *)(mh->data + x);
-		for (y=0;y<MAX_MAND_IES;y++) {
+		r = ielen_checked(ie, len - x);
+		if (r < 0) {
+			/* We have garbage on the end of the packet. */
+			pri_error(ctrl, "XXX Message longer than it should be?? XXX\n");
+			if (x) {
+				/* Allow the message anyway.  We have already processed an ie. */
+				break;
+			}
+			return -1;
+		}
+		for (y = 0; y < ARRAY_LEN(mandies); ++y) {
 			if (mandies[y] == Q931_FULL_IE(cur_codeset, ie->ie))
 				mandies[y] = 0;
-		}
-		r = ielen(ie);
-		if (r > len) {
-			pri_error(ctrl, "XXX Message longer than it should be?? XXX\n");
-			return -1;
 		}
 		/* Special processing for codeset shifts */
 		switch (ie->ie & 0xf8) {
@@ -6319,15 +6401,15 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 				/* XXX Applicable to codeset 0 only? XXX */
 				if (!cur_codeset && !(ie->ie & 0xf0) && (y < 0))
 					mandies[MAX_MAND_IES - 1] = Q931_FULL_IE(cur_codeset, ie->ie);
+				break;
 			}
 			/* Reset current codeset */
 			cur_codeset = codeset;
+			break;
 		}
-		x += r;
-		len -= r;
 	}
 	missingmand = 0;
-	for (x=0;x<MAX_MAND_IES;x++) {
+	for (x = 0; x < ARRAY_LEN(mandies); ++x) {
 		if (mandies[x]) {
 			/* check if there is no channel identification when we're configured as network -> that's not an error */
 			if (((ctrl->localtype != PRI_NETWORK) || (mh->msg != Q931_SETUP) || (mandies[x] != Q931_CHANNEL_IDENT)) &&
@@ -6345,10 +6427,14 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 	q931_apdu_msg_expire(ctrl, c, mh->msg);
 
 	/* Post handling */
-	if ((h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_1) || (h->pd == MAINTENANCE_PROTOCOL_DISCRIMINATOR_2)) {
+	switch (h->pd) {
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_1:
+	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_2:
 		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
-	} else {
-		int allow_event = 1, allow_posthandle = 1;
+		break;
+	default:
+		allow_event = 1;
+		allow_posthandle = 1;
 
 		if (c->master_call->outboundbroadcast) {
 			nt_ptmp_handle_q931_message(ctrl, mh, c, &allow_event, &allow_posthandle);
@@ -6365,6 +6451,7 @@ int q931_receive(struct pri *ctrl, int tei, q931_h *h, int len)
 		} else {
 			res = 0;
 		}
+		break;
 	}
 	return res;
 }
