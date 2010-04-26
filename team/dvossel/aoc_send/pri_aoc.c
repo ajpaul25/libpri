@@ -217,13 +217,13 @@ void aoc_etsi_aoc_request(struct pri *ctrl, q931_call *call, const struct rose_m
 		return;
 	}
 	switch (invoke->args.etsi.ChargingRequest.charging_case) {
-	case 0:
+	case 0:/* chargingInformationAtCallSetup */
 		request = PRI_AOC_REQUEST_S;
 		break;
-	case 1:
+	case 1:/* chargingDuringACall */
 		request = PRI_AOC_REQUEST_D;
 		break;
-	case 2:
+	case 2:/* chargingAtTheEndOfACall */
 		request = PRI_AOC_REQUEST_E;
 		break;
 	default:
