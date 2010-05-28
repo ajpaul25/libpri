@@ -543,8 +543,10 @@ struct pri_rerouting_data {
 #define PRI_SUBCMD_AOC_S					18	/*!< Advice Of Charge Start information (Rate list) */
 #define PRI_SUBCMD_AOC_D					19	/*!< Advice Of Charge During information */
 #define PRI_SUBCMD_AOC_E					20	/*!< Advice Of Charge End information */
-#define PRI_SUBCMD_MCID_REQ					21	/*!< Malicious Call ID Request */
-#define PRI_SUBCMD_MCID_RSP					22	/*!< Malicious Call ID Request response */
+//#define PRI_SUBCMD_AOC_CHARGING_REQ			21	/*!< Advice Of Charge Request information */
+//#define PRI_SUBCMD_AOC_CHARGING_REQ_RSP		22	/*!< Advice Of Charge Request Response information */
+#define PRI_SUBCMD_MCID_REQ					23	/*!< Malicious Call ID Request */
+#define PRI_SUBCMD_MCID_RSP					24	/*!< Malicious Call ID Request response */
 
 #if defined(STATUS_REQUEST_PLACE_HOLDER)
 struct pri_subcmd_status_request {
