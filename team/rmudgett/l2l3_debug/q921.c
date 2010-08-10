@@ -642,7 +642,6 @@ static void t200_expire(void *vpri)
 #endif
 			ctrl->RC++;
 		} else {
-			//pri_error(ctrl, "MDL-ERROR (I): T200 = N200 in timer recovery state\n");
 			q921_mdl_error(ctrl, 'I');
 			q921_establish_data_link(ctrl);
 			ctrl->l3initiated = 0;
@@ -656,8 +655,6 @@ static void t200_expire(void *vpri)
 			start_t200(ctrl);
 		} else {
 			q921_discard_iqueue(ctrl);
-			//pri_error(ctrl, "MDL-ERROR (G) : T200 expired N200 times in state %d(%s)\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'G');
 			q921_setstate(ctrl, Q921_TEI_ASSIGNED);
 			/* DL-RELEASE indication */
@@ -670,8 +667,6 @@ static void t200_expire(void *vpri)
 			q921_send_disc(ctrl, 1);
 			start_t200(ctrl);
 		} else {
-			//pri_error(ctrl, "MDL-ERROR (H) : T200 expired N200 times in state %d(%s)\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'H');
 			/* DL-RELEASE confirm */
 			q921_setstate(ctrl, Q921_TEI_ASSIGNED);
@@ -1280,8 +1275,6 @@ static pri_event * q921_sabme_rx(struct pri *ctrl, q921_h *h)
 		/* Send Unnumbered Acknowledgement */
 		q921_send_ua(ctrl, h->u.p_f);
 		q921_clear_exception_conditions(ctrl);
-		//pri_error(ctrl, "MDL-ERROR (F), SABME in state %d(%s)\n",
-		//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 		q921_mdl_error(ctrl, 'F');
 		if (ctrl->v_s != ctrl->v_a) {
 			q921_discard_iqueue(ctrl);
@@ -1644,19 +1637,13 @@ static pri_event *q921_ua_rx(struct pri *ctrl, q921_h *h)
 	case Q921_MULTI_FRAME_ESTABLISHED:
 	case Q921_TIMER_RECOVERY:
 		if (h->u.p_f) {
-			//pri_error(ctrl, "MDL-ERROR (C): UA in state %d(%s) w with P_F bit 1\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'C');
 		} else {
-			//pri_error(ctrl, "MDL-ERROR (D): UA in state %d(%s) w with P_F bit 0\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'D');
 		}
 		break;
 	case Q921_AWAITING_ESTABLISHMENT:
 		if (!h->u.p_f) {
-			//pri_error(ctrl, "MDL-ERROR (D): UA in state %d(%s) w with P_F bit 0\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'D');
 			break;
 		}
@@ -1686,8 +1673,6 @@ static pri_event *q921_ua_rx(struct pri *ctrl, q921_h *h)
 		break;
 	case Q921_AWAITING_RELEASE:
 		if (!h->u.p_f) {
-			//pri_error(ctrl, "MDL-ERROR (D): UA in state %d(%s) w with P_F bit 0\n",
-			//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 			q921_mdl_error(ctrl, 'D');
 		} else {
 			/* return DL-RELEASE-CONFIRM */
@@ -1754,7 +1739,6 @@ static int n_r_is_valid(struct pri *ctrl, int n_r)
 	for (x = ctrl->v_a; x != n_r && x != ctrl->v_s; Q921_INC(x)) {
 	}
 	if (x != n_r) {
-		/* MDL-ERROR (J): N(R) is not within ack window. */
 		return 0;
 	} else {
 		return 1;
@@ -1829,8 +1813,6 @@ static pri_event *q921_rr_rx(struct pri *ctrl, q921_h *h)
 			}
 		} else {
 			if (h->s.p_f) {
-				//pri_message(ctrl, "MDL-ERROR (A): Got RR response with p_f bit set to 1 in state %d(%s)\n",
-				//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 				q921_mdl_error(ctrl, 'A');
 			}
 		}
@@ -1924,8 +1906,6 @@ static pri_event *q921_rej_rx(struct pri *ctrl, q921_h *h)
 			}
 		} else {
 			if (h->s.p_f) {
-				//pri_message(ctrl, "MDL-ERROR (A): Got REJ response with p_f bit set to 1 in state %d(%s)\n",
-				//	ctrl->q921_state, q921_state2str(ctrl->q921_state));
 				q921_mdl_error(ctrl, 'A');
 			}
 		}
@@ -2114,7 +2094,6 @@ static pri_event *q921_dm_rx(struct pri *ctrl, q921_h *h)
 		break;
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		if (h->u.p_f) {
-			/* MDL-ERROR (B) indication */
 			q921_mdl_error(ctrl, 'B');
 			break;
 		}
@@ -2126,10 +2105,8 @@ static pri_event *q921_dm_rx(struct pri *ctrl, q921_h *h)
 		break;
 	case Q921_TIMER_RECOVERY:
 		if (h->u.p_f) {
-			/* MDL-ERROR (B) indication */
 			q921_mdl_error(ctrl, 'B');
 		} else {
-			/* MDL-ERROR (E) indication */
 			q921_mdl_error(ctrl, 'E');
 		}
 		q921_establish_data_link(ctrl);
@@ -2158,7 +2135,6 @@ static pri_event *q921_rnr_rx(struct pri *ctrl, q921_h *h)
 		ctrl->peer_rx_busy = 1;
 		if (!is_command(ctrl, h)) {
 			if (h->s.p_f) {
-				/* MDL-ERROR (A) indication */
 				q921_mdl_error(ctrl, 'A');
 			}
 		} else {
