@@ -524,6 +524,18 @@ static int q921_send_queued_iframes(struct pri *ctrl)
 		q921_transmit(ctrl, (q921_h *)(&f->h), f->len);
 		Q921_INC(ctrl->v_s);
 		++frames_txd;
+
+		if (ctrl->debug & PRI_DEBUG_Q931_DUMP) {
+			/*
+			 * The transmit operation might dump the Q.921 header, so logging
+			 * the Q.931 message body after the transmit puts the sections of
+			 * the message in the right order in the log.
+			 *
+			 * Also the dump is done here so the Q.931 part is decoded only
+			 * once instead of for every retransmission.
+			 */
+			q931_dump(ctrl, ctrl->tei, (q931_h *) f->h.data, f->len - 4, 1);
+		}
 	}
 
 	if (frames_txd) {
