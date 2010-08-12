@@ -1361,6 +1361,9 @@ static void q921_mdl_remove(struct pri *ctrl)
 {
 	int mdl_free_me;
 
+	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+		pri_message(ctrl, "MDL-REMOVE: Removing TEI %d\n", ctrl->tei);
+	}
 	if (BRI_NT_PTMP(ctrl)) {
 		if (ctrl == PRI_MASTER(ctrl)) {
 			pri_error(ctrl, "Bad bad bad!  Cannot MDL-REMOVE master\n");
@@ -1410,6 +1413,12 @@ static void q921_mdl_remove(struct pri *ctrl)
 			ctrl->q921_state, q921_state2str(ctrl->q921_state));
 		return;
 	}
+
+	/*
+	 * Negate the TEI value so debug messages will display a
+	 * negated TEI when it is actually unassigned.
+	 */
+	ctrl->tei = -ctrl->tei;
 
 	ctrl->mdl_free_me = mdl_free_me;
 }
@@ -1508,75 +1517,14 @@ static int q921_mdl_handle_ptp_error(struct pri *ctrl, char error)
 
 static void q921_mdl_handle_error(struct pri *ctrl, char error, int errored_state)
 {
-	int handled = 0;
 	if (PTP_MODE(ctrl)) {
-		handled = q921_mdl_handle_ptp_error(ctrl, error);
+		q921_mdl_handle_ptp_error(ctrl, error);
 	} else {
 		if (ctrl->localtype == PRI_NETWORK) {
-			handled = q921_mdl_handle_network_error(ctrl, error);
+			q921_mdl_handle_network_error(ctrl, error);
 		} else {
-			handled = q921_mdl_handle_cpe_error(ctrl, error);
+			q921_mdl_handle_cpe_error(ctrl, error);
 		}
-	}
-
-	if (handled)
-		return;
-
-	/* Just log the protocol error */
-	switch (error) {
-	case 'C':
-	case 'D':
-		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): UA in state %d(%s)\n",
-			ctrl->tei, error, errored_state, q921_state2str(errored_state));
-		break;
-	case 'A':
-		pri_message(ctrl,
-			"TEI=%d MDL-ERROR (A): Got supervisory frame with F=1 in state %d(%s)\n",
-			ctrl->tei, errored_state, q921_state2str(errored_state));
-		break;
-	case 'G':
-	case 'H':
-	case 'I':
-		/* We could not get a response from the peer. */
-		pri_message(ctrl,
-			"TEI=%d MDL-ERROR (%c): T200 expired N200 times in state %d(%s)\n",
-			ctrl->tei, error, errored_state, q921_state2str(errored_state));
-		break;
-	case 'F':
-		/*
-		 * The peer is restarting the link.
-		 * Some reasons this might happen:
-		 * 1) Our link establishment requests collided.
-		 * 2) They got reset.
-		 * 3) They could not talk to us for some reason because
-		 * their T200 timer expired N200 times.
-		 * 4) They got an MDL-ERROR (J).
-		 */
-		pri_message(ctrl, "TEI=%d MDL-ERROR (F): SABME in state %d(%s)\n",
-			ctrl->tei, errored_state, q921_state2str(errored_state));
-		break;
-	case 'B':
-	case 'E':
-		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): DM in state %d(%s)\n",
-			ctrl->tei, error, errored_state, q921_state2str(errored_state));
-		break;
-	case 'J':
-		/* N(R) not within ack window. */
-		pri_error(ctrl, "TEI=%d MDL-ERROR (J): N(R) error in state %d(%s)\n",
-			ctrl->tei, errored_state, q921_state2str(errored_state));
-		break;
-	case 'K':
-		/*
-		 * Received a frame reject frame.
-		 * The other end does not like what we are doing at all for some reason.
-		 */
-		pri_error(ctrl, "TEI=%d MDL-ERROR (K): FRMR in state %d(%s)\n",
-			ctrl->tei, errored_state, q921_state2str(errored_state));
-		break;
-	default:
-		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): in state %d(%s)\n",
-			ctrl->tei, error, errored_state, q921_state2str(errored_state));
-		break;
 	}
 }
 
@@ -1606,12 +1554,12 @@ static void q921_mdl_handle_error_callback(void *vpri)
 		}
 
 		if (freep == NULL) {
-			pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", ctrl->tei);
+			pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", -ctrl->tei);
 			return;
 		}
 
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-			pri_message(ctrl, "Freeing TEI of %d\n", freep->tei);
+			pri_message(ctrl, "Freeing TEI of %d\n", -freep->tei);
 		}
 
 		__pri_free_tei(freep);
@@ -1622,8 +1570,97 @@ static void q921_mdl_handle_error_callback(void *vpri)
 
 static void q921_mdl_error(struct pri *ctrl, char error)
 {
+	int is_debug_q921_state;
+
+	/* Log the MDL-ERROR event when detected. */
+	is_debug_q921_state = (ctrl->debug & PRI_DEBUG_Q921_STATE);
+	switch (error) {
+	case 'A':
+		pri_message(ctrl,
+			"TEI=%d MDL-ERROR (A): Got supervisory frame with F=1 in state %d(%s)\n",
+			ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		break;
+	case 'B':
+	case 'E':
+		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): DM (F=%c) in state %d(%s)\n",
+			ctrl->tei, error, (error == 'B') ? '1' : '0',
+			ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		break;
+	case 'C':
+	case 'D':
+		if (is_debug_q921_state || PTP_MODE(ctrl)) {
+			pri_message(ctrl, "TEI=%d MDL-ERROR (%c): UA (F=%c) in state %d(%s)\n",
+				ctrl->tei, error, (error == 'C') ? '1' : '0',
+				ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		}
+		break;
+	case 'F':
+		/*
+		 * The peer is restarting the link.
+		 * Some reasons this might happen:
+		 * 1) Our link establishment requests collided.
+		 * 2) They got reset.
+		 * 3) They could not talk to us for some reason because
+		 * their T200 timer expired N200 times.
+		 * 4) They got an MDL-ERROR (J).
+		 */
+		if (is_debug_q921_state) {
+			/*
+			 * This message is rather annoying and is normal for
+			 * reasons 1-3 above.
+			 */
+			pri_message(ctrl, "TEI=%d MDL-ERROR (F): SABME in state %d(%s)\n",
+				ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		}
+		break;
+	case 'G':
+		/* We could not get a response from the peer. */
+		if (is_debug_q921_state) {
+			pri_message(ctrl,
+				"TEI=%d MDL-ERROR (G): T200 expired N200 times sending SABME in state %d(%s)\n",
+				ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		}
+		break;
+	case 'H':
+		/* We could not get a response from the peer. */
+		if (is_debug_q921_state) {
+			pri_message(ctrl,
+				"TEI=%d MDL-ERROR (H): T200 expired N200 times sending DISC in state %d(%s)\n",
+				ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		}
+		break;
+	case 'I':
+		/* We could not get a response from the peer. */
+		if (is_debug_q921_state) {
+			pri_message(ctrl,
+				"TEI=%d MDL-ERROR (I): T200 expired N200 times sending RR/RNR in state %d(%s)\n",
+				ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		}
+		break;
+	case 'J':
+		/* N(R) not within ack window. */
+		pri_error(ctrl, "TEI=%d MDL-ERROR (J): N(R) error in state %d(%s)\n",
+			ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		break;
+	case 'K':
+		/*
+		 * Received a frame reject frame.
+		 * The other end does not like what we are doing at all for some reason.
+		 */
+		pri_error(ctrl, "TEI=%d MDL-ERROR (K): FRMR in state %d(%s)\n",
+			ctrl->tei, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		break;
+	default:
+		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): in state %d(%s)\n",
+			ctrl->tei, error, ctrl->q921_state, q921_state2str(ctrl->q921_state));
+		break;
+	}
+
 	if (ctrl->mdl_error) {
-		pri_error(ctrl, "Trying to queue an MDL error when one is already scheduled\n");
+		/* This should not happen. */
+		pri_error(ctrl,
+			"Trying to queue MDL-ERROR (%c) when MDL-ERROR (%c) is already scheduled\n",
+			error, ctrl->mdl_error);
 		return;
 	}
 	ctrl->mdl_error = error;
