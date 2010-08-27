@@ -4879,10 +4879,11 @@ static void pri_connect_timeout(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "Timed out looking for connect acknowledge\n");
+	c->retranstimer = 0;
 	q931_disconnect(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
-	
 }
 
 /* T308 expiry, first time */
@@ -4890,9 +4891,11 @@ static void pri_release_timeout(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "Timed out looking for release complete\n");
 	c->t308_timedout++;
+	c->retranstimer = 0;
 	c->alive = 1;
 
 	/* The call to q931_release will re-schedule T308 */
@@ -4904,6 +4907,8 @@ static void pri_release_finaltimeout(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
+	c->retranstimer = 0;
 	c->alive = 1;
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "Final time-out looking for release complete\n");
@@ -4930,8 +4935,10 @@ static void pri_disconnect_timeout(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "Timed out looking for release\n");
+	c->retranstimer = 0;
 	c->alive = 1;
 	q931_release(ctrl, c, PRI_CAUSE_NORMAL_CLEARING);
 }
@@ -5845,6 +5852,12 @@ static void pri_fake_clearing(void *data)
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
 
+	/*
+	 * We cannot clear the retranstimer id because we are called by t303_expiry also.
+	 * Fortunately, it doesn't matter because pri_internal_clear() will stop it if
+	 * it was actually running.
+	 */
+	//c->retranstimer = 0;
 	c->performing_fake_clearing = 1;
 	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
 		ctrl->schedev = 1;
@@ -8303,9 +8316,11 @@ static void pri_dl_down_timeout(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, DBGHEAD "Timed out waiting for data link re-establishment\n", DBGINFO);
 
+	c->retranstimer = 0;
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
 	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
 		ctrl->schedev = 1;
@@ -8316,9 +8331,11 @@ static void pri_dl_down_cancelcall(void *data)
 {
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, DBGHEAD "Cancel non active call after data link failure\n", DBGINFO);
 
+	c->retranstimer = 0;
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
 	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
 		ctrl->schedev = 1;
@@ -8330,9 +8347,12 @@ void q931_dl_indication(struct pri *ctrl, int event)
 	struct q931_call *cur;
 	struct q931_call *winner;
 
-	/* Just return if T309 is not enabled. */
-	if (!ctrl || ctrl->timers[PRI_TIMER_T309] < 0)
+	if (!ctrl) {
 		return;
+	}
+
+	/* Find the master - He has the call pool */
+	ctrl = PRI_MASTER(ctrl);
 
 	switch (event) {
 	case PRI_EVENT_DCHAN_DOWN:
@@ -8344,15 +8364,14 @@ void q931_dl_indication(struct pri *ctrl, int event)
 				/* Don't do anything on the global call reference call record. */
 				continue;
 			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
-				/* For a call in Active state, activate T309 only if there is no timer already running. */
-				if (!cur->retranstimer) {
-					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-						pri_message(ctrl,
-							DBGHEAD "activate T309 for call %d on channel %d\n", DBGINFO,
-							cur->cr, cur->channelno);
-					}
-					cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
+				/* For a call in Active state, activate T309. */
+				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+					pri_message(ctrl,
+						DBGHEAD "activate T309 for call %d on channel %d\n", DBGINFO,
+						cur->cr, cur->channelno);
 				}
+				pri_schedule_del(ctrl, cur->retranstimer);
+				cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
 			} else if (cur->ourcallstate != Q931_CALL_STATE_NULL) {
 				/* For a call that is not in Active state, schedule internal clearing of the call 'ASAP' (delay 0). */
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
@@ -8374,7 +8393,7 @@ void q931_dl_indication(struct pri *ctrl, int event)
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
-			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE && cur->retranstimer) {
+			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 					pri_message(ctrl,
 						DBGHEAD "cancel T309 for call %d on channel %d\n", DBGINFO,
@@ -8404,6 +8423,7 @@ void q931_dl_indication(struct pri *ctrl, int event)
 		break;
 	default:
 		pri_message(ctrl, DBGHEAD "unexpected event %d.\n", DBGINFO, event);
+		break;
 	}
 }
 
