@@ -812,6 +812,9 @@ static const struct rose_convert_msg rose_qsig_msgs[] = {
 	/*
 	 * globalValue's (OIDs) from Q.SIG Name-Operations 2nd edition
 	 * { iso(1) identified-organization(3) icd-ecma(12) standard(0) qsig-name(164) name-operations(0) }
+	 *
+	 * This older version of the Q.SIG switch is not supported.
+	 * However, we will accept receiving these messages anyway.
 	 */
 	{
 		ROSE_QSIG_CallingName,						&rose_qsig_isdn_domain, 0,
