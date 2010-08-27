@@ -8318,7 +8318,7 @@ static void pri_dl_down_timeout(void *data)
 	struct pri *ctrl = c->pri;
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
-		pri_message(ctrl, DBGHEAD "Timed out waiting for data link re-establishment\n", DBGINFO);
+		pri_message(ctrl, "T309 timed out waiting for data link re-establishment\n");
 
 	c->retranstimer = 0;
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
@@ -8333,7 +8333,7 @@ static void pri_dl_down_cancelcall(void *data)
 	struct pri *ctrl = c->pri;
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
-		pri_message(ctrl, DBGHEAD "Cancel non active call after data link failure\n", DBGINFO);
+		pri_message(ctrl, "Cancel call after data link failure\n");
 
 	c->retranstimer = 0;
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
@@ -8357,26 +8357,25 @@ void q931_dl_indication(struct pri *ctrl, int event)
 	switch (event) {
 	case PRI_EVENT_DCHAN_DOWN:
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-			pri_message(ctrl, DBGHEAD "link is DOWN\n", DBGINFO);
+			pri_message(ctrl, "DL-RELEASE indication (link is DOWN)\n");
 		}
 		for (cur = *ctrl->callpool; cur; cur = cur->next) {
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
 			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
-				/* For a call in Active state, activate T309. */
-				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-					pri_message(ctrl,
-						DBGHEAD "activate T309 for call %d on channel %d\n", DBGINFO,
-						cur->cr, cur->channelno);
+				/* For a call in Active state, activate T309 only if there is no timer already running. */
+				if (!cur->retranstimer) {
+					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+						pri_message(ctrl, "Start T309 for call %d on channel %d\n",
+							cur->cr, cur->channelno);
+					}
+					cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
 				}
-				pri_schedule_del(ctrl, cur->retranstimer);
-				cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
 			} else if (cur->ourcallstate != Q931_CALL_STATE_NULL) {
 				/* For a call that is not in Active state, schedule internal clearing of the call 'ASAP' (delay 0). */
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-					pri_message(ctrl,
-						DBGHEAD "cancel call %d on channel %d in state %d (%s)\n", DBGINFO,
+					pri_message(ctrl, "Cancel call %d on channel %d in state %d (%s)\n",
 						cur->cr, cur->channelno, cur->ourcallstate,
 						q931_call_state_str(cur->ourcallstate));
 				}
@@ -8387,20 +8386,21 @@ void q931_dl_indication(struct pri *ctrl, int event)
 		break;
 	case PRI_EVENT_DCHAN_UP:
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-			pri_message(ctrl, DBGHEAD "link is UP\n", DBGINFO);
+			pri_message(ctrl, "DL-ESTABLISH indication (link is UP)\n");
 		}
 		for (cur = *ctrl->callpool; cur; cur = cur->next) {
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
 			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
-				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-					pri_message(ctrl,
-						DBGHEAD "cancel T309 for call %d on channel %d\n", DBGINFO,
-						cur->cr, cur->channelno);
+				if (pri_schedule_check(ctrl, cur->retranstimer, pri_dl_down_timeout, cur)) {
+					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+						pri_message(ctrl, "Stop T309 for call %d on channel %d\n",
+							cur->cr, cur->channelno);
+					}
+					pri_schedule_del(ctrl, cur->retranstimer);
+					cur->retranstimer = 0;
 				}
-				pri_schedule_del(ctrl, cur->retranstimer);
-				cur->retranstimer = 0;
 				winner = q931_find_winning_call(cur);
 				if (winner) {
 					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
