@@ -1497,8 +1497,11 @@ int pri_set_crv(struct pri *pri, q931_call *call, int crv, int callmode)
 
 void pri_enslave(struct pri *master, struct pri *slave)
 {
-	if (master && slave)
+	if (master && slave) {
 		slave->callpool = &master->localpool;
+		slave->nfas = 1;
+		master->nfas = 1;
+	}
 }
 
 struct pri_sr *pri_sr_new(void)

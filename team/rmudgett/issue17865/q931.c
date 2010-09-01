@@ -8342,17 +8342,24 @@ static void pri_dl_down_cancelcall(void *data)
 }
 
 /* Receive an indication from Layer 2 */
-void q931_dl_indication(struct pri *ctrl, int event)
+void q931_dl_indication(struct pri *link, int event)
 {
 	struct q931_call *cur;
-	struct q931_call *winner;
+	struct q931_call *call;
+	struct pri *ctrl;
+	int idx;
 
-	if (!ctrl) {
+	if (!link) {
 		return;
 	}
 
 	/* Find the master - He has the call pool */
-	ctrl = PRI_MASTER(ctrl);
+	ctrl = PRI_MASTER(link);
+
+	if (BRI_TE_PTMP(ctrl)) {
+		/* The link is always the master */
+		link = ctrl;
+	}
 
 	switch (event) {
 	case PRI_EVENT_DCHAN_DOWN:
@@ -8363,24 +8370,76 @@ void q931_dl_indication(struct pri *ctrl, int event)
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
-			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
-				/* For a call in Active state, activate T309 only if there is no timer already running. */
-				if (!cur->retranstimer) {
+			}
+			if (cur->outboundbroadcast) {
+				/* Does this master call have a subcall on the link that went down? */
+				call = NULL;
+				for (idx = 0; idx < ARRAY_LEN(cur->subcalls); ++idx) {
+					if (cur->subcalls[idx] && cur->subcalls[idx]->pri == link) {
+						/* This subcall is on the link that went down. */
+						call = cur->subcalls[idx];
+						break;
+					}
+				}
+				if (!call) {
+					/* No subcall is on the link that went down. */
+					continue;
+				}
+			} else if (cur->pri != link) {
+				/* This call is not on the link that went down. */
+				continue;
+			} else {
+				call = cur;
+			}
+			switch (call->ourcallstate) {
+			case Q931_CALL_STATE_ACTIVE:
+				/* NOTE: Only a winning subcall can get to the active state. */
+				if (ctrl->nfas) {
+					/*
+					 * The upper layer should handle T309 for NFAS since the calls
+					 * could be maintained by a backup D channel if the B channel
+					 * for the call did not go into alarm.
+					 */
+					break;
+				}
+				/*
+				 * For a call in Active state, activate T309 only if there is
+				 * no timer already running.
+				 *
+				 * NOTE: cur != call when we have a winning subcall.
+				 */
+				if (!cur->retranstimer || !call->retranstimer) {
 					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 						pri_message(ctrl, "Start T309 for call %d on channel %d\n",
 							cur->cr, cur->channelno);
 					}
 					cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
 				}
-			} else if (cur->ourcallstate != Q931_CALL_STATE_NULL) {
-				/* For a call that is not in Active state, schedule internal clearing of the call 'ASAP' (delay 0). */
+				break;
+			case Q931_CALL_STATE_NULL:
+				break;
+			default:
+				/*
+				 * For a call that is not in Active state, schedule internal
+				 * clearing of the call 'ASAP' (delay 0).
+				 *
+				 * NOTE: We are killing NFAS calls that are not connected yet
+				 * because there are likely messages in flight when this link
+				 * went down that could leave the call in an unknown/stuck state.
+				 */
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 					pri_message(ctrl, "Cancel call %d on channel %d in state %d (%s)\n",
-						cur->cr, cur->channelno, cur->ourcallstate,
-						q931_call_state_str(cur->ourcallstate));
+						call->cr, call->channelno, call->ourcallstate,
+						q931_call_state_str(call->ourcallstate));
 				}
-				pri_schedule_del(ctrl, cur->retranstimer);
-				cur->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, cur);
+				if (cur->outboundbroadcast) {
+					/* Simply destroy non-winning subcalls. */
+					q931_destroycall(ctrl, call);
+					continue;
+				}
+				pri_schedule_del(ctrl, call->retranstimer);
+				call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, call);
+				break;
 			}
 		}
 		break;
@@ -8392,7 +8451,30 @@ void q931_dl_indication(struct pri *ctrl, int event)
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
-			} else if (cur->ourcallstate == Q931_CALL_STATE_ACTIVE) {
+			}
+			if (cur->outboundbroadcast) {
+				/* Does this master call have a subcall on the link that came up? */
+				call = NULL;
+				for (idx = 0; idx < ARRAY_LEN(cur->subcalls); ++idx) {
+					if (cur->subcalls[idx] && cur->subcalls[idx]->pri == link) {
+						/* This subcall is on the link that came up. */
+						call = cur->subcalls[idx];
+						break;
+					}
+				}
+				if (!call) {
+					/* No subcall is on the link that came up. */
+					continue;
+				}
+			} else if (cur->pri != link) {
+				/* This call is not on the link that came up. */
+				continue;
+			} else {
+				call = cur;
+			}
+			switch (call->ourcallstate) {
+			case Q931_CALL_STATE_ACTIVE:
+				/* NOTE: Only a winning subcall can get to the active state. */
 				if (pri_schedule_check(ctrl, cur->retranstimer, pri_dl_down_timeout, cur)) {
 					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 						pri_message(ctrl, "Stop T309 for call %d on channel %d\n",
@@ -8401,23 +8483,21 @@ void q931_dl_indication(struct pri *ctrl, int event)
 					pri_schedule_del(ctrl, cur->retranstimer);
 					cur->retranstimer = 0;
 				}
-				winner = q931_find_winning_call(cur);
-				if (winner) {
-					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
-				}
-			} else if (cur->ourcallstate != Q931_CALL_STATE_NULL &&
-				cur->ourcallstate != Q931_CALL_STATE_DISCONNECT_REQUEST &&
-				cur->ourcallstate != Q931_CALL_STATE_DISCONNECT_INDICATION &&
-				cur->ourcallstate != Q931_CALL_STATE_RELEASE_REQUEST) {
+				q931_status(ctrl, call, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				break;
+			case Q931_CALL_STATE_NULL:
+			case Q931_CALL_STATE_DISCONNECT_REQUEST:
+			case Q931_CALL_STATE_DISCONNECT_INDICATION:
+			case Q931_CALL_STATE_RELEASE_REQUEST:
+				break;
+			default:
 				/*
 				 * The STATUS message sent here is not required by Q.931,
 				 * but it may help anyway.
 				 * This looks like a new call started while the link was down.
 				 */
-				winner = q931_find_winning_call(cur);
-				if (winner) {
-					q931_status(ctrl, winner, PRI_CAUSE_NORMAL_UNSPECIFIED);
-				}
+				q931_status(ctrl, call, PRI_CAUSE_NORMAL_UNSPECIFIED);
+				break;
 			}
 		}
 		break;
