@@ -96,6 +96,7 @@ struct pri {
 	int sapi;
 	int tei;
 	int protodisc;
+	unsigned int nfas:1;/* TRUE if this D channel is involved with an NFAS group */
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
 	unsigned int sendfacility:1;
