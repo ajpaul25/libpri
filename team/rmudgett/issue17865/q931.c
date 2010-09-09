@@ -5865,6 +5865,7 @@ static void pri_fake_clearing(void *data)
 
 static void pri_create_fake_clearing(struct q931_call *c, struct pri *master)
 {
+	/* Point to the master so the timeout event can come out. */
 	c->pri = master;
 
 	pri_schedule_del(master, c->retranstimer);
@@ -8334,6 +8335,10 @@ static void pri_dl_down_timeout(void *data)
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
 
+	/* Point to the master so the timeout event can come out. */
+	ctrl = PRI_MASTER(ctrl);
+	c->pri = ctrl;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "T309 timed out waiting for data link re-establishment\n");
 
@@ -8349,6 +8354,10 @@ static void pri_dl_down_cancelcall(void *data)
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
 
+	/* Point to the master so the timeout event can come out. */
+	ctrl = PRI_MASTER(ctrl);
+	c->pri = ctrl;
+
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl, "Cancel call after data link failure\n");
 
@@ -8356,6 +8365,93 @@ static void pri_dl_down_cancelcall(void *data)
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
 	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
 		ctrl->schedev = 1;
+}
+
+/*!
+ * \brief Layer 2 is removing the link's TEI.
+ *
+ * \param link Q.921 link losing it's TEI.
+ *
+ * \note
+ * For NT PTMP, this deviation from the specifications is needed
+ * because we have no way to re-associate any T309 calls on the
+ * removed TEI.
+ *
+ * \return Nothing
+ */
+void q931_dl_tei_removal(struct pri *link)
+{
+	struct q931_call *cur;
+	struct q931_call *call;
+	struct pri *ctrl;
+	int idx;
+
+	/* Find the master - He has the call pool */
+	ctrl = PRI_MASTER(link);
+
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "DL TEI removal\n");
+	}
+
+	if (!BRI_NT_PTMP(ctrl)) {
+		/* Only NT PTMP has anything to worry about when the TEI is removed. */
+		return;
+	}
+
+	for (cur = *ctrl->callpool; cur; cur = cur->next) {
+		if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
+			/* Don't do anything on the global call reference call record. */
+			continue;
+		}
+		if (cur->outboundbroadcast) {
+			/* Does this master call have a subcall on the link that went down? */
+			call = NULL;
+			for (idx = 0; idx < ARRAY_LEN(cur->subcalls); ++idx) {
+				if (cur->subcalls[idx] && cur->subcalls[idx]->pri == link) {
+					/* This subcall is on the link that went down. */
+					call = cur->subcalls[idx];
+					break;
+				}
+			}
+			if (!call) {
+				/* No subcall is on the link that went down. */
+				continue;
+			}
+		} else if (cur->pri != link) {
+			/* This call is not on the link that went down. */
+			continue;
+		} else {
+			call = cur;
+		}
+
+
+		/*
+		 * NOTE:  We are gambling that no T309 timer's have had a chance
+		 * to expire.  They should not expire since we are either called
+		 * immediately after the q931_dl_indication() or after a timeout
+		 * of 0.
+		 */
+		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+			pri_message(ctrl, "Cancel call %d on channel %d in state %d (%s)\n",
+				call->cr, call->channelno, call->ourcallstate,
+				q931_call_state_str(call->ourcallstate));
+		}
+		call->pri = ctrl;/* Point to a safer place until the call is destroyed. */
+		if (call->retranstimer) {
+			pri_schedule_del(ctrl, call->retranstimer);
+			call->retranstimer = 0;
+		}
+		switch (call->ourcallstate) {
+		case Q931_CALL_STATE_ACTIVE:
+			/* NOTE: Only a winning subcall can get to the active state. */
+			pri_schedule_del(ctrl, cur->retranstimer);
+			cur->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, cur);
+			break;
+		default:
+			call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, call);
+			break;
+		}
+	}
 }
 
 /* Receive an indication from Layer 2 */
