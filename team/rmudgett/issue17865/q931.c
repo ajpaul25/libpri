@@ -5273,6 +5273,9 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 
 	c->cc.saved_ie_contents.length = 0;
 	c->cc.saved_ie_flags = 0;
+	if (BRI_NT_PTMP(ctrl)) {
+		c->outboundbroadcast = 1;
+	}
 	if (ctrl->subchannel && !ctrl->bri)
 		res = send_message(ctrl, c, Q931_SETUP, gr303_setup_ies);
 	else if (c->cis_call)
@@ -5286,13 +5289,9 @@ int q931_setup(struct pri *ctrl, q931_call *c, struct pri_sr *req)
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_CALL_INITIATED);
 		c->peercallstate = Q931_CALL_STATE_CALL_PRESENT;
 		c->t303_expirycnt = 0;
-		if (BRI_NT_PTMP(ctrl)) {
-			c->outboundbroadcast = 1;
-		}
 		start_t303(c);
 	}
 	return res;
-	
 }
 
 static int register_ies[] = { Q931_IE_FACILITY, -1 };
@@ -8293,6 +8292,18 @@ static int pri_internal_clear(void *data)
 
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 	c->peercallstate = Q931_CALL_STATE_NULL;
+
+	if (c->master_call->outboundbroadcast
+		&& c == q931_find_winning_call(c)) {
+		/* Pass the hangup cause to the master_call. */
+		c->master_call->cause = c->cause;
+
+		/* Declare this winning subcall to no longer be the winner and destroy it. */
+		c->master_call->pri_winner = -1;
+		q931_destroycall(ctrl, c);
+		return 0;
+	}
+
 	q931_clr_subcommands(ctrl);
 	ctrl->ev.hangup.subcmds = &ctrl->subcmds;
 	ctrl->ev.hangup.channel = q931_encode_channel(c);
@@ -8424,7 +8435,6 @@ void q931_dl_tei_removal(struct pri *link)
 			call = cur;
 		}
 
-
 		/*
 		 * NOTE:  We are gambling that no T309 timer's have had a chance
 		 * to expire.  They should not expire since we are either called
@@ -8432,25 +8442,13 @@ void q931_dl_tei_removal(struct pri *link)
 		 * of 0.
 		 */
 		if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-			pri_message(ctrl, "Cancel call %d on channel %d in state %d (%s)\n",
+			pri_message(ctrl, "Cancel call cref=%d on channel %d in state %d (%s)\n",
 				call->cr, call->channelno, call->ourcallstate,
 				q931_call_state_str(call->ourcallstate));
 		}
 		call->pri = ctrl;/* Point to a safer place until the call is destroyed. */
-		if (call->retranstimer) {
-			pri_schedule_del(ctrl, call->retranstimer);
-			call->retranstimer = 0;
-		}
-		switch (call->ourcallstate) {
-		case Q931_CALL_STATE_ACTIVE:
-			/* NOTE: Only a winning subcall can get to the active state. */
-			pri_schedule_del(ctrl, cur->retranstimer);
-			cur->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, cur);
-			break;
-		default:
-			call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, call);
-			break;
-		}
+		pri_schedule_del(ctrl, call->retranstimer);
+		call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, call);
 	}
 }
 
@@ -8523,10 +8521,11 @@ void q931_dl_indication(struct pri *link, int event)
 				 */
 				if (!cur->retranstimer || !call->retranstimer) {
 					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-						pri_message(ctrl, "Start T309 for call %d on channel %d\n",
-							cur->cr, cur->channelno);
+						pri_message(ctrl, "Start T309 for call cref=%d on channel %d\n",
+							call->cr, call->channelno);
 					}
-					cur->retranstimer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, cur);
+					call->retranstimer = pri_schedule_event(ctrl,
+						ctrl->timers[PRI_TIMER_T309], pri_dl_down_timeout, call);
 				}
 				break;
 			case Q931_CALL_STATE_NULL:
@@ -8541,7 +8540,8 @@ void q931_dl_indication(struct pri *link, int event)
 				 * went down that could leave the call in an unknown/stuck state.
 				 */
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-					pri_message(ctrl, "Cancel call %d on channel %d in state %d (%s)\n",
+					pri_message(ctrl,
+						"Cancel call cref=%d on channel %d in state %d (%s)\n",
 						call->cr, call->channelno, call->ourcallstate,
 						q931_call_state_str(call->ourcallstate));
 				}
@@ -8551,7 +8551,8 @@ void q931_dl_indication(struct pri *link, int event)
 					continue;
 				}
 				pri_schedule_del(ctrl, call->retranstimer);
-				call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall, call);
+				call->retranstimer = pri_schedule_event(ctrl, 0, pri_dl_down_cancelcall,
+					call);
 				break;
 			}
 		}
@@ -8588,13 +8589,13 @@ void q931_dl_indication(struct pri *link, int event)
 			switch (call->ourcallstate) {
 			case Q931_CALL_STATE_ACTIVE:
 				/* NOTE: Only a winning subcall can get to the active state. */
-				if (pri_schedule_check(ctrl, cur->retranstimer, pri_dl_down_timeout, cur)) {
+				if (pri_schedule_check(ctrl, call->retranstimer, pri_dl_down_timeout, call)) {
 					if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-						pri_message(ctrl, "Stop T309 for call %d on channel %d\n",
-							cur->cr, cur->channelno);
+						pri_message(ctrl, "Stop T309 for call cref=%d on channel %d\n",
+							call->cr, call->channelno);
 					}
-					pri_schedule_del(ctrl, cur->retranstimer);
-					cur->retranstimer = 0;
+					pri_schedule_del(ctrl, call->retranstimer);
+					call->retranstimer = 0;
 				}
 				q931_status(ctrl, call, PRI_CAUSE_NORMAL_UNSPECIFIED);
 				break;
