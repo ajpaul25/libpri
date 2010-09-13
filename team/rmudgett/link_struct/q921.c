@@ -221,7 +221,7 @@ static void t202_expire(void *vlink)
 		case Q921_ESTABLISH_AWAITING_TEI:
 			q921_discard_iqueue(link);
 			/* DL-RELEASE indication */
-			q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+			q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 			break;
 		default:
 			break;
@@ -721,7 +721,7 @@ static void t200_expire(void *vlink)
 			q921_mdl_error(link, 'G');
 			q921_setstate(link, Q921_TEI_ASSIGNED);
 			/* DL-RELEASE indication */
-			q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+			q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		}
 		break;
 	case Q921_AWAITING_RELEASE:
@@ -732,6 +732,7 @@ static void t200_expire(void *vlink)
 		} else {
 			q921_mdl_error(link, 'H');
 			/* DL-RELEASE confirm */
+			q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_CONFIRM);
 			q921_setstate(link, Q921_TEI_ASSIGNED);
 		}
 		break;
@@ -1348,7 +1349,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 {
 	pri_event *res = NULL;
 	struct pri *ctrl;
-	int delay_q931_dl_indication;
+	enum Q931_DL_EVENT delay_q931_dl_event;
 
 	ctrl = PRI_MASTER(link);
 
@@ -1363,17 +1364,17 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 		if (link->v_s != link->v_a) {
 			q921_discard_iqueue(link);
 			/* DL-ESTABLISH indication */
-			delay_q931_dl_indication = 1;
+			delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
 		} else {
-			delay_q931_dl_indication = 0;
+			delay_q931_dl_event = Q931_DL_EVENT_NONE;
 		}
 		stop_t200(link);
 		start_t203(link);
 		link->v_s = link->v_a = link->v_r = 0;
 		q921_setstate(link, Q921_MULTI_FRAME_ESTABLISHED);
-		if (delay_q931_dl_indication) {
+		if (delay_q931_dl_event != Q931_DL_EVENT_NONE) {
 			/* Delayed because Q.931 could send STATUS messages. */
-			q931_dl_indication(link, PRI_EVENT_DCHAN_UP);
+			q931_dl_event(link, delay_q931_dl_event);
 		}
 		break;
 	case Q921_TEI_ASSIGNED:
@@ -1381,17 +1382,16 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 		q921_clear_exception_conditions(link);
 		link->v_s = link->v_a = link->v_r = 0;
 		/* DL-ESTABLISH indication */
-		//delay_q931_dl_indication = 1;
+		delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
 		if (PTP_MODE(ctrl)) {
 			ctrl->ev.gen.e = PRI_EVENT_DCHAN_UP;
 			res = &ctrl->ev;
 		}
 		start_t203(link);
 		q921_setstate(link, Q921_MULTI_FRAME_ESTABLISHED);
-		//if (delay_q931_dl_indication)
-		{
+		if (delay_q931_dl_event != Q931_DL_EVENT_NONE) {
 			/* Delayed because Q.931 could send STATUS messages. */
-			q931_dl_indication(link, PRI_EVENT_DCHAN_UP);
+			q931_dl_event(link, delay_q931_dl_event);
 		}
 		break;
 	case Q921_AWAITING_ESTABLISHMENT:
@@ -1433,7 +1433,7 @@ static pri_event *q921_disc_rx(struct pri *link, q921_h *h)
 		q921_discard_iqueue(link);
 		q921_send_ua(link, h->u.p_f);
 		/* DL-RELEASE indication */
-		q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
 		if (link->q921_state == Q921_MULTI_FRAME_ESTABLISHED)
 			stop_t203(link);
@@ -1478,20 +1478,21 @@ static void q921_mdl_remove(struct pri *link)
 	case Q921_AWAITING_ESTABLISHMENT:
 		q921_discard_iqueue(link);
 		/* DL-RELEASE indication */
-		q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
 		q921_setstate(link, Q921_TEI_UNASSIGNED);
 		break;
 	case Q921_AWAITING_RELEASE:
 		q921_discard_iqueue(link);
 		/* DL-RELEASE confirm */
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_CONFIRM);
 		stop_t200(link);
 		q921_setstate(link, Q921_TEI_UNASSIGNED);
 		break;
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		q921_discard_iqueue(link);
 		/* DL-RELEASE indication */
-		q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
 		stop_t203(link);
 		q921_setstate(link, Q921_TEI_UNASSIGNED);
@@ -1499,7 +1500,7 @@ static void q921_mdl_remove(struct pri *link)
 	case Q921_TIMER_RECOVERY:
 		q921_discard_iqueue(link);
 		/* DL-RELEASE indication */
-		q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
 		q921_setstate(link, Q921_TEI_UNASSIGNED);
 		break;
@@ -1509,7 +1510,7 @@ static void q921_mdl_remove(struct pri *link)
 		return;
 	}
 
-	q931_dl_tei_removal(link);
+	q931_dl_event(link, Q931_DL_EVENT_TEI_REMOVAL);
 
 	/*
 	 * Negate the TEI value so debug messages will display a
@@ -1807,7 +1808,7 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 {
 	struct pri *ctrl;
 	pri_event *res = NULL;
-	int delay_q931_dl_indication;
+	enum Q931_DL_EVENT delay_q931_dl_event;
 
 	ctrl = PRI_MASTER(link);
 
@@ -1831,16 +1832,17 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 			break;
 		}
 
-		delay_q931_dl_indication = 0;
+		delay_q931_dl_event = Q931_DL_EVENT_NONE;
 		if (!link->l3initiated) {
 			if (link->v_s != link->v_a) {
 				q921_discard_iqueue(link);
 				/* DL-ESTABLISH indication */
-				delay_q931_dl_indication = 1;
+				delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
 			}
 		} else {
 			link->l3initiated = 0;
 			/* DL-ESTABLISH confirm */
+			delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_CONFIRM;
 		}
 
 		if (PTP_MODE(ctrl)) {
@@ -1854,9 +1856,9 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 		link->v_r = link->v_s = link->v_a = 0;
 
 		q921_setstate(link, Q921_MULTI_FRAME_ESTABLISHED);
-		if (delay_q931_dl_indication) {
+		if (delay_q931_dl_event != Q931_DL_EVENT_NONE) {
 			/* Delayed because Q.931 could send STATUS messages. */
-			q931_dl_indication(link, PRI_EVENT_DCHAN_UP);
+			q931_dl_event(link, delay_q931_dl_event);
 		}
 		break;
 	case Q921_AWAITING_RELEASE:
@@ -1864,6 +1866,7 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 			q921_mdl_error(link, 'D');
 		} else {
 			/* DL-RELEASE confirm */
+			q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_CONFIRM);
 			stop_t200(link);
 			q921_setstate(link, Q921_TEI_ASSIGNED);
 		}
@@ -2307,7 +2310,7 @@ static pri_event *q921_dm_rx(struct pri *link, q921_h *h)
 
 		q921_discard_iqueue(link);
 		/* DL-RELEASE indication */
-		q931_dl_indication(link, PRI_EVENT_DCHAN_DOWN);
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
 		q921_setstate(link, Q921_TEI_ASSIGNED);
 		q921_restart_ptp_link_if_needed(link);
@@ -2316,6 +2319,7 @@ static pri_event *q921_dm_rx(struct pri *link, q921_h *h)
 		if (!h->u.p_f)
 			break;
 		/* DL-RELEASE confirm */
+		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_CONFIRM);
 		stop_t200(link);
 		q921_setstate(link, Q921_TEI_ASSIGNED);
 		break;
