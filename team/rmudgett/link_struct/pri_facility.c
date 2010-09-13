@@ -2556,6 +2556,7 @@ static int etsi_ect_link_id_rsp(enum APDU_CALLBACK_REASON reason, struct pri *ct
 
 	switch (reason) {
 	case APDU_CALLBACK_REASON_MSG_RESULT:
+/* BUGBUG need a link here */
 		call_2 = q931_find_call(ctrl, apdu->response.user.value);
 		if (!call_2) {
 			break;
