@@ -402,7 +402,8 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 		break;
 	}
 
-	if (p->tei == Q921_TEI_GROUP && p->sapi == Q921_SAPI_LAYER2_MANAGEMENT && p->localtype == PRI_CPE) {
+	if (p->tei == Q921_TEI_GROUP && p->sapi == Q921_SAPI_LAYER2_MANAGEMENT
+		&& p->localtype == PRI_CPE) {
 		p->subchannel = __pri_new_tei(-1, p->localtype, p->switchtype, p, NULL, NULL, NULL, Q921_TEI_PRI, 1);
 		if (!p->subchannel) {
 			free(p);
