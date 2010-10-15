@@ -3956,6 +3956,12 @@ static struct q931_call *q931_getcall(struct pri *link, int cr)
 		/* Do not create new dummy call records. */
 		return NULL;
 	}
+	if (link->tei == Q921_TEI_GROUP
+		&& BRI_NT_PTMP(link)) {
+		/* Do not create NT PTMP broadcast call records here. */
+		pri_error(ctrl, "NT PTMP cannot create call record for cref %d on the broadcast TEI.\n", cr);
+		return NULL;
+	}
 
 	/* No call record exists, make a new one */
 	return q931_create_call_record(link, cr);
