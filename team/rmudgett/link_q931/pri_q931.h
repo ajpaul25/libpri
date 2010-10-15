@@ -491,7 +491,6 @@ extern int q931_call_getcrv(struct pri *pri, q931_call *call, int *callmode);
 
 extern int q931_call_setcrv(struct pri *pri, q931_call *call, int crv, int callmode);
 
-struct q931_call *q931_find_call(struct pri *link, int cr);
 struct q931_call *q931_new_call(struct pri *ctrl);
 
 extern int q931_setup(struct pri *pri, q931_call *c, struct pri_sr *req);

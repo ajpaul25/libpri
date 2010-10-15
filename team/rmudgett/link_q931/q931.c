@@ -3827,7 +3827,10 @@ void q931_init_call_record(struct pri *link, struct q931_call *call, int cr)
 	/* The call is now attached to whoever called us */
 	ctrl = PRI_MASTER(link);
 	call->pri = ctrl;
-	if (BRI_TE_PTMP(ctrl)) {
+	if (cr == Q931_DUMMY_CALL_REFERENCE) {
+		/* Dummy calls are always for the given link. */
+		call->link = link;
+	} else if (BRI_TE_PTMP(ctrl)) {
 		/* Always uses the specific TEI link. */
 		call->link = ctrl->subchannel;
 	} else {
@@ -3881,6 +3884,7 @@ static struct q931_call *q931_create_call_record(struct pri *link, int cr)
 }
 
 /*!
+ * \internal
  * \brief Find a call in the active call pool.
  *
  * \param link Q.921 link associated with the call.
@@ -3889,7 +3893,7 @@ static struct q931_call *q931_create_call_record(struct pri *link, int cr)
  * \retval call if found.
  * \retval NULL if not found.
  */
-struct q931_call *q931_find_call(struct pri *link, int cr)
+static struct q931_call *q931_find_call(struct pri *link, int cr)
 {
 	struct q931_call *cur;
 	struct pri *ctrl;
@@ -3947,6 +3951,10 @@ static struct q931_call *q931_getcall(struct pri *link, int cr)
 	cur = q931_find_call(link, cr);
 	if (cur) {
 		return cur;
+	}
+	if (cr == Q931_DUMMY_CALL_REFERENCE) {
+		/* Do not create new dummy call records. */
+		return NULL;
 	}
 
 	/* No call record exists, make a new one */
