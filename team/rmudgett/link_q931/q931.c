@@ -3788,6 +3788,8 @@ static inline void q931_dumpie(struct pri *ctrl, int codeset, q931_ie *ie, char 
  */
 void q931_init_call_record(struct pri *link, struct q931_call *call, int cr)
 {
+	struct pri *ctrl;
+
 	call->cr = cr;
 	call->slotmap = -1;
 	call->channelno = -1;
@@ -3823,8 +3825,14 @@ void q931_init_call_record(struct pri *link, struct q931_call *call, int cr)
 	q931_party_redirecting_init(&call->redirecting);
 
 	/* The call is now attached to whoever called us */
-	call->pri = PRI_MASTER(link);
-	call->link = link;
+	ctrl = PRI_MASTER(link);
+	call->pri = ctrl;
+	if (BRI_TE_PTMP(ctrl)) {
+		/* Always uses the specific TEI link. */
+		call->link = ctrl->subchannel;
+	} else {
+		call->link = link;
+	}
 }
 
 /*!
@@ -3945,6 +3953,14 @@ static struct q931_call *q931_getcall(struct pri *link, int cr)
 	return q931_create_call_record(link, cr);
 }
 
+/*!
+ * \brief Create a new call record for an outgoing call.
+ *
+ * \param ctrl D channel controller.
+ *
+ * \retval call on success.
+ * \retval NULL on error.
+ */
 struct q931_call *q931_new_call(struct pri *ctrl)
 {
 	struct q931_call *cur;
@@ -3954,12 +3970,6 @@ struct q931_call *q931_new_call(struct pri *ctrl)
 
 	/* Find the master - He has the call pool */
 	ctrl = PRI_MASTER(ctrl);
-
-	if (BRI_TE_PTMP(ctrl)) {
-		link = ctrl->subchannel;
-	} else {
-		link = ctrl;
-	}
 
 	/* Find a new call reference value. */
 	first_cref = ctrl->cref;
@@ -3991,6 +4001,7 @@ struct q931_call *q931_new_call(struct pri *ctrl)
 		}
 	} while (cur);
 
+	link = ctrl;
 	return q931_create_call_record(link, cref);
 }
 
@@ -4637,6 +4648,7 @@ int maintenance_service(struct pri *ctrl, int span, int channel, int changestatu
 	int pd = MAINTENANCE_PROTOCOL_DISCRIMINATOR_1;
 	int mt = ATT_SERVICE;
 
+/* BUGBUG need a link */
 	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c) {
 		return -1;
@@ -5137,6 +5149,7 @@ int q931_restart(struct pri *ctrl, int channel)
 {
 	struct q931_call *c;
 
+/* BUGBUG need a link */
 	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c)
 		return -1;
@@ -6572,7 +6585,7 @@ int q931_receive(struct pri *link, q931_h *h, int len)
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 		pri_message(ctrl,
-			"Received message for call %p on %p TEI/SAPI %d/%d\n",
+			"Received message for call %p on link %p TEI/SAPI %d/%d\n",
 			c, link, link->tei, link->sapi);
 	}
 
