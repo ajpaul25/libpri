@@ -450,7 +450,7 @@ struct decoded_bc {
 struct q931_call {
 	struct pri *pri;	/* D channel controller (master) */
 	struct pri *link;	/* Q.921 link associated with this call. */
-	q931_call *next;
+	struct q931_call *next;
 	int cr;				/* Call Reference */
 	/* Slotmap specified (bitmap of channels 31/24-1) (Channel Identifier IE) (-1 means not specified) */
 	int slotmap;
