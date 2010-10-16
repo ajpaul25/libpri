@@ -450,8 +450,6 @@ enum Q931_RANKED_CALL_STATE {
 
 extern int maintenance_service(struct pri *pri, int span, int channel, int changestatus);
 
-extern int maintenance_service_ack(struct pri *pri, q931_call *call);
-
 
 /* Q.SIG specific */
 #define QSIG_IE_TRANSIT_COUNT		0x31
