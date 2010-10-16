@@ -3947,6 +3947,7 @@ static struct q931_call *q931_find_call(struct pri *link, int cr)
 static struct q931_call *q931_getcall(struct pri *link, int cr)
 {
 	struct q931_call *cur;
+	struct pri *ctrl;
 
 	cur = q931_find_call(link, cr);
 	if (cur) {
@@ -3954,6 +3955,14 @@ static struct q931_call *q931_getcall(struct pri *link, int cr)
 	}
 	if (cr == Q931_DUMMY_CALL_REFERENCE) {
 		/* Do not create new dummy call records. */
+		return NULL;
+	}
+	ctrl = PRI_MASTER(link);
+	if (link->tei == Q921_TEI_GROUP
+		&& BRI_NT_PTMP(ctrl)) {
+		/* Do not create NT PTMP broadcast call records here. */
+		pri_error(ctrl,
+			"NT PTMP cannot create call record for cref %d on the broadcast TEI.\n", cr);
 		return NULL;
 	}
 
@@ -4494,7 +4503,7 @@ static void init_header(struct pri *ctrl, q931_call *call, unsigned char *buf, q
 	*mhb = mh;
 }
 
-static int q931_xmit(struct pri *link, q931_h *h, int len, int cr, int uiframe)
+static void q931_xmit(struct pri *link, q931_h *h, int len, int cr, int uiframe)
 {
 	struct pri *ctrl;
 
@@ -4503,6 +4512,10 @@ static int q931_xmit(struct pri *link, q931_h *h, int len, int cr, int uiframe)
 	ctrl->q931_txcount++;
 #endif
 	if (uiframe) {
+		if (link->tei != Q921_TEI_GROUP) {
+			pri_error(ctrl, "Huh?! Attempting to send UI-frame on TEI %d\n", link->tei);
+			return;
+		}
 		q921_transmit_uiframe(link, h, len);
 		if (ctrl->debug & PRI_DEBUG_Q931_DUMP) {
 			/*
@@ -4525,7 +4538,6 @@ static int q931_xmit(struct pri *link, q931_h *h, int len, int cr, int uiframe)
 		}
 		q921_transmit_iframe(link, h, len, cr);
 	}
-	return 0;
 }
 
 /*!
@@ -4638,7 +4650,7 @@ static int send_message(struct pri *ctrl, q931_call *call, int msgtype, int ies[
 
 static int maintenance_service_ies[] = { Q931_IE_CHANGE_STATUS, Q931_CHANNEL_IDENT, -1 };
 
-int maintenance_service_ack(struct pri *ctrl, q931_call *c)
+static int maintenance_service_ack(struct pri *ctrl, q931_call *c)
 {
 	int pd = MAINTENANCE_PROTOCOL_DISCRIMINATOR_1;
 	int mt = ATT_SERVICE_ACKNOWLEDGE;
@@ -4650,13 +4662,15 @@ int maintenance_service_ack(struct pri *ctrl, q931_call *c)
 	return send_message(ctrl, c, (pd << 8) | mt, maintenance_service_ies);
 }
 
+/*!
+ * \note Maintenance service messages only supported in PRI mode.
+ */
 int maintenance_service(struct pri *ctrl, int span, int channel, int changestatus)
 {
 	struct q931_call *c;
 	int pd = MAINTENANCE_PROTOCOL_DISCRIMINATOR_1;
 	int mt = ATT_SERVICE;
 
-/* BUGBUG need a link */
 	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c) {
 		return -1;
@@ -5153,11 +5167,36 @@ int q931_release(struct pri *ctrl, q931_call *c, int cause)
 
 static int restart_ies[] = { Q931_CHANNEL_IDENT, Q931_RESTART_INDICATOR, -1 };
 
+/*!
+ * \brief Send the RESTART message to the peer.
+ *
+ * \param ctrl D channel controller.
+ * \param channel Encoded channel id to use.
+ *
+ * \note
+ * Sending RESTART in NT PTMP mode is not supported at the
+ * present time.
+ *
+ * \note
+ * NT PTMP should broadcast the RESTART if there is a TEI
+ * allocated.  Otherwise it should immediately ACK the RESTART
+ * itself to avoid the T316 timeout delay (2 minutes) since
+ * there might not be anything connected.  The broadcast could
+ * be handled in a similar manner to the broadcast SETUP.
+ *
+ * \todo Need to implement T316 to protect against missing
+ * RESTART_ACKNOWLEDGE and STATUS messages.
+ *
+ * \todo NT PTMP mode should implement some protection from
+ * receiving a RESTART on channels in use by another TEI.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
 int q931_restart(struct pri *ctrl, int channel)
 {
 	struct q931_call *c;
 
-/* BUGBUG need a link */
 	c = q931_getcall(ctrl, 0 | Q931_CALL_REFERENCE_FLAG);
 	if (!c)
 		return -1;
@@ -8580,10 +8619,6 @@ void q931_dl_event(struct pri *link, enum Q931_DL_EVENT event)
 		 * removed TEI.
 		 */
 		for (cur = *ctrl->callpool; cur; cur = cur->next) {
-			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
-				/* Don't do anything on the global call reference call record. */
-				continue;
-			}
 			if (cur->outboundbroadcast) {
 				/* Does this master call have a subcall on the link that went down? */
 				call = NULL;
@@ -8603,6 +8638,16 @@ void q931_dl_event(struct pri *link, enum Q931_DL_EVENT event)
 				continue;
 			} else {
 				call = cur;
+			}
+
+			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
+				/* Simply destroy the global call reference call record. */
+				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+					pri_message(ctrl, "TEI=%d Destroying global call record\n",
+						link->tei);
+				}
+				q931_destroycall(ctrl, call);
+				continue;
 			}
 
 			/*
