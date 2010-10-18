@@ -1859,7 +1859,7 @@ int pri_mwi_indicate(struct pri *ctrl, const struct pri_party_id *mailbox,
 		if (!BRI_NT_PTMP(ctrl)) {
 			return -1;
 		}
-		call = PRI_MASTER(ctrl)->dummy_call;
+		call = PRI_MASTER(ctrl)->link.dummy_call;
 		if (!call) {
 			return -1;
 		}
@@ -3882,7 +3882,7 @@ void rose_handle_reject(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		 * Look for the original invocation message on the
 		 * broadcast dummy call reference call first.
 		 */
-		orig_call = PRI_MASTER(ctrl)->dummy_call;
+		orig_call = PRI_MASTER(ctrl)->link.dummy_call;
 		if (orig_call) {
 			apdu = pri_call_apdu_find(orig_call, reject->invoke_id);
 		}
@@ -3966,7 +3966,7 @@ void rose_handle_error(struct pri *ctrl, q931_call *call, int msgtype, q931_ie *
 		 * Look for the original invocation message on the
 		 * broadcast dummy call reference call first.
 		 */
-		orig_call = PRI_MASTER(ctrl)->dummy_call;
+		orig_call = PRI_MASTER(ctrl)->link.dummy_call;
 		if (orig_call) {
 			apdu = pri_call_apdu_find(orig_call, error->invoke_id);
 		}
@@ -4042,7 +4042,7 @@ void rose_handle_result(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		 * Look for the original invocation message on the
 		 * broadcast dummy call reference call first.
 		 */
-		orig_call = PRI_MASTER(ctrl)->dummy_call;
+		orig_call = PRI_MASTER(ctrl)->link.dummy_call;
 		if (orig_call) {
 			apdu = pri_call_apdu_find(orig_call, result->invoke_id);
 		}
@@ -4445,7 +4445,7 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		if (!cc_record) {
 			break;
 		}
-		cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
+		cc_record->signaling = PRI_MASTER(ctrl)->link.dummy_call;
 		/*
 		 * Since we received this facility, we will not be allocating any
 		 * reference and linkage id's.

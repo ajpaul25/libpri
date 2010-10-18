@@ -290,7 +290,7 @@ void __pri_free_tei(struct pri * p)
 	if (p) {
 		struct q931_call *call;
 
-		call = p->dummy_call;
+		call = p->link.dummy_call;
 		if (call) {
 			pri_schedule_del(call->pri, call->retranstimer);
 			call->retranstimer = 0;
@@ -357,8 +357,9 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 	p->localtype = node;
 	p->switchtype = switchtype;
 	p->cref = 1;
-	p->sapi = (tei == Q921_TEI_GROUP) ? Q921_SAPI_LAYER2_MANAGEMENT : Q921_SAPI_CALL_CTRL;
-	p->tei = tei;
+	p->link.sapi = (tei == Q921_TEI_GROUP) ? Q921_SAPI_LAYER2_MANAGEMENT : Q921_SAPI_CALL_CTRL;
+	p->link.tei = tei;
+	p->link.ctrl = master ? master : p;
 	p->nsf = PRI_NSF_NONE;
 	p->protodisc = Q931_PROTOCOL_DISCRIMINATOR;
 	p->master = master;
@@ -378,15 +379,15 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 #endif
 	if (dummy_ctrl) {
 		/* Initialize the dummy call reference call record. */
-		dummy_ctrl->ctrl.dummy_call = &dummy_ctrl->dummy_call;
-		q931_init_call_record(&dummy_ctrl->ctrl, dummy_ctrl->ctrl.dummy_call,
+		dummy_ctrl->ctrl.link.dummy_call = &dummy_ctrl->dummy_call;
+		q931_init_call_record(&dummy_ctrl->ctrl, dummy_ctrl->ctrl.link.dummy_call,
 			Q931_DUMMY_CALL_REFERENCE);
 	}
 	switch (switchtype) {
 	case PRI_SWITCH_GR303_EOC:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
-		p->sapi = Q921_SAPI_GR303_EOC;
-		p->tei = Q921_TEI_GR303_EOC_OPS;
+		p->link.sapi = Q921_SAPI_GR303_EOC;
+		p->link.tei = Q921_TEI_GR303_EOC_OPS;
 		p->subchannel = __pri_new_tei(-1, node, PRI_SWITCH_GR303_EOC_PATH, p, NULL, NULL, NULL, Q921_TEI_GR303_EOC_PATH, 0);
 		if (!p->subchannel) {
 			free(p);
@@ -395,8 +396,8 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 		break;
 	case PRI_SWITCH_GR303_TMC:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
-		p->sapi = Q921_SAPI_GR303_TMC_CALLPROC;
-		p->tei = Q921_TEI_GR303_TMC_CALLPROC;
+		p->link.sapi = Q921_SAPI_GR303_TMC_CALLPROC;
+		p->link.tei = Q921_TEI_GR303_TMC_CALLPROC;
 		p->subchannel = __pri_new_tei(-1, node, PRI_SWITCH_GR303_TMC_SWITCHING, p, NULL, NULL, NULL, Q921_TEI_GR303_TMC_SWITCHING, 0);
 		if (!p->subchannel) {
 			free(p);
@@ -405,19 +406,19 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 		break;
 	case PRI_SWITCH_GR303_TMC_SWITCHING:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
-		p->sapi = Q921_SAPI_GR303_TMC_SWITCHING;
-		p->tei = Q921_TEI_GR303_TMC_SWITCHING;
+		p->link.sapi = Q921_SAPI_GR303_TMC_SWITCHING;
+		p->link.tei = Q921_TEI_GR303_TMC_SWITCHING;
 		break;
 	case PRI_SWITCH_GR303_EOC_PATH:
 		p->protodisc = GR303_PROTOCOL_DISCRIMINATOR;
-		p->sapi = Q921_SAPI_GR303_EOC;
-		p->tei = Q921_TEI_GR303_EOC_PATH;
+		p->link.sapi = Q921_SAPI_GR303_EOC;
+		p->link.tei = Q921_TEI_GR303_EOC_PATH;
 		break;
 	default:
 		break;
 	}
 
-	if (p->tei == Q921_TEI_GROUP && p->sapi == Q921_SAPI_LAYER2_MANAGEMENT
+	if (p->link.tei == Q921_TEI_GROUP && p->link.sapi == Q921_SAPI_LAYER2_MANAGEMENT
 		&& p->localtype == PRI_CPE) {
 		p->subchannel = __pri_new_tei(-1, p->localtype, p->switchtype, p, NULL, NULL, NULL, Q921_TEI_PRI, 1);
 		if (!p->subchannel) {
@@ -430,7 +431,7 @@ struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, 
 		 * to broadcast messages on the dummy call or to broadcast any
 		 * messages for that matter.
 		 */
-		p->dummy_call = p->subchannel->dummy_call;
+		p->link.dummy_call = p->subchannel->link.dummy_call;
 	} else
 		q921_start(p);
 	
@@ -1509,11 +1510,11 @@ char *pri_dump_info_str(struct pri *ctrl)
 	used = pri_snprintf(buf, used, buf_size, "Q921 TX: %d\n", ctrl->q921_txcount);
 	for (link = ctrl; link; link = link->subchannel) {
 		q921outstanding = 0;
-		for (f = link->txqueue; f; f = f->next) {
+		for (f = link->link.tx_queue; f; f = f->next) {
 			++q921outstanding;
 		}
 		used = pri_snprintf(buf, used, buf_size, "Q921 Outstanding: %u (TEI=%d)\n",
-			q921outstanding, link->tei);
+			q921outstanding, link->link.tei);
 	}
 #endif
 #if 0

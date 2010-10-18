@@ -68,6 +68,64 @@ struct pri_msg_line {
 	char str[2048];
 };
 
+/*! \brief Q.921 link controller structure */
+struct q921_link {
+	/*! Next Q.921 link in the chain. */
+	struct q921_link *next;/* BUGBUG list of links not supported yet. */
+	/*! D channel controller associated with this link. */
+	struct pri *ctrl;
+
+	/*!
+	 * \brief Q.931 Dummy call reference call associated with this TEI.
+	 * \note If present then this call is allocated as part of the
+	 * D channel control structure.
+	 */
+	struct q931_call *dummy_call;
+
+	/*! Q.921 Re-transmission queue */
+	struct q921_frame *tx_queue;
+
+	/*! Q.921 State */
+	enum q921_state state;
+
+	/*! Service Access Profile ID of this link */
+	int sapi;
+	/*! Terminal Endpoint ID of this link */
+	int tei;
+	/*! TEI assignment random indicator. */
+	int ri;
+
+	/*! V(A) - Next I-frame sequence number needing ack */
+	int v_a;
+	/*! V(S) - Next I-frame sequence number to send */
+	int v_s;
+	/*! V(R) - Next I-frame sequence number expected to receive */
+	int v_r;
+
+	/* Various timers */
+
+	/*! T-200 retransmission timer */
+	int t200_timer;
+	/*! Retry Count (T200) */
+	int RC;
+	int t202_timer;
+	int n202_counter;
+	/*! Max idle time */
+	int t203_timer;
+
+	/* MDL variables */
+	int mdl_timer;
+	int mdl_error;
+	enum q921_state mdl_error_state;
+	unsigned int mdl_free_me:1;
+
+	unsigned int peer_rx_busy:1;
+	unsigned int own_rx_busy:1;
+	unsigned int acknowledge_pending:1;
+	unsigned int reject_exception:1;
+	unsigned int l3_initiated:1;
+};
+
 /*! \brief D channel controller structure */
 struct pri {
 	int fd;				/* File descriptor for D-Channel */
@@ -93,9 +151,8 @@ struct pri {
 	int localtype;		/* Local network type (unknown, network, cpe) */
 	int remotetype;		/* Remote network type (unknown, network, cpe) */
 
-	int sapi;
-	int tei;
-	int protodisc;
+	int protodisc;	/* Layer 3 protocol discriminator */
+
 	unsigned int nfas:1;/* TRUE if this D channel is involved with an NFAS group */
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
@@ -112,57 +169,23 @@ struct pri {
 	unsigned int manual_connect_ack:1;/* TRUE if the CONNECT_ACKNOWLEDGE is sent with API call */
 	unsigned int mcid_support:1;/* TRUE if the upper layer supports MCID */
 
-	/* MDL variables */
-	int mdl_error;
-	int mdl_error_state;
-	int mdl_timer;
-	int mdl_free_me;
-
-	/* Q.921 State */
-	int q921_state;	
-	int RC;
-	int peer_rx_busy:1;
-	int own_rx_busy:1;
-	int acknowledge_pending:1;
-	int reject_exception:1;
-
-	int v_s;			/* Next N(S) for transmission */
-	int v_a;			/* Last acknowledged frame */
-	int v_r;			/* Next frame expected to be received */
+	/*! Layer 2 link control for D channel. */
+	struct q921_link link;
 	
 	int cref;			/* Next call reference value */
-	
-	int l3initiated;
 
-	/* Various timers */
-	int t203_timer;		/* Max idle time */
-	int t202_timer;
-	int n202_counter;
-	int ri;
-	int t200_timer;		/* T-200 retransmission timer */
 	/* All ISDN Timer values */
 	int timers[PRI_MAX_TIMERS];
 
 	/* Used by scheduler */
-	struct timeval tv;
 	int schedev;
 	pri_event ev;		/* Static event thingy */
 	/*! Subcommands for static event thingy. */
 	struct pri_subcommands subcmds;
 	
-	/* Q.921 Re-transmission queue */
-	struct q921_frame *txqueue;
-	
 	/* Q.931 calls */
-	q931_call **callpool;
-	q931_call *localpool;
-
-	/*!
-	 * \brief Q.931 Dummy call reference call associated with this TEI.
-	 * \note If present then this call is allocated as part of the
-	 * D channel control structure.
-	 */
-	q931_call *dummy_call;
+	struct q931_call **callpool;
+	struct q931_call *localpool;
 
 #ifdef LIBPRI_COUNTERS
 	/* q921/q931 packet counters */
@@ -592,7 +615,7 @@ struct q931_call {
 	int is_link_id_valid;
 
 	/* Bridged call info */
-	q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
+	struct q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
 
 	int changestatus;		/* SERVICE message changestatus */
 	int reversecharge;		/* Reverse charging indication:
@@ -1014,7 +1037,7 @@ static inline int BRI_NT_PTMP(const struct pri *ctrl)
 	/* Check master control structure */
 	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->bri && my_ctrl->localtype == PRI_NETWORK
-		&& my_ctrl->tei == Q921_TEI_GROUP;
+		&& my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 /*!
@@ -1032,7 +1055,7 @@ static inline int BRI_TE_PTMP(const struct pri *ctrl)
 	/* Check master control structure */
 	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->bri && my_ctrl->localtype == PRI_CPE
-		&& my_ctrl->tei == Q921_TEI_GROUP;
+		&& my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 /*!
@@ -1083,7 +1106,7 @@ static inline int PTP_MODE(const struct pri *ctrl)
 
 	/* Check master control structure */
 	my_ctrl = PRI_MASTER(my_ctrl);
-	return my_ctrl->tei == Q921_TEI_PRI;
+	return my_ctrl->link.tei == Q921_TEI_PRI;
 }
 
 /*!
@@ -1100,7 +1123,7 @@ static inline int PTMP_MODE(const struct pri *ctrl)
 
 	/* Check master control structure */
 	my_ctrl = PRI_MASTER(my_ctrl);
-	return my_ctrl->tei == Q921_TEI_GROUP;
+	return my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 #define Q931_DUMMY_CALL_REFERENCE	-1
@@ -1112,7 +1135,7 @@ static inline int PTMP_MODE(const struct pri *ctrl)
  * \retval TRUE if given call is a dummy call.
  * \retval FALSE otherwise.
  */
-static inline int q931_is_dummy_call(const q931_call *call)
+static inline int q931_is_dummy_call(const struct q931_call *call)
 {
 	return (call->cr == Q931_DUMMY_CALL_REFERENCE) ? 1 : 0;
 }

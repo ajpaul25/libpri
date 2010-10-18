@@ -6850,7 +6850,7 @@ long pri_cc_available(struct pri *ctrl, q931_call *call)
 				break;
 			}
 			cc_record->call_linkage_id = linkage_id;
-			cc_record->signaling = PRI_MASTER(ctrl)->dummy_call;
+			cc_record->signaling = PRI_MASTER(ctrl)->link.dummy_call;
 		} else {
 			cc_record = pri_cc_new_record(ctrl, call);
 			if (!cc_record) {
