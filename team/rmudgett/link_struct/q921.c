@@ -47,10 +47,10 @@
 
 #define Q921_INIT(link, hf) do { \
 	memset(&(hf),0,sizeof(hf)); \
-	(hf).h.sapi = (link)->sapi; \
+	(hf).h.sapi = (link)->link.sapi; \
 	(hf).h.ea1 = 0; \
 	(hf).h.ea2 = 1; \
-	(hf).h.tei = (link)->tei; \
+	(hf).h.tei = (link)->link.tei; \
 } while(0)
 
 static void q921_dump_pri(struct pri *link, char direction_tag);
@@ -104,14 +104,14 @@ static void q921_setstate(struct pri *link, int newstate)
 		 * Q921 keeps flipping back and forth between these two states
 		 * when it has nothing better to do.
 		 */
-		switch (link->q921_state) {
+		switch (link->link.state) {
 		case Q921_MULTI_FRAME_ESTABLISHED:
 		case Q921_TIMER_RECOVERY:
 			switch (newstate) {
 			case Q921_MULTI_FRAME_ESTABLISHED:
 			case Q921_TIMER_RECOVERY:
 				/* Suppress displaying this state transition. */
-				link->q921_state = newstate;
+				link->link.state = newstate;
 				return;
 			default:
 				break;
@@ -120,27 +120,27 @@ static void q921_setstate(struct pri *link, int newstate)
 		default:
 			break;
 		}
-		if (link->q921_state != newstate) {
+		if (link->link.state != newstate) {
 			pri_message(ctrl, "Changing from state %d(%s) to %d(%s)\n",
-				link->q921_state, q921_state2str(link->q921_state),
+				link->link.state, q921_state2str(link->link.state),
 				newstate, q921_state2str(newstate));
 		}
 	}
-	link->q921_state = newstate;
+	link->link.state = newstate;
 }
 
 static void q921_discard_iqueue(struct pri *link)
 {
 	struct q921_frame *f, *p;
 
-	f = link->txqueue;
+	f = link->link.tx_queue;
 	while (f) {
 		p = f;
 		f = f->next;
 		/* Free frame */
 		free(p);
 	}
-	link->txqueue = NULL;
+	link->link.tx_queue = NULL;
 }
 
 static int q921_transmit(struct pri *ctrl, q921_h *h, int len) 
@@ -201,21 +201,21 @@ static void t202_expire(void *vlink)
 	ctrl = PRI_MASTER(link);
 
 	/* Start the TEI request timer. */
-	pri_schedule_del(ctrl, link->t202_timer);
-	link->t202_timer =
+	pri_schedule_del(ctrl, link->link.t202_timer);
+	link->link.t202_timer =
 		pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T202], t202_expire, link);
 
-	++link->n202_counter;
-	if (!link->t202_timer || link->n202_counter > ctrl->timers[PRI_TIMER_N202]) {
-		if (!link->t202_timer) {
+	++link->link.n202_counter;
+	if (!link->link.t202_timer || link->link.n202_counter > ctrl->timers[PRI_TIMER_N202]) {
+		if (!link->link.t202_timer) {
 			pri_error(ctrl, "Could not start T202 timer.");
 		} else {
-			pri_schedule_del(ctrl, link->t202_timer);
-			link->t202_timer = 0;
+			pri_schedule_del(ctrl, link->link.t202_timer);
+			link->link.t202_timer = 0;
 		}
 		pri_error(ctrl, "Unable to receive TEI from network in state %d(%s)!\n",
-			link->q921_state, q921_state2str(link->q921_state));
-		switch (link->q921_state) {
+			link->link.state, q921_state2str(link->link.state));
+		switch (link->link.state) {
 		case Q921_ASSIGN_AWAITING_TEI:
 			break;
 		case Q921_ESTABLISH_AWAITING_TEI:
@@ -231,13 +231,13 @@ static void t202_expire(void *vlink)
 	}
 
 	/* Send TEI request */
-	link->ri = random() % 65535;
-	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REQUEST, link->ri, Q921_TEI_GROUP, 1);
+	link->link.ri = random() % 65535;
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REQUEST, link->link.ri, Q921_TEI_GROUP, 1);
 }
 
 static void q921_tei_request(struct pri *link)
 {
-	link->n202_counter = 0;
+	link->link.n202_counter = 0;
 	t202_expire(link);
 }
 
@@ -265,7 +265,7 @@ static void q921_send_dm(struct pri *link, int fbit)
 		return;
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending DM\n", link->tei);
+		pri_message(ctrl, "TEI=%d Sending DM\n", link->link.tei);
 	}
 	q921_transmit(ctrl, &h, 4);
 }
@@ -294,7 +294,7 @@ static void q921_send_disc(struct pri *link, int pbit)
 		return;
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending DISC\n", link->tei);
+		pri_message(ctrl, "TEI=%d Sending DISC\n", link->link.tei);
 	}
 	q921_transmit(ctrl, &h, 4);
 }
@@ -323,7 +323,7 @@ static void q921_send_ua(struct pri *link, int fbit)
 		return;
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending UA\n", link->tei);
+		pri_message(ctrl, "TEI=%d Sending UA\n", link->link.tei);
 	}
 	q921_transmit(ctrl, &h, 3);
 }
@@ -352,7 +352,7 @@ static void q921_send_sabme(struct pri *link)
 		return;
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending SABME\n", link->tei);
+		pri_message(ctrl, "TEI=%d Sending SABME\n", link->link.tei);
 	}
 	q921_transmit(ctrl, &h, 3);
 }
@@ -365,7 +365,7 @@ static int q921_ack_packet(struct pri *link, int num)
 
 	ctrl = PRI_MASTER(link);
 
-	for (prev = NULL, f = link->txqueue; f; prev = f, f = f->next) {
+	for (prev = NULL, f = link->link.tx_queue; f; prev = f, f = f->next) {
 		if (!f->transmitted) {
 			break;
 		}
@@ -375,14 +375,14 @@ static int q921_ack_packet(struct pri *link, int num)
 			if (prev)
 				prev->next = f->next;
 			else
-				link->txqueue = f->next;
+				link->link.tx_queue = f->next;
 			if (ctrl->debug & PRI_DEBUG_Q921_DUMP) {
 				pri_message(ctrl,
-					"-- ACKing N(S)=%d, txqueue head is N(S)=%d (-1 is empty, -2 is not transmitted)\n",
+					"-- ACKing N(S)=%d, tx_queue head is N(S)=%d (-1 is empty, -2 is not transmitted)\n",
 					f->h.n_s,
-					link->txqueue
-						? link->txqueue->transmitted
-							? link->txqueue->h.n_s
+					link->link.tx_queue
+						? link->link.tx_queue->transmitted
+							? link->link.tx_queue->h.n_s
 							: -2
 						: -1);
 			}
@@ -406,8 +406,8 @@ static void reschedule_t200(struct pri *link)
 
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(ctrl, "-- Restarting T200 timer\n");
-	pri_schedule_del(ctrl, link->t200_timer);
-	link->t200_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T200], t200_expire, link);
+	pri_schedule_del(ctrl, link->link.t200_timer);
+	link->link.t200_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T200], t200_expire, link);
 }
 
 #if 0
@@ -419,15 +419,15 @@ static void reschedule_t203(struct pri *link)
 
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(ctrl, "-- Restarting T203 timer\n");
-	pri_schedule_del(ctrl, link->t203_timer);
-	link->t203_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T203], t203_expire, link);
+	pri_schedule_del(ctrl, link->link.t203_timer);
+	link->link.t203_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T203], t203_expire, link);
 }
 #endif
 
 #if 0
 static int q921_unacked_iframes(struct pri *link)
 {
-	struct q921_frame *f = link->txqueue;
+	struct q921_frame *f = link->link.tx_queue;
 	int cnt = 0;
 
 	while(f) {
@@ -446,14 +446,14 @@ static void start_t203(struct pri *link)
 
 	ctrl = PRI_MASTER(link);
 
-	if (link->t203_timer) {
+	if (link->link.t203_timer) {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "T203 requested to start without stopping first\n");
-		pri_schedule_del(ctrl, link->t203_timer);
+		pri_schedule_del(ctrl, link->link.t203_timer);
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(ctrl, "-- Starting T203 timer\n");
-	link->t203_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T203], t203_expire, link);
+	link->link.t203_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T203], t203_expire, link);
 }
 
 static void stop_t203(struct pri *link)
@@ -462,11 +462,11 @@ static void stop_t203(struct pri *link)
 
 	ctrl = PRI_MASTER(link);
 
-	if (link->t203_timer) {
+	if (link->link.t203_timer) {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "-- Stopping T203 timer\n");
-		pri_schedule_del(ctrl, link->t203_timer);
-		link->t203_timer = 0;
+		pri_schedule_del(ctrl, link->link.t203_timer);
+		link->link.t203_timer = 0;
 	} else {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "-- T203 requested to stop when not started\n");
@@ -479,14 +479,14 @@ static void start_t200(struct pri *link)
 
 	ctrl = PRI_MASTER(link);
 
-	if (link->t200_timer) {
+	if (link->link.t200_timer) {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "T200 requested to start without stopping first\n");
-		pri_schedule_del(ctrl, link->t200_timer);
+		pri_schedule_del(ctrl, link->link.t200_timer);
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(ctrl, "-- Starting T200 timer\n");
-	link->t200_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T200], t200_expire, link);
+	link->link.t200_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T200], t200_expire, link);
 }
 
 static void stop_t200(struct pri *link)
@@ -495,11 +495,11 @@ static void stop_t200(struct pri *link)
 
 	ctrl = PRI_MASTER(link);
 
-	if (link->t200_timer) {
+	if (link->link.t200_timer) {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "-- Stopping T200 timer\n");
-		pri_schedule_del(ctrl, link->t200_timer);
-		link->t200_timer = 0;
+		pri_schedule_del(ctrl, link->link.t200_timer);
+		link->link.t200_timer = 0;
 	} else {
 		if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 			pri_message(ctrl, "-- T200 requested to stop when not started\n");
@@ -515,7 +515,7 @@ static int q921_send_queued_iframes(struct pri *link)
 
 	ctrl = PRI_MASTER(link);
 
-	for (f = link->txqueue; f; f = f->next) {
+	for (f = link->link.tx_queue; f; f = f->next) {
 		if (!f->transmitted) {
 			/* This frame has not been sent yet. */
 			break;
@@ -526,20 +526,20 @@ static int q921_send_queued_iframes(struct pri *link)
 		return 0;
 	}
 
-	if (link->peer_rx_busy
-		|| (link->v_s == Q921_ADD(link->v_a, ctrl->timers[PRI_TIMER_K]))) {
+	if (link->link.peer_rx_busy
+		|| (link->link.v_s == Q921_ADD(link->link.v_a, ctrl->timers[PRI_TIMER_K]))) {
 		/* Don't flood debug trace if not really looking at Q.921 layer. */
 		if (ctrl->debug & (/* PRI_DEBUG_Q921_STATE | */ PRI_DEBUG_Q921_DUMP)) {
 			pri_message(ctrl,
 				"TEI=%d Couldn't transmit I-frame at this time due to peer busy condition or window shut\n",
-				link->tei);
+				link->link.tei);
 		}
 		return 0;
 	}
 
 	/* Send all pending frames that fit in the window. */
 	for (; f; f = f->next) {
-		if (link->v_s == Q921_ADD(link->v_a, ctrl->timers[PRI_TIMER_K])) {
+		if (link->link.v_s == Q921_ADD(link->link.v_a, ctrl->timers[PRI_TIMER_K])) {
 			/* The window is no longer open. */
 			break;
 		}
@@ -552,19 +552,19 @@ static int q921_send_queued_iframes(struct pri *link)
 		 * Done now because the frame may have been queued before we
 		 * had an assigned TEI.
 		 */
-		f->h.h.tei = link->tei;
+		f->h.h.tei = link->link.tei;
 
-		f->h.n_s = link->v_s;
-		f->h.n_r = link->v_r;
+		f->h.n_s = link->link.v_s;
+		f->h.n_r = link->link.v_r;
 		f->h.ft = 0;
 		f->h.p_f = 0;
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 			pri_message(ctrl,
 				"TEI=%d Transmitting N(S)=%d, window is open V(A)=%d K=%d\n",
-				link->tei, f->h.n_s, link->v_a, ctrl->timers[PRI_TIMER_K]);
+				link->link.tei, f->h.n_s, link->link.v_a, ctrl->timers[PRI_TIMER_K]);
 		}
 		q921_transmit(ctrl, (q921_h *) (&f->h), f->len);
-		Q921_INC(link->v_s);
+		Q921_INC(link->link.v_s);
 		++frames_txd;
 
 		if (ctrl->debug & PRI_DEBUG_Q931_DUMP) {
@@ -576,13 +576,13 @@ static int q921_send_queued_iframes(struct pri *link)
 			 * Also the dump is done here so the Q.931 part is decoded only
 			 * once instead of for every retransmission.
 			 */
-			q931_dump(ctrl, link->tei, (q931_h *) f->h.data, f->len - 4, 1);
+			q931_dump(ctrl, link->link.tei, (q931_h *) f->h.data, f->len - 4, 1);
 		}
 	}
 
 	if (frames_txd) {
-		link->acknowledge_pending = 0;
-		if (!link->t200_timer) {
+		link->link.acknowledge_pending = 0;
+		if (!link->link.t200_timer) {
 			stop_t203(link);
 			start_t200(link);
 		}
@@ -602,7 +602,7 @@ static void q921_reject(struct pri *link, int pf)
 	h.s.x0 = 0;	/* Always 0 */
 	h.s.ss = 2;	/* Reject */
 	h.s.ft = 1;	/* Frametype (01) */
-	h.s.n_r = link->v_r;	/* Where to start retransmission N(R) */
+	h.s.n_r = link->link.v_r;	/* Where to start retransmission N(R) */
 	h.s.p_f = pf;	
 	switch(ctrl->localtype) {
 	case PRI_NETWORK:
@@ -616,7 +616,7 @@ static void q921_reject(struct pri *link, int pf)
 		return;
 	}
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending REJ N(R)=%d\n", link->tei, link->v_r);
+		pri_message(ctrl, "TEI=%d Sending REJ N(R)=%d\n", link->link.tei, link->link.v_r);
 	}
 	q921_transmit(ctrl, &h, 4);
 }
@@ -632,7 +632,7 @@ static void q921_rr(struct pri *link, int pbit, int cmd)
 	h.s.x0 = 0;	/* Always 0 */
 	h.s.ss = 0; /* Receive Ready */
 	h.s.ft = 1;	/* Frametype (01) */
-	h.s.n_r = link->v_r;	/* N(R) */
+	h.s.n_r = link->link.v_r;	/* N(R) */
 	h.s.p_f = pbit;		/* Poll/Final set appropriately */
 	switch(ctrl->localtype) {
 	case PRI_NETWORK:
@@ -653,7 +653,7 @@ static void q921_rr(struct pri *link, int pbit, int cmd)
 	}
 #if 0	/* Don't flood debug trace with RR if not really looking at Q.921 layer. */
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Sending RR N(R)=%d\n", link->tei, link->v_r);
+		pri_message(ctrl, "TEI=%d Sending RR N(R)=%d\n", link->link.tei, link->link.v_r);
 	}
 #endif
 	q921_transmit(ctrl, &h, 4);
@@ -661,9 +661,9 @@ static void q921_rr(struct pri *link, int pbit, int cmd)
 
 static void transmit_enquiry(struct pri *link)
 {
-	if (!link->own_rx_busy) {
+	if (!link->link.own_rx_busy) {
 		q921_rr(link, 1, 1);
-		link->acknowledge_pending = 0;
+		link->link.acknowledge_pending = 0;
 		start_t200(link);
 	} else {
 		/* XXX: Implement me... */
@@ -682,20 +682,20 @@ static void t200_expire(void *vlink)
 		q921_dump_pri(link, ' ');
 	}
 
-	link->t200_timer = 0;
+	link->link.t200_timer = 0;
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_MULTI_FRAME_ESTABLISHED:
-		link->RC = 0;
+		link->link.RC = 0;
 		transmit_enquiry(link);
-		link->RC++;
+		link->link.RC++;
 		q921_setstate(link, Q921_TIMER_RECOVERY);
 		break;
 	case Q921_TIMER_RECOVERY:
 		/* SDL Flow Figure B.8/Q.921 Page 81 */
-		if (link->RC != ctrl->timers[PRI_TIMER_N200]) {
+		if (link->link.RC != ctrl->timers[PRI_TIMER_N200]) {
 #if 0
-			if (link->v_s == link->v_a) {
+			if (link->link.v_s == link->link.v_a) {
 				transmit_enquiry(link);
 			}
 #else
@@ -703,17 +703,17 @@ static void t200_expire(void *vlink)
 			 * side, instead of retransmission of the last I-frame we sent */
 			transmit_enquiry(link);
 #endif
-			link->RC++;
+			link->link.RC++;
 		} else {
 			q921_mdl_error(link, 'I');
 			q921_establish_data_link(link);
-			link->l3initiated = 0;
+			link->link.l3_initiated = 0;
 			q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		}
 		break;
 	case Q921_AWAITING_ESTABLISHMENT:
-		if (link->RC != ctrl->timers[PRI_TIMER_N200]) {
-			link->RC++;
+		if (link->link.RC != ctrl->timers[PRI_TIMER_N200]) {
+			link->link.RC++;
 			q921_send_sabme(link);
 			start_t200(link);
 		} else {
@@ -725,8 +725,8 @@ static void t200_expire(void *vlink)
 		}
 		break;
 	case Q921_AWAITING_RELEASE:
-		if (link->RC != ctrl->timers[PRI_TIMER_N200]) {
-			++link->RC;
+		if (link->link.RC != ctrl->timers[PRI_TIMER_N200]) {
+			++link->link.RC;
 			q921_send_disc(link, 1);
 			start_t200(link);
 		} else {
@@ -739,7 +739,7 @@ static void t200_expire(void *vlink)
 	default:
 		/* Looks like someone forgot to stop the T200 timer. */
 		pri_error(ctrl, "T200 expired in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 }
@@ -762,7 +762,7 @@ int q921_transmit_uiframe(struct pri *link, void *buf, int len)
 	h->h.sapi = 0;
 	h->h.ea1 = 0;
 	h->h.ea2 = 1;
-	h->h.tei = link->tei;
+	h->h.tei = link->link.tei;
 	h->u.m3 = 0;
 	h->u.m2 = 0;
 	h->u.p_f = 0;	/* Poll bit set */
@@ -790,7 +790,7 @@ int q921_transmit_uiframe(struct pri *link, void *buf, int len)
 static struct pri *pri_find_tei(struct pri *ctrl, int sapi, int tei)
 {
 	for (; ctrl; ctrl = ctrl->subchannel) {
-		if (ctrl->tei == tei && ctrl->sapi == sapi)
+		if (ctrl->link.tei == tei && ctrl->link.sapi == sapi)
 			return ctrl;
 	}
 
@@ -806,12 +806,12 @@ int q921_transmit_iframe(struct pri *link, void *buf, int len, int cr)
 	ctrl = PRI_MASTER(link);
 
 	if (PTMP_MODE(ctrl)) {
-		if (link->tei == Q921_TEI_GROUP) {
+		if (link->link.tei == Q921_TEI_GROUP) {
 			pri_error(ctrl, "Huh?! For PTMP, we shouldn't be sending I-frames out the group TEI\n");
 			return 0;
 		}
 		if (BRI_TE_PTMP(ctrl)) {
-			switch (link->q921_state) {
+			switch (link->link.state) {
 			case Q921_TEI_UNASSIGNED:
 				q921_setstate(link, Q921_ESTABLISH_AWAITING_TEI);
 				q921_tei_request(link);
@@ -828,11 +828,11 @@ int q921_transmit_iframe(struct pri *link, void *buf, int len, int cr)
 	}
 
 	/* Figure B.7/Q.921 Page 70 */
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TEI_ASSIGNED:
 		/* If we aren't in a state compatiable with DL-DATA requests, start getting us there here */
 		q921_establish_data_link(link);
-		link->l3initiated = 1;
+		link->link.l3_initiated = 1;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		/* For all rest, we've done the work to get us up prior to this and fall through */
 	case Q921_ESTABLISH_AWAITING_TEI:
@@ -840,7 +840,7 @@ int q921_transmit_iframe(struct pri *link, void *buf, int len, int cr)
 	case Q921_AWAITING_ESTABLISHMENT:
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		/* Find queue tail. */
-		for (f = link->txqueue; f; f = f->next) {
+		for (f = link->link.tx_queue; f; f = f->next) {
 			prev = f;
 		}
 
@@ -870,23 +870,23 @@ int q921_transmit_iframe(struct pri *link, void *buf, int len, int cr)
 			if (prev)
 				prev->next = f;
 			else
-				link->txqueue = f;
+				link->link.tx_queue = f;
 
-			if (link->q921_state != Q921_MULTI_FRAME_ESTABLISHED) {
+			if (link->link.state != Q921_MULTI_FRAME_ESTABLISHED) {
 				if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 					pri_message(ctrl,
 						"TEI=%d Just queued I-frame since in state %d(%s)\n",
-						link->tei,
-						link->q921_state, q921_state2str(link->q921_state));
+						link->link.tei,
+						link->link.state, q921_state2str(link->link.state));
 				}
 				break;
 			}
 
-			if (link->peer_rx_busy || (link->v_s == Q921_ADD(link->v_a, ctrl->timers[PRI_TIMER_K]))) {
+			if (link->link.peer_rx_busy || (link->link.v_s == Q921_ADD(link->link.v_a, ctrl->timers[PRI_TIMER_K]))) {
 				if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 					pri_message(ctrl,
 						"TEI=%d Just queued I-frame due to peer busy condition or window shut\n",
-						link->tei);
+						link->link.tei);
 				}
 				break;
 			}
@@ -902,7 +902,7 @@ int q921_transmit_iframe(struct pri *link, void *buf, int len, int cr)
 	case Q921_AWAITING_RELEASE:
 	default:
 		pri_error(ctrl, "Cannot transmit frames in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 	return 0;
@@ -918,18 +918,18 @@ static void t203_expire(void *vlink)
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
 		pri_message(ctrl, "%s\n", __FUNCTION__);
 
-	link->t203_timer = 0;
+	link->link.t203_timer = 0;
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		transmit_enquiry(link);
-		link->RC = 0;
+		link->link.RC = 0;
 		q921_setstate(link, Q921_TIMER_RECOVERY);
 		break;
 	default:
 		/* Looks like someone forgot to stop the T203 timer. */
 		pri_error(ctrl, "T203 expired in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 }
@@ -944,7 +944,7 @@ static void q921_dump_iqueue_info(struct pri *link)
 
 	unacked = pending = 0;
 
-	for (f = link->txqueue; f; f = f->next) {
+	for (f = link->link.tx_queue; f; f = f->next) {
 		if (f->transmitted) {
 			unacked++;
 		} else {
@@ -1138,14 +1138,14 @@ static void q921_dump_pri(struct pri *link, char direction_tag)
 	ctrl = PRI_MASTER(link);
 
 	pri_message(ctrl, "%c TEI: %d State %d(%s)\n",
-		direction_tag, link->tei, link->q921_state, q921_state2str(link->q921_state));
+		direction_tag, link->link.tei, link->link.state, q921_state2str(link->link.state));
 	pri_message(ctrl, "%c V(A)=%d, V(S)=%d, V(R)=%d\n",
-		direction_tag, link->v_a, link->v_s, link->v_r);
-	pri_message(ctrl, "%c K=%d, RC=%d, l3initiated=%d, reject_except=%d, ack_pend=%d\n",
-		direction_tag, ctrl->timers[PRI_TIMER_K], link->RC, link->l3initiated,
-		link->reject_exception, link->acknowledge_pending);
+		direction_tag, link->link.v_a, link->link.v_s, link->link.v_r);
+	pri_message(ctrl, "%c K=%d, RC=%d, l3_initiated=%d, reject_except=%d, ack_pend=%d\n",
+		direction_tag, ctrl->timers[PRI_TIMER_K], link->link.RC, link->link.l3_initiated,
+		link->link.reject_exception, link->link.acknowledge_pending);
 	pri_message(ctrl, "%c T200_id=%d, N200=%d, T203_id=%d\n",
-		direction_tag, link->t200_timer, ctrl->timers[PRI_TIMER_N200], link->t203_timer);
+		direction_tag, link->link.t200_timer, ctrl->timers[PRI_TIMER_N200], link->link.t203_timer);
 }
 
 static void q921_dump_pri_by_h(struct pri *ctrl, char direction_tag, q921_h *h)
@@ -1214,7 +1214,7 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		tei = 64;
 		do {
 			for (sub = ctrl; sub->subchannel; sub = sub->subchannel) {
-				if (sub->subchannel->tei == tei) {
+				if (sub->subchannel->link.tei == tei) {
 					/* This TEI is already assigned, try next one. */
 					++tei;
 					if (tei < Q921_TEI_GROUP) {
@@ -1245,7 +1245,7 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		/* Assuming we're operating on the sub here */
 		link = ctrl->subchannel;
 		
-		switch (link->q921_state) {
+		switch (link->link.state) {
 		case Q921_ASSIGN_AWAITING_TEI:
 		case Q921_ESTABLISH_AWAITING_TEI:
 			break;
@@ -1254,22 +1254,22 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 			return NULL;
 		}
 
-		if (ri != link->ri) {
+		if (ri != link->link.ri) {
 			pri_message(ctrl,
 				"TEI assignment received for another Ri %02x (ours is %02x)\n",
-				ri, link->ri);
+				ri, link->link.ri);
 			return NULL;
 		}
 
-		pri_schedule_del(ctrl, link->t202_timer);
-		link->t202_timer = 0;
+		pri_schedule_del(ctrl, link->link.t202_timer);
+		link->link.t202_timer = 0;
 
-		link->tei = tei;
+		link->link.tei = tei;
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 			pri_message(ctrl, "Got assigned TEI %d\n", tei);
 		}
 
-		switch (link->q921_state) {
+		switch (link->link.state) {
 		case Q921_ASSIGN_AWAITING_TEI:
 			q921_setstate(link, Q921_TEI_ASSIGNED);
 			ctrl->ev.gen.e = PRI_EVENT_DCHAN_UP;
@@ -1277,7 +1277,7 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 			break;
 		case Q921_ESTABLISH_AWAITING_TEI:
 			q921_establish_data_link(link);
-			link->l3initiated = 1;
+			link->link.l3_initiated = 1;
 			q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 			ctrl->ev.gen.e = PRI_EVENT_DCHAN_UP;
 			res = &ctrl->ev;
@@ -1293,14 +1293,14 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		/* Assuming we're operating on the sub here */
 		link = ctrl->subchannel;
 
-		if (link->q921_state < Q921_TEI_ASSIGNED) {
+		if (link->link.state < Q921_TEI_ASSIGNED) {
 			/* We do not have a TEI. */
 			return NULL;
 		}
 
 		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
-		if (tei == Q921_TEI_GROUP || tei == link->tei) {
-			q921_send_tei(ctrl, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, link->tei, 1);
+		if (tei == Q921_TEI_GROUP || tei == link->link.tei) {
+			q921_send_tei(ctrl, Q921_TEI_IDENTITY_CHECK_RESPONSE, random() % 65535, link->link.tei, 1);
 		}
 		break;
 	case Q921_TEI_IDENTITY_REMOVE:
@@ -1310,13 +1310,13 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		/* Assuming we're operating on the sub here */
 		link = ctrl->subchannel;
 
-		if (link->q921_state < Q921_TEI_ASSIGNED) {
+		if (link->link.state < Q921_TEI_ASSIGNED) {
 			/* We do not have a TEI. */
 			return NULL;
 		}
 
 		/* If it's addressed to the group TEI or to our TEI specifically, we respond */
-		if (tei == Q921_TEI_GROUP || tei == link->tei) {
+		if (tei == Q921_TEI_GROUP || tei == link->link.tei) {
 			q921_mdl_remove(link);
 			q921_start(link);
 		}
@@ -1339,10 +1339,10 @@ static int is_command(struct pri *ctrl, q921_h *h)
 
 static void q921_clear_exception_conditions(struct pri *link)
 {
-	link->own_rx_busy = 0;
-	link->peer_rx_busy = 0;
-	link->reject_exception = 0;
-	link->acknowledge_pending = 0;
+	link->link.own_rx_busy = 0;
+	link->link.peer_rx_busy = 0;
+	link->link.reject_exception = 0;
+	link->link.acknowledge_pending = 0;
 }
 
 static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
@@ -1353,7 +1353,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 
 	ctrl = PRI_MASTER(link);
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TIMER_RECOVERY:
 		/* Timer recovery state handling is same as multiframe established */
 	case Q921_MULTI_FRAME_ESTABLISHED:
@@ -1361,7 +1361,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 		q921_send_ua(link, h->u.p_f);
 		q921_clear_exception_conditions(link);
 		q921_mdl_error(link, 'F');
-		if (link->v_s != link->v_a) {
+		if (link->link.v_s != link->link.v_a) {
 			q921_discard_iqueue(link);
 			/* DL-ESTABLISH indication */
 			delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
@@ -1370,7 +1370,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 		}
 		stop_t200(link);
 		start_t203(link);
-		link->v_s = link->v_a = link->v_r = 0;
+		link->link.v_s = link->link.v_a = link->link.v_r = 0;
 		q921_setstate(link, Q921_MULTI_FRAME_ESTABLISHED);
 		if (delay_q931_dl_event != Q931_DL_EVENT_NONE) {
 			/* Delayed because Q.931 could send STATUS messages. */
@@ -1380,7 +1380,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 	case Q921_TEI_ASSIGNED:
 		q921_send_ua(link, h->u.p_f);
 		q921_clear_exception_conditions(link);
-		link->v_s = link->v_a = link->v_r = 0;
+		link->link.v_s = link->link.v_a = link->link.v_r = 0;
 		/* DL-ESTABLISH indication */
 		delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
 		if (PTP_MODE(ctrl)) {
@@ -1402,7 +1402,7 @@ static pri_event *q921_sabme_rx(struct pri *link, q921_h *h)
 		break;
 	default:
 		pri_error(ctrl, "Cannot handle SABME in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -1417,10 +1417,10 @@ static pri_event *q921_disc_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got DISC\n", link->tei);
+		pri_message(ctrl, "TEI=%d Got DISC\n", link->link.tei);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TEI_ASSIGNED:
 	case Q921_AWAITING_ESTABLISHMENT:
 		q921_send_dm(link, h->u.p_f);
@@ -1435,14 +1435,14 @@ static pri_event *q921_disc_rx(struct pri *link, q921_h *h)
 		/* DL-RELEASE indication */
 		q931_dl_event(link, Q931_DL_EVENT_DL_RELEASE_IND);
 		stop_t200(link);
-		if (link->q921_state == Q921_MULTI_FRAME_ESTABLISHED)
+		if (link->link.state == Q921_MULTI_FRAME_ESTABLISHED)
 			stop_t203(link);
 		q921_setstate(link, Q921_TEI_ASSIGNED);
 		q921_restart_ptp_link_if_needed(link);
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with DISC in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -1457,7 +1457,7 @@ static void q921_mdl_remove(struct pri *link)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "MDL-REMOVE: Removing TEI %d\n", link->tei);
+		pri_message(ctrl, "MDL-REMOVE: Removing TEI %d\n", link->link.tei);
 	}
 	if (BRI_NT_PTMP(ctrl)) {
 		if (link == ctrl) {
@@ -1469,7 +1469,7 @@ static void q921_mdl_remove(struct pri *link)
 		mdl_free_me = 0;
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TEI_ASSIGNED:
 		/* XXX: deviation! Since we don't have a UI queue, we just discard our I-queue */
 		q921_discard_iqueue(link);
@@ -1506,7 +1506,7 @@ static void q921_mdl_remove(struct pri *link)
 		break;
 	default:
 		pri_error(ctrl, "MDL-REMOVE when in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		return;
 	}
 
@@ -1516,9 +1516,9 @@ static void q921_mdl_remove(struct pri *link)
 	 * Negate the TEI value so debug messages will display a
 	 * negated TEI when it is actually unassigned.
 	 */
-	link->tei = -link->tei;
+	link->link.tei = -link->link.tei;
 
-	link->mdl_free_me = mdl_free_me;
+	link->link.mdl_free_me = mdl_free_me;
 }
 
 static int q921_mdl_handle_network_error(struct pri *link, char error)
@@ -1600,7 +1600,7 @@ static int q921_mdl_handle_ptp_error(struct pri *link, char error)
 		q921_discard_iqueue(link);
 		q921_establish_data_link(link);
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
-		link->l3initiated = 1;
+		link->link.l3_initiated = 1;
 
 		ctrl->schedev = 1;
 		ctrl->ev.gen.e = PRI_EVENT_DCHAN_DOWN;
@@ -1657,12 +1657,12 @@ static void q921_mdl_handle_error_callback(void *vlink)
 {
 	struct pri *link = vlink;
 
-	q921_mdl_handle_error(link, link->mdl_error, link->mdl_error_state);
+	q921_mdl_handle_error(link, link->link.mdl_error, link->link.mdl_error_state);
 
-	link->mdl_error = 0;
-	link->mdl_timer = 0;
+	link->link.mdl_error = 0;
+	link->link.mdl_timer = 0;
 
-	if (link->mdl_free_me) {
+	if (link->link.mdl_free_me) {
 		struct pri *ctrl;
 		struct pri *freep = NULL, *prev, *cur;
 
@@ -1681,12 +1681,12 @@ static void q921_mdl_handle_error_callback(void *vlink)
 		}
 
 		if (freep == NULL) {
-			pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", -link->tei);
+			pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", -link->link.tei);
 			return;
 		}
 
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-			pri_message(ctrl, "Freeing TEI of %d\n", -freep->tei);
+			pri_message(ctrl, "Freeing TEI of %d\n", -freep->link.tei);
 		}
 
 		__pri_free_tei(freep);
@@ -1706,20 +1706,20 @@ static void q921_mdl_error(struct pri *link, char error)
 	case 'A':
 		pri_message(ctrl,
 			"TEI=%d MDL-ERROR (A): Got supervisory frame with F=1 in state %d(%s)\n",
-			link->tei, link->q921_state, q921_state2str(link->q921_state));
+			link->link.tei, link->link.state, q921_state2str(link->link.state));
 		break;
 	case 'B':
 	case 'E':
 		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): DM (F=%c) in state %d(%s)\n",
-			link->tei, error, (error == 'B') ? '1' : '0',
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.tei, error, (error == 'B') ? '1' : '0',
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	case 'C':
 	case 'D':
 		if (is_debug_q921_state || PTP_MODE(ctrl)) {
 			pri_message(ctrl, "TEI=%d MDL-ERROR (%c): UA (F=%c) in state %d(%s)\n",
-				link->tei, error, (error == 'C') ? '1' : '0',
-				link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, error, (error == 'C') ? '1' : '0',
+				link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	case 'F':
@@ -1738,7 +1738,7 @@ static void q921_mdl_error(struct pri *link, char error)
 			 * reasons 1-3 above.
 			 */
 			pri_message(ctrl, "TEI=%d MDL-ERROR (F): SABME in state %d(%s)\n",
-				link->tei, link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	case 'G':
@@ -1746,7 +1746,7 @@ static void q921_mdl_error(struct pri *link, char error)
 		if (is_debug_q921_state) {
 			pri_message(ctrl,
 				"TEI=%d MDL-ERROR (G): T200 expired N200 times sending SABME in state %d(%s)\n",
-				link->tei, link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	case 'H':
@@ -1754,7 +1754,7 @@ static void q921_mdl_error(struct pri *link, char error)
 		if (is_debug_q921_state) {
 			pri_message(ctrl,
 				"TEI=%d MDL-ERROR (H): T200 expired N200 times sending DISC in state %d(%s)\n",
-				link->tei, link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	case 'I':
@@ -1762,13 +1762,13 @@ static void q921_mdl_error(struct pri *link, char error)
 		if (is_debug_q921_state) {
 			pri_message(ctrl,
 				"TEI=%d MDL-ERROR (I): T200 expired N200 times sending RR/RNR in state %d(%s)\n",
-				link->tei, link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	case 'J':
 		/* N(R) not within ack window. */
 		pri_error(ctrl, "TEI=%d MDL-ERROR (J): N(R) error in state %d(%s)\n",
-			link->tei, link->q921_state, q921_state2str(link->q921_state));
+			link->link.tei, link->link.state, q921_state2str(link->link.state));
 		break;
 	case 'K':
 		/*
@@ -1776,32 +1776,32 @@ static void q921_mdl_error(struct pri *link, char error)
 		 * The other end does not like what we are doing at all for some reason.
 		 */
 		pri_error(ctrl, "TEI=%d MDL-ERROR (K): FRMR in state %d(%s)\n",
-			link->tei, link->q921_state, q921_state2str(link->q921_state));
+			link->link.tei, link->link.state, q921_state2str(link->link.state));
 		break;
 	case 'Z':
 		if (is_debug_q921_state) {
 			/* Fake MDL-ERROR to kick start PTP L2 link back up. */
 			pri_message(ctrl,
 				"TEI=%d MDL-ERROR (Z): Kick starting L2 link in state %d(%s)\n",
-				link->tei, link->q921_state, q921_state2str(link->q921_state));
+				link->link.tei, link->link.state, q921_state2str(link->link.state));
 		}
 		break;
 	default:
 		pri_message(ctrl, "TEI=%d MDL-ERROR (%c): in state %d(%s)\n",
-			link->tei, error, link->q921_state, q921_state2str(link->q921_state));
+			link->link.tei, error, link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
-	if (link->mdl_error) {
+	if (link->link.mdl_error) {
 		/* This should not happen. */
 		pri_error(ctrl,
 			"Trying to queue MDL-ERROR (%c) when MDL-ERROR (%c) is already scheduled\n",
-			error, link->mdl_error);
+			error, link->link.mdl_error);
 		return;
 	}
-	link->mdl_error = error;
-	link->mdl_error_state = link->q921_state;
-	link->mdl_timer = pri_schedule_event(ctrl, 0, q921_mdl_handle_error_callback, link);
+	link->link.mdl_error = error;
+	link->link.mdl_error_state = link->link.state;
+	link->link.mdl_timer = pri_schedule_event(ctrl, 0, q921_mdl_handle_error_callback, link);
 }
 
 static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
@@ -1813,10 +1813,10 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got UA\n", link->tei);
+		pri_message(ctrl, "TEI=%d Got UA\n", link->link.tei);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TEI_ASSIGNED:
 	case Q921_MULTI_FRAME_ESTABLISHED:
 	case Q921_TIMER_RECOVERY:
@@ -1833,14 +1833,14 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 		}
 
 		delay_q931_dl_event = Q931_DL_EVENT_NONE;
-		if (!link->l3initiated) {
-			if (link->v_s != link->v_a) {
+		if (!link->link.l3_initiated) {
+			if (link->link.v_s != link->link.v_a) {
 				q921_discard_iqueue(link);
 				/* DL-ESTABLISH indication */
 				delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_IND;
 			}
 		} else {
-			link->l3initiated = 0;
+			link->link.l3_initiated = 0;
 			/* DL-ESTABLISH confirm */
 			delay_q931_dl_event = Q931_DL_EVENT_DL_ESTABLISH_CONFIRM;
 		}
@@ -1853,7 +1853,7 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 		stop_t200(link);
 		start_t203(link);
 
-		link->v_r = link->v_s = link->v_a = 0;
+		link->link.v_r = link->link.v_s = link->link.v_a = 0;
 
 		q921_setstate(link, Q921_MULTI_FRAME_ESTABLISHED);
 		if (delay_q931_dl_event != Q931_DL_EVENT_NONE) {
@@ -1873,7 +1873,7 @@ static pri_event *q921_ua_rx(struct pri *link, q921_h *h)
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with UA in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -1884,7 +1884,7 @@ static void q921_enquiry_response(struct pri *link)
 {
 	struct pri *ctrl;
 
-	if (link->own_rx_busy) {
+	if (link->link.own_rx_busy) {
 		/* XXX : TODO later sometime */
 		ctrl = PRI_MASTER(link);
 		pri_error(ctrl, "Implement me %s: own_rx_busy\n", __FUNCTION__);
@@ -1893,7 +1893,7 @@ static void q921_enquiry_response(struct pri *link)
 		q921_rr(link, 1, 0);
 	}
 
-	link->acknowledge_pending = 0;
+	link->link.acknowledge_pending = 0;
 }
 
 static void n_r_error_recovery(struct pri *link)
@@ -1902,7 +1902,7 @@ static void n_r_error_recovery(struct pri *link)
 
 	q921_establish_data_link(link);
 
-	link->l3initiated = 0;
+	link->link.l3_initiated = 0;
 }
 
 static void update_v_a(struct pri *link, int n_r)
@@ -1915,8 +1915,8 @@ static void update_v_a(struct pri *link, int n_r)
 
 	/* Cancel each packet as necessary */
 	if (ctrl->debug & PRI_DEBUG_Q921_DUMP)
-		pri_message(ctrl, "-- Got ACK for N(S)=%d to (but not including) N(S)=%d\n", link->v_a, n_r);
-	for (x = link->v_a; x != n_r; Q921_INC(x)) {
+		pri_message(ctrl, "-- Got ACK for N(S)=%d to (but not including) N(S)=%d\n", link->link.v_a, n_r);
+	for (x = link->link.v_a; x != n_r; Q921_INC(x)) {
 		idealcnt++;
 		realcnt += q921_ack_packet(link, x);	
 	}
@@ -1925,7 +1925,7 @@ static void update_v_a(struct pri *link, int n_r)
 		q921_dump_iqueue_info(link);
 	}
 
-	link->v_a = n_r;
+	link->link.v_a = n_r;
 }
 
 static int n_r_is_valid(struct pri *link, int n_r)
@@ -1933,7 +1933,7 @@ static int n_r_is_valid(struct pri *link, int n_r)
 	int x;
 
 	/* Is V(A) <= N(R) <= V(S) */
-	for (x = link->v_a; x != n_r && x != link->v_s; Q921_INC(x)) {
+	for (x = link->link.v_a; x != n_r && x != link->link.v_s; Q921_INC(x)) {
 	}
 	if (x != n_r) {
 		return 0;
@@ -1951,7 +1951,7 @@ static pri_event *timer_recovery_rr_rej_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	/* Figure B.7/Q.921 Page 74 */
-	link->peer_rx_busy = 0;
+	link->link.peer_rx_busy = 0;
 
 	if (is_command(ctrl, h)) {
 		if (h->s.p_f) {
@@ -1998,17 +1998,17 @@ static pri_event *q921_rr_rx(struct pri *link, q921_h *h)
 
 #if 0	/* Don't flood debug trace with RR if not really looking at Q.921 layer. */
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got RR N(R)=%d\n", link->tei, h->s.n_r);
+		pri_message(ctrl, "TEI=%d Got RR N(R)=%d\n", link->link.tei, h->s.n_r);
 	}
 #endif
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TIMER_RECOVERY:
 		res = timer_recovery_rr_rej_rx(link, h);
 		break;
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		/* Figure B.7/Q.921 Page 74 */
-		link->peer_rx_busy = 0;
+		link->link.peer_rx_busy = 0;
 
 		if (is_command(ctrl, h)) {
 			if (h->s.p_f) {
@@ -2025,12 +2025,12 @@ static pri_event *q921_rr_rx(struct pri *link, q921_h *h)
 			n_r_error_recovery(link);
 			q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		} else {
-			if (h->s.n_r == link->v_s) {
+			if (h->s.n_r == link->link.v_s) {
 				update_v_a(link, h->s.n_r);
 				stop_t200(link);
 				start_t203(link);
 			} else {
-				if (h->s.n_r != link->v_a) {
+				if (h->s.n_r != link->link.v_a) {
 					/* Need to check the validity of n_r as well.. */
 					update_v_a(link, h->s.n_r);
 					restart_t200(link);
@@ -2048,7 +2048,7 @@ static pri_event *q921_rr_rx(struct pri *link, q921_h *h)
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with RR in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2060,20 +2060,20 @@ static int q921_invoke_retransmission(struct pri *link, int n_r)
 	int frames_txd = 0;
 	int frames_supposed_to_tx = 0;
 	q921_frame *f;
-	unsigned int local_v_s = link->v_s;
+	unsigned int local_v_s = link->link.v_s;
 	struct pri *ctrl;
 
 	ctrl = PRI_MASTER(link);
 
 	/* All acked frames should already have been removed from the queue. */
-	for (f = link->txqueue; f && f->transmitted; f = f->next) {
+	for (f = link->link.tx_queue; f && f->transmitted; f = f->next) {
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 			pri_message(ctrl, "TEI=%d Retransmitting frame N(S)=%d now!\n",
-				link->tei, f->h.n_s);
+				link->link.tei, f->h.n_s);
 		}
 
 		/* Give the other side our current N(R) */
-		f->h.n_r = link->v_r;
+		f->h.n_r = link->link.v_r;
 		f->h.p_f = 0;
 		q921_transmit(ctrl, (q921_h *) (&f->h), f->len);
 		frames_txd++;
@@ -2098,16 +2098,16 @@ static pri_event *q921_rej_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got REJ N(R)=%d\n", link->tei, h->s.n_r);
+		pri_message(ctrl, "TEI=%d Got REJ N(R)=%d\n", link->link.tei, h->s.n_r);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TIMER_RECOVERY:
 		res = timer_recovery_rr_rej_rx(link, h);
 		break;
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		/* Figure B.7/Q.921 Page 74 */
-		link->peer_rx_busy = 0;
+		link->link.peer_rx_busy = 0;
 
 		if (is_command(ctrl, h)) {
 			if (h->s.p_f) {
@@ -2140,7 +2140,7 @@ static pri_event *q921_rej_rx(struct pri *link, q921_h *h)
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with REJ in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2155,15 +2155,15 @@ static pri_event *q921_frmr_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got FRMR\n", link->tei);
+		pri_message(ctrl, "TEI=%d Got FRMR\n", link->link.tei);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TIMER_RECOVERY:
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		q921_mdl_error(link, 'K');
 		q921_establish_data_link(link);
-		link->l3initiated = 0;
+		link->link.l3_initiated = 0;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		break;
 	case Q921_TEI_ASSIGNED:
@@ -2174,12 +2174,12 @@ static pri_event *q921_frmr_rx(struct pri *link, q921_h *h)
 		 * We likely got reset and the other end has not realized it yet.
 		 */
 		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-			pri_message(ctrl, "TEI=%d Ignoring FRMR.\n", link->tei);
+			pri_message(ctrl, "TEI=%d Ignoring FRMR.\n", link->link.tei);
 		}
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with FRMR in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2195,18 +2195,18 @@ static pri_event *q921_iframe_rx(struct pri *link, q921_h *h, int len)
 
 	ctrl = PRI_MASTER(link);
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TIMER_RECOVERY:
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		delay_q931_receive = 0;
 		/* FIXME: Verify that it's a command ... */
-		if (link->own_rx_busy) {
+		if (link->link.own_rx_busy) {
 			/* XXX: Note: There's a difference in th P/F between both states */
 			/* DEVIATION: Handle own rx busy */
-		} else if (h->i.n_s == link->v_r) {
-			Q921_INC(link->v_r);
+		} else if (h->i.n_s == link->link.v_r) {
+			Q921_INC(link->link.v_r);
 
-			link->reject_exception = 0;
+			link->link.reject_exception = 0;
 
 			/*
 			 * Dump Q.931 message where Q.921 says to queue it to Q.931 so if
@@ -2219,20 +2219,20 @@ static pri_event *q921_iframe_rx(struct pri *link, q921_h *h, int len)
 
 			if (h->i.p_f) {
 				q921_rr(link, 1, 0);
-				link->acknowledge_pending = 0;
+				link->link.acknowledge_pending = 0;
 			} else {
-				link->acknowledge_pending = 1;
+				link->link.acknowledge_pending = 1;
 			}
 		} else {
-			if (link->reject_exception) {
+			if (link->link.reject_exception) {
 				if (h->i.p_f) {
 					q921_rr(link, 1, 0);
-					link->acknowledge_pending = 0;
+					link->link.acknowledge_pending = 0;
 				}
 			} else {
-				link->reject_exception = 1;
+				link->link.reject_exception = 1;
 				q921_reject(link, h->i.p_f);
-				link->acknowledge_pending = 0;
+				link->link.acknowledge_pending = 0;
 			}
 		}
 
@@ -2240,18 +2240,18 @@ static pri_event *q921_iframe_rx(struct pri *link, q921_h *h, int len)
 			n_r_error_recovery(link);
 			q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		} else {
-			if (link->q921_state == Q921_TIMER_RECOVERY) {
+			if (link->link.state == Q921_TIMER_RECOVERY) {
 				update_v_a(link, h->i.n_r);
 			} else {
-				if (link->peer_rx_busy) {
+				if (link->link.peer_rx_busy) {
 					update_v_a(link, h->i.n_r);
 				} else {
-					if (h->i.n_r == link->v_s) {
+					if (h->i.n_r == link->link.v_s) {
 						update_v_a(link, h->i.n_r);
 						stop_t200(link);
 						start_t203(link);
 					} else {
-						if (h->i.n_r != link->v_a) {
+						if (h->i.n_r != link->link.v_a) {
 							update_v_a(link, h->i.n_r);
 							reschedule_t200(link);
 						}
@@ -2277,7 +2277,7 @@ static pri_event *q921_iframe_rx(struct pri *link, q921_h *h, int len)
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with an I-frame in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2292,16 +2292,16 @@ static pri_event *q921_dm_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got DM\n", link->tei);
+		pri_message(ctrl, "TEI=%d Got DM\n", link->link.tei);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_TEI_ASSIGNED:
 		if (h->u.p_f)
 			break;
 		/* else */
 		q921_establish_data_link(link);
-		link->l3initiated = 1;
+		link->link.l3_initiated = 1;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		break;
 	case Q921_AWAITING_ESTABLISHMENT:
@@ -2331,7 +2331,7 @@ static pri_event *q921_dm_rx(struct pri *link, q921_h *h)
 
 		q921_mdl_error(link, 'E');
 		q921_establish_data_link(link);
-		link->l3initiated = 0;
+		link->link.l3_initiated = 0;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		break;
 	case Q921_TIMER_RECOVERY:
@@ -2341,12 +2341,12 @@ static pri_event *q921_dm_rx(struct pri *link, q921_h *h)
 			q921_mdl_error(link, 'E');
 		}
 		q921_establish_data_link(link);
-		link->l3initiated = 0;
+		link->link.l3_initiated = 0;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with DM frame in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2361,12 +2361,12 @@ static pri_event *q921_rnr_rx(struct pri *link, q921_h *h)
 	ctrl = PRI_MASTER(link);
 
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "TEI=%d Got RNR N(R)=%d\n", link->tei, h->s.n_r);
+		pri_message(ctrl, "TEI=%d Got RNR N(R)=%d\n", link->link.tei, h->s.n_r);
 	}
 
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_MULTI_FRAME_ESTABLISHED:
-		link->peer_rx_busy = 1;
+		link->link.peer_rx_busy = 1;
 		if (!is_command(ctrl, h)) {
 			if (h->s.p_f) {
 				q921_mdl_error(link, 'A');
@@ -2388,7 +2388,7 @@ static pri_event *q921_rnr_rx(struct pri *link, q921_h *h)
 		break;
 	case Q921_TIMER_RECOVERY:
 		/* Q.921 Figure B.8 Q921 (Sheet 6 of 9) Page 85 */
-		link->peer_rx_busy = 1;
+		link->link.peer_rx_busy = 1;
 		if (is_command(ctrl, h)) {
 			if (h->s.p_f) {
 				q921_enquiry_response(link);
@@ -2436,7 +2436,7 @@ static pri_event *q921_rnr_rx(struct pri *link, q921_h *h)
 		break;
 	default:
 		pri_error(ctrl, "Don't know what to do with RNR in state %d(%s)\n",
-			link->q921_state, q921_state2str(link->q921_state));
+			link->link.state, q921_state2str(link->link.state));
 		break;
 	}
 
@@ -2445,15 +2445,15 @@ static pri_event *q921_rnr_rx(struct pri *link, q921_h *h)
 
 static void q921_acknowledge_pending_check(struct pri *link)
 {
-	if (link->acknowledge_pending) {
-		link->acknowledge_pending = 0;
+	if (link->link.acknowledge_pending) {
+		link->link.acknowledge_pending = 0;
 		q921_rr(link, 0, 0);
 	}
 }
 
 static void q921_statemachine_check(struct pri *link)
 {
-	switch (link->q921_state) {
+	switch (link->link.state) {
 	case Q921_MULTI_FRAME_ESTABLISHED:
 		q921_send_queued_iframes(link);
 		q921_acknowledge_pending_check(link);
@@ -2493,7 +2493,7 @@ static pri_event *__q921_receive_qualified(struct pri *link, q921_h *h, int len)
 		default:
 			pri_error(ctrl,
 				"!! XXX Unknown Supervisory frame x0=%d ss=%d, pf=%d, N(R)=%d, V(A)=%d, V(S)=%d XXX\n",
-				h->s.x0, h->s.ss, h->s.p_f, h->s.n_r, link->v_a, link->v_s);
+				h->s.x0, h->s.ss, h->s.p_f, h->s.n_r, link->link.v_a, link->link.v_s);
 			break;
 		}
 		break;
@@ -2523,7 +2523,7 @@ static pri_event *__q921_receive_qualified(struct pri *link, q921_h *h, int len)
 			/* SABME */
 			if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 				pri_message(ctrl, "TEI=%d Got SABME from %s peer.\n",
-					link->tei, h->h.c_r ? "network" : "cpe");
+					link->link.tei, h->h.c_r ? "network" : "cpe");
 			}
 			if (h->h.c_r) {
 				ctrl->remotetype = PRI_NETWORK;
@@ -2622,9 +2622,9 @@ static pri_event *__q921_receive(struct pri *ctrl, q921_h *h, int len)
 
 	if (BRI_TE_PTMP(ctrl)) {
 		link = ctrl->subchannel;
-		if (h->h.sapi == link->sapi
-			&& ((link->q921_state >= Q921_TEI_ASSIGNED
-				&& h->h.tei == link->tei)
+		if (h->h.sapi == link->link.sapi
+			&& ((link->link.state >= Q921_TEI_ASSIGNED
+				&& h->h.tei == link->link.tei)
 				|| h->h.tei == Q921_TEI_GROUP)) {
 			ev = __q921_receive_qualified(link, h, len);
 		}
@@ -2636,7 +2636,7 @@ static pri_event *__q921_receive(struct pri *ctrl, q921_h *h, int len)
 		} else {
 			ev = q921_handle_unmatched_frame(ctrl, h, len);
 		}
-	} else if (PTP_MODE(ctrl) && (h->h.sapi == ctrl->sapi) && (h->h.tei == ctrl->tei)) {
+	} else if (PTP_MODE(ctrl) && (h->h.sapi == ctrl->link.sapi) && (h->h.tei == ctrl->link.tei)) {
 		ev = __q921_receive_qualified(ctrl, h, len);
 	} else {
 		ev = NULL;
@@ -2662,7 +2662,7 @@ pri_event *q921_receive(struct pri *ctrl, q921_h *h, int len)
 static void q921_establish_data_link(struct pri *link)
 {
 	q921_clear_exception_conditions(link);
-	link->RC = 0;
+	link->link.RC = 0;
 	stop_t203(link);
 	reschedule_t200(link);
 	q921_send_sabme(link);
@@ -2692,7 +2692,7 @@ void q921_start(struct pri *link)
 	} else {
 		/* PTP mode, no need for TEI management junk */
 		q921_establish_data_link(link);
-		link->l3initiated = 1;
+		link->link.l3_initiated = 1;
 		q921_setstate(link, Q921_AWAITING_ESTABLISHMENT);
 	}
 }
