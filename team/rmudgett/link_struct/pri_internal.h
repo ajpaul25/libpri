@@ -955,7 +955,6 @@ int pri_cc_event(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_rec
 int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_EVENTS event);
 void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
-#ifdef NFAS_SUPPORT_WILL_USE /* BUGBUG */
 /*!
  * \brief Get the NFAS master PRI control structure.
  *
@@ -970,7 +969,6 @@ static inline struct pri *PRI_NFAS_MASTER(struct pri *ctrl)
 	}
 	return ctrl;
 }
-#endif	/* NFAS_SUPPORT_WILL_USE */
 
 /*!
  * \brief Determine if layer 2 is in BRI NT PTMP mode.
