@@ -855,7 +855,7 @@ int q921_transmit_iframe(struct pri *link, int tei, void *buf, int len, int cr)
 		f = calloc(1, sizeof(q921_frame) + len + 2);
 		if (f) {
 			Q921_INIT(link, f->h);
-			switch(link->localtype) {
+			switch (ctrl->localtype) {
 			case PRI_NETWORK:
 				if (cr)
 					f->h.h.c_r = 1;
