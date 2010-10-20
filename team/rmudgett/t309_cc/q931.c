@@ -8475,8 +8475,7 @@ static int pri_internal_clear(void *data)
 	if (c->cc.record) {
 		if (c->cc.record->signaling == c) {
 			pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_SIGNALING_GONE);
-		}
-		if (c->cc.record->original_call == c) {
+		} else if (c->cc.record->original_call == c) {
 			pri_cc_event(ctrl, c, c->cc.record, CC_EVENT_INTERNAL_CLEARING);
 		}
 	}
