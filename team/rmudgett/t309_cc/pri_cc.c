@@ -5937,6 +5937,10 @@ static void pri_cc_fsm_qsig_agent_avail(struct pri *ctrl, q931_call *call, struc
 		pri_cc_act_stop_t_retention(ctrl, cc_record);
 		cc_record->state = CC_STATE_REQUESTED;
 		break;
+	case CC_EVENT_INTERNAL_CLEARING:
+		pri_cc_act_stop_t_retention(ctrl, cc_record);
+		pri_cc_act_start_t_retention(ctrl, cc_record);
+		break;
 	case CC_EVENT_TIMEOUT_T_RETENTION:
 		pri_cc_act_pass_up_cc_cancel(ctrl, cc_record);
 		pri_cc_act_stop_t_retention(ctrl, cc_record);
