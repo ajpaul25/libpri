@@ -7318,7 +7318,7 @@ int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_E
 	int fsm_complete;
 
 	q931_clr_subcommands(ctrl);
-	dummy = cc_record->ctrl->link.dummy_call;
+	dummy = ctrl->link.dummy_call;
 	call = cc_record->signaling;
 	if (!call) {
 		/* Substitute the broadcast dummy call reference call. */
@@ -7347,7 +7347,7 @@ void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*
 	q931_call *dummy;
 
 	q931_clr_subcommands(ctrl);
-	dummy = cc_record->ctrl->link.dummy_call;
+	dummy = ctrl->link.dummy_call;
 	call = cc_record->signaling;
 	if (!call) {
 		/* Substitute the broadcast dummy call reference call. */
