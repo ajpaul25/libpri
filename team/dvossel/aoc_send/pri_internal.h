@@ -76,8 +76,10 @@ struct pri {
 	void *userdata;
 	/*! Accumulated pri_message() line. (Valid in master record only) */
 	struct pri_msg_line *msg_line;
-	struct pri *subchannel;	/* Sub-channel if appropriate */
-	struct pri *master;		/* Master channel if appropriate */
+	/*! NFAS master/primary channel if appropriate */
+	struct pri *master;
+	/*! Next NFAS slaved D channel if appropriate */
+	struct pri *slave;
 	struct {
 		/*! Dynamically allocated array of timers that can grow as needed. */
 		struct pri_sched *timer;
@@ -93,9 +95,8 @@ struct pri {
 	int localtype;		/* Local network type (unknown, network, cpe) */
 	int remotetype;		/* Remote network type (unknown, network, cpe) */
 
-	int sapi;
-	int tei;
-	int protodisc;
+	int protodisc;	/* Layer 3 protocol discriminator */
+
 	unsigned int nfas:1;/* TRUE if this D channel is involved with an NFAS group */
 	unsigned int bri:1;
 	unsigned int acceptinbanddisconnect:1;	/* Should we allow inband progress after DISCONNECT? */
@@ -112,57 +113,23 @@ struct pri {
 	unsigned int manual_connect_ack:1;/* TRUE if the CONNECT_ACKNOWLEDGE is sent with API call */
 	unsigned int mcid_support:1;/* TRUE if the upper layer supports MCID */
 
-	/* MDL variables */
-	int mdl_error;
-	int mdl_error_state;
-	int mdl_timer;
-	int mdl_free_me;
-
-	/* Q.921 State */
-	int q921_state;	
-	int RC;
-	int peer_rx_busy:1;
-	int own_rx_busy:1;
-	int acknowledge_pending:1;
-	int reject_exception:1;
-
-	int v_s;			/* Next N(S) for transmission */
-	int v_a;			/* Last acknowledged frame */
-	int v_r;			/* Next frame expected to be received */
+	/*! Layer 2 link control for D channel. */
+	struct q921_link link;
 	
 	int cref;			/* Next call reference value */
-	
-	int l3initiated;
 
-	/* Various timers */
-	int t203_timer;		/* Max idle time */
-	int t202_timer;
-	int n202_counter;
-	int ri;
-	int t200_timer;		/* T-200 retransmission timer */
 	/* All ISDN Timer values */
 	int timers[PRI_MAX_TIMERS];
 
 	/* Used by scheduler */
-	struct timeval tv;
 	int schedev;
 	pri_event ev;		/* Static event thingy */
 	/*! Subcommands for static event thingy. */
 	struct pri_subcommands subcmds;
 	
-	/* Q.921 Re-transmission queue */
-	struct q921_frame *txqueue;
-	
 	/* Q.931 calls */
-	q931_call **callpool;
-	q931_call *localpool;
-
-	/*!
-	 * \brief Q.931 Dummy call reference call associated with this TEI.
-	 * \note If present then this call is allocated as part of the
-	 * D channel control structure.
-	 */
-	q931_call *dummy_call;
+	struct q931_call **callpool;
+	struct q931_call *localpool;
 
 #ifdef LIBPRI_COUNTERS
 	/* q921/q931 packet counters */
@@ -370,10 +337,6 @@ struct pri_sr {
 	int aoc_charging_request;
 };
 
-/* Internal switch types */
-#define PRI_SWITCH_GR303_EOC_PATH	19
-#define PRI_SWITCH_GR303_TMC_SWITCHING	20
-
 #define Q931_MAX_TEI	8
 
 /*! \brief Incoming call transfer states. */
@@ -449,7 +412,7 @@ struct decoded_bc {
 /* q931_call datastructure */
 struct q931_call {
 	struct pri *pri;	/* D channel controller (master) */
-	struct pri *link;	/* Q.921 link associated with this call. */
+	struct q921_link *link;	/* Q.921 link associated with this call. */
 	struct q931_call *next;
 	int cr;				/* Call Reference */
 	/* Slotmap specified (bitmap of channels 31/24-1) (Channel Identifier IE) (-1 means not specified) */
@@ -592,7 +555,7 @@ struct q931_call {
 	int is_link_id_valid;
 
 	/* Bridged call info */
-	q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
+	struct q931_call *bridged_call;        /* Pointer to other leg of bridged call (Used by Q.SIG when eliminating tromboned calls) */
 
 	int changestatus;		/* SERVICE message changestatus */
 	int reversecharge;		/* Reverse charging indication:
@@ -701,6 +664,8 @@ enum CC_EVENTS {
 	CC_EVENT_LINK_CANCEL,
 	/*! Tear down CC request from upper layer. */
 	CC_EVENT_CANCEL,
+	/*! Abnormal clearing of original call.  (T309 processing/T309 timeout/TEI removal) */
+	CC_EVENT_INTERNAL_CLEARING,
 	/*! Received message indicating tear down of CC signaling link completed. */
 	CC_EVENT_SIGNALING_GONE,
 	/*! Delayed hangup request for the signaling link to allow subcmd events to be passed up. */
@@ -746,8 +711,8 @@ enum CC_PARTY_A_AVAILABILITY {
 struct pri_cc_record {
 	/*! Next call-completion record in the list */
 	struct pri_cc_record *next;
-	/*! Master D channel control structure. */
-	struct pri *master;
+	/*! D channel control structure. */
+	struct pri *ctrl;
 	/*! Original call that is offered CC availability. (NULL if no longer exists.) */
 	struct q931_call *original_call;
 	/*!
@@ -883,6 +848,14 @@ struct d_ctrl_dummy {
 	struct q931_call dummy_call;
 };
 
+/*! Layer 2 link control structure with associated dummy call reference record. */
+struct link_dummy {
+	/*! Layer 2 control structure. Must be first in the structure. */
+	struct q921_link link;
+	/*! Dummy call reference call record. */
+	struct q931_call dummy_call;
+};
+
 /*!
  * \brief Check if the given call ptr is valid and gripe if not.
  *
@@ -912,10 +885,10 @@ void pri_error(struct pri *ctrl, const char *fmt, ...) __attribute__((format(pri
 
 void libpri_copy_string(char *dst, const char *src, size_t size);
 
-struct pri *__pri_new_tei(int fd, int node, int switchtype, struct pri *master, pri_io_cb rd, pri_io_cb wr, void *userdata, int tei, int bri);
-void __pri_free_tei(struct pri *p);
+void pri_link_destroy(struct q921_link *link);
+struct q921_link *pri_link_new(struct pri *ctrl, int sapi, int tei);
 
-void q931_init_call_record(struct pri *link, struct q931_call *call, int cr);
+void q931_init_call_record(struct q921_link *link, struct q931_call *call, int cr);
 
 void pri_sr_init(struct pri_sr *req);
 
@@ -985,13 +958,13 @@ int q931_cc_timeout(struct pri *ctrl, struct pri_cc_record *cc_record, enum CC_E
 void q931_cc_indirect(struct pri *ctrl, struct pri_cc_record *cc_record, void (*func)(struct pri *ctrl, q931_call *call, struct pri_cc_record *cc_record));
 
 /*!
- * \brief Get the master PRI control structure.
+ * \brief Get the NFAS master PRI control structure.
  *
  * \param ctrl D channel controller.
  *
- * \return Master PRI control structure.
+ * \return NFAS master PRI control structure.
  */
-static inline struct pri *PRI_MASTER(struct pri *ctrl)
+static inline struct pri *PRI_NFAS_MASTER(struct pri *ctrl)
 {
 	while (ctrl->master) {
 		ctrl = ctrl->master;
@@ -1011,10 +984,8 @@ static inline int BRI_NT_PTMP(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->bri && my_ctrl->localtype == PRI_NETWORK
-		&& my_ctrl->tei == Q921_TEI_GROUP;
+		&& my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 /*!
@@ -1029,10 +1000,8 @@ static inline int BRI_TE_PTMP(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->bri && my_ctrl->localtype == PRI_CPE
-		&& my_ctrl->tei == Q921_TEI_GROUP;
+		&& my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 /*!
@@ -1047,8 +1016,6 @@ static inline int NT_MODE(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->localtype == PRI_NETWORK;
 }
 
@@ -1064,8 +1031,6 @@ static inline int TE_MODE(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
 	return my_ctrl->localtype == PRI_CPE;
 }
 
@@ -1081,9 +1046,7 @@ static inline int PTP_MODE(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
-	return my_ctrl->tei == Q921_TEI_PRI;
+	return my_ctrl->link.tei == Q921_TEI_PRI;
 }
 
 /*!
@@ -1098,9 +1061,7 @@ static inline int PTMP_MODE(const struct pri *ctrl)
 {
 	struct pri *my_ctrl = (struct pri *) ctrl;
 
-	/* Check master control structure */
-	my_ctrl = PRI_MASTER(my_ctrl);
-	return my_ctrl->tei == Q921_TEI_GROUP;
+	return my_ctrl->link.tei == Q921_TEI_GROUP;
 }
 
 #define Q931_DUMMY_CALL_REFERENCE	-1
@@ -1112,14 +1073,13 @@ static inline int PTMP_MODE(const struct pri *ctrl)
  * \retval TRUE if given call is a dummy call.
  * \retval FALSE otherwise.
  */
-static inline int q931_is_dummy_call(const q931_call *call)
+static inline int q931_is_dummy_call(const struct q931_call *call)
 {
 	return (call->cr == Q931_DUMMY_CALL_REFERENCE) ? 1 : 0;
 }
 
 static inline short get_invokeid(struct pri *ctrl)
 {
-	ctrl = PRI_MASTER(ctrl);
 	return ++ctrl->last_invoke;
 }
 
