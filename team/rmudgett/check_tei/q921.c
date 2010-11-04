@@ -273,6 +273,16 @@ static void q921_tei_request(struct q921_link *link)
 	t202_expire(link);
 }
 
+static void q921_tei_remove(struct pri *ctrl, int tei)
+{
+	/*
+	 * Q.921 Section 5.3.2 says we should send the remove message
+	 * twice, in case of message loss.
+	 */
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, tei, 1);
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, tei, 1);
+}
+
 static void q921_send_dm(struct q921_link *link, int fbit)
 {
 	q921_h h;
@@ -1232,6 +1242,7 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 					}
 					/* XXX : TODO later sometime: Implement the TEI check procedure to reclaim some dead TEIs. */
 					pri_error(ctrl, "Reached maximum TEI quota, cannot assign new TEI\n");
+					q921_send_tei(ctrl, Q921_TEI_IDENTITY_DENIED, ri, Q921_TEI_GROUP, 1);
 					return NULL;
 				}
 			}
@@ -1256,18 +1267,35 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		link = ctrl->link.next;
 		
 		switch (link->state) {
+		case Q921_TEI_UNASSIGNED:
+			/* We do not have a TEI and we are not asking for one. */
+			return NULL;
 		case Q921_ASSIGN_AWAITING_TEI:
 		case Q921_ESTABLISH_AWAITING_TEI:
+			/* We do not have a TEI and we want one. */
 			break;
 		default:
-			pri_message(ctrl, "Ignoring unrequested TEI assign message\n");
+			/* We already have a TEI. */
+			if (tei == link->tei) {
+				/*
+				 * The TEI assignment conflicts with ours.  Our TEI is the
+				 * duplicate so we should remove it.  Q.921 Section 5.3.4.2
+				 * condition c.
+				 */
+				pri_error(ctrl, "TEI=%d Conflicting TEI assignment.  Removing our TEI.\n",
+					tei);
+				q921_mdl_remove(link);
+				q921_start(link);
+			}
 			return NULL;
 		}
 
 		if (ri != link->ri) {
-			pri_message(ctrl,
-				"TEI assignment received for another Ri %02x (ours is %02x)\n",
-				ri, link->ri);
+			if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+				pri_message(ctrl,
+					"TEI assignment received for another Ri %02x (ours is %02x)\n",
+					ri, link->ri);
+			}
 			return NULL;
 		}
 
@@ -2592,9 +2620,7 @@ static pri_event *q921_handle_unmatched_frame(struct pri *ctrl, q921_h *h, int l
 			pri_message(ctrl, "Sending TEI release, in order to re-establish TEI state\n");
 		}
 	
-		/* Q.921 says we should send the remove message twice, in case of link corruption */
-		q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
-		q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
+		q921_tei_remove(ctrl, h->h.tei);
 	}
 
 	return NULL;
@@ -2701,13 +2727,11 @@ void q921_start(struct q921_link *link)
 			if (!ctrl->link.next) {
 				/*
 				 * We do not have any TEI's so make sure there are no devices
-				 * that think they have a TEI.
-				 *
-				 * Q.921 says we should send the remove message twice, in case
-				 * of link corruption.
+				 * that think they have a TEI.  A device may think it has a TEI
+				 * if the upper layer program is restarted or the system
+				 * reboots.
 				 */
-				q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, Q921_TEI_GROUP, 1);
-				q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, Q921_TEI_GROUP, 1);
+				q921_tei_remove(ctrl, Q921_TEI_GROUP);
 			}
 		}
 	} else {
