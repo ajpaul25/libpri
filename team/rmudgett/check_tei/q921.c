@@ -2691,6 +2691,17 @@ void q921_start(struct q921_link *link)
 		} else {
 			q921_setstate(link, Q921_TEI_UNASSIGNED);
 			pri_schedule_event(ctrl, 0, nt_ptmp_dchannel_up, ctrl);
+			if (!ctrl->link.next) {
+				/*
+				 * We do not have any TEI's so make sure there are no devices
+				 * that think they have a TEI.
+				 *
+				 * Q.921 says we should send the remove message twice, in case
+				 * of link corruption.
+				 */
+				q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, Q921_TEI_GROUP, 1);
+				q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, Q921_TEI_GROUP, 1);
+			}
 		}
 	} else {
 		/* PTP mode, no need for TEI management junk */
