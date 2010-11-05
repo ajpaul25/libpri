@@ -51,7 +51,7 @@
 	(hf).h.ea1 = 0; \
 	(hf).h.ea2 = 1; \
 	(hf).h.tei = (link)->tei; \
-} while(0)
+} while (0)
 
 static void q921_dump_pri(struct q921_link *link, char direction_tag);
 static void q921_establish_data_link(struct q921_link *link);
@@ -296,7 +296,7 @@ static void q921_send_dm(struct q921_link *link, int fbit)
 	h.u.m2 = 3;	/* M2 = 3 */
 	h.u.p_f = fbit;	/* Final set appropriately */
 	h.u.ft = Q921_FRAMETYPE_U;
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h.h.c_r = 0;
 		break;
@@ -325,7 +325,7 @@ static void q921_send_disc(struct q921_link *link, int pbit)
 	h.u.m2 = 0;	/* M2 = 0 */
 	h.u.p_f = pbit;	/* Poll set appropriately */
 	h.u.ft = Q921_FRAMETYPE_U;
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h.h.c_r = 0;
 		break;
@@ -354,7 +354,7 @@ static void q921_send_ua(struct q921_link *link, int fbit)
 	h.u.m2 = 0;		/* M2 = 0 */
 	h.u.p_f = fbit;	/* Final set appropriately */
 	h.u.ft = Q921_FRAMETYPE_U;
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h.h.c_r = 0;
 		break;
@@ -383,7 +383,7 @@ static void q921_send_sabme(struct q921_link *link)
 	h.u.m2 = 3;	/* M2 = 3 */
 	h.u.p_f = 1;	/* Poll bit set */
 	h.u.ft = Q921_FRAMETYPE_U;
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h.h.c_r = 1;
 		break;
@@ -473,7 +473,7 @@ static int q921_unacked_iframes(struct q921_link *link)
 	struct q921_frame *f = link->tx_queue;
 	int cnt = 0;
 
-	while(f) {
+	while (f) {
 		if (f->transmitted)
 			cnt++;
 		f = f->next;
@@ -647,7 +647,7 @@ static void q921_reject(struct q921_link *link, int pf)
 	h.s.ft = 1;	/* Frametype (01) */
 	h.s.n_r = link->v_r;	/* Where to start retransmission N(R) */
 	h.s.p_f = pf;	
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h.h.c_r = 0;
 		break;
@@ -677,7 +677,7 @@ static void q921_rr(struct q921_link *link, int pbit, int cmd)
 	h.s.ft = 1;	/* Frametype (01) */
 	h.s.n_r = link->v_r;	/* N(R) */
 	h.s.p_f = pbit;		/* Poll/Final set appropriately */
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		if (cmd)
 			h.h.c_r = 1;
@@ -811,7 +811,7 @@ int q921_transmit_uiframe(struct q921_link *link, void *buf, int len)
 	h->u.p_f = 0;	/* Poll bit set */
 	h->u.ft = Q921_FRAMETYPE_U;
 
-	switch(ctrl->localtype) {
+	switch (ctrl->localtype) {
 	case PRI_NETWORK:
 		h->h.c_r = 1;
 		break;
@@ -2703,7 +2703,7 @@ static pri_event *__q921_receive_qualified(struct q921_link *link, q921_h *h, in
 
 	ctrl = link->ctrl;
 
-	switch(h->h.data[0] & Q921_FRAMETYPE_MASK) {
+	switch (h->h.data[0] & Q921_FRAMETYPE_MASK) {
 	case 0:
 	case 2:
 		ev = q921_iframe_rx(link, h, len);
