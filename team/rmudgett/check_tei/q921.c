@@ -1135,19 +1135,22 @@ void q921_dump(struct pri *ctrl, q921_h *h, int len, int showraw, int txrx)
 			direction_tag,
 			len - 3);
 		break;
-	};
+	}
 
 	if ((h->u.ft == 3) && (h->u.m3 == 0) && (h->u.m2 == 0) && (h->u.data[0] == 0x0f)) {
 		int ri;
-		int tei;
+		u_int8_t *action;
 
-		ri = (h->u.data[1] << 8) | h->u.data[2];
-		tei = (h->u.data[4] >> 1);
-		/* TEI assignment related */
+		/* TEI management related */
 		type = q921_tei_mgmt2str(h->u.data[3]);
 		pri_message(ctrl, "%c MDL Message: %d(%s)\n", direction_tag, h->u.data[3], type);
-		pri_message(ctrl, "%c RI: %d\n", direction_tag, ri);
-		pri_message(ctrl, "%c Ai: %d E:%d\n", direction_tag, (h->u.data[4] >> 1) & 0x7f, h->u.data[4] & 1);
+		ri = (h->u.data[1] << 8) | h->u.data[2];
+		pri_message(ctrl, "%c Ri: %d\n", direction_tag, ri);
+		action = &h->u.data[4];
+		for (x = len - (action - (u_int8_t *) h); 0 < x; --x, ++action) {
+			pri_message(ctrl, "%c Ai: %d E:%d\n",
+				direction_tag, (*action >> 1) & 0x7f, *action & 0x01);
+		}
 	}
 }
 
@@ -1371,6 +1374,9 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 			 * We just allocated the last TEI.  Try to reclaim dead TEIs
 			 * before another is requested.
 			 */
+			if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+				pri_message(ctrl, "Allocated last TEI.  Reclaiming dead TEIs.\n");
+			}
 			q921_tei_check(ctrl);
 		}
 		break;
