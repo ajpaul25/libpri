@@ -57,6 +57,8 @@
 #define Q921_TEI_GR303_EOC_OPS			4
 #define Q921_TEI_GR303_TMC_SWITCHING	0
 #define Q921_TEI_GR303_TMC_CALLPROC		0
+#define Q921_TEI_AUTO_FIRST				64
+#define Q921_TEI_AUTO_LAST				126
 
 #define Q921_SAPI_CALL_CTRL		0
 #define Q921_SAPI_GR303_EOC		1
@@ -69,13 +71,16 @@
 #define Q921_SAPI_LAYER2_MANAGEMENT	63
 
 
-#define Q921_TEI_IDENTITY_REQUEST			1
-#define Q921_TEI_IDENTITY_ASSIGNED			2
-#define Q921_TEI_IDENTITY_DENIED			3
-#define Q921_TEI_IDENTITY_CHECK_REQUEST		4
-#define Q921_TEI_IDENTITY_CHECK_RESPONSE	5
-#define Q921_TEI_IDENTITY_REMOVE			6
-#define Q921_TEI_IDENTITY_VERIFY			7
+/*! Q.921 TEI management message type */
+enum q921_tei_identity {
+	Q921_TEI_IDENTITY_REQUEST = 1,
+	Q921_TEI_IDENTITY_ASSIGNED = 2,
+	Q921_TEI_IDENTITY_DENIED = 3,
+	Q921_TEI_IDENTITY_CHECK_REQUEST = 4,
+	Q921_TEI_IDENTITY_CHECK_RESPONSE = 5,
+	Q921_TEI_IDENTITY_REMOVE = 6,
+	Q921_TEI_IDENTITY_VERIFY = 7,
+};
 
 typedef struct q921_header {
 #if __BYTE_ORDER == __BIG_ENDIAN
@@ -180,6 +185,18 @@ typedef enum q921_state {
 	Q921_TIMER_RECOVERY = 8,
 } q921_state;
 
+/*! TEI identity check procedure states. */
+enum q921_tei_check_state {
+	/*! Not participating in the TEI check procedure. */
+	Q921_TEI_CHECK_NONE,
+	/*! No reply to TEI check received. */
+	Q921_TEI_CHECK_DEAD,
+	/*! Reply to TEI check received in current poll. */
+	Q921_TEI_CHECK_REPLY,
+	/*! No reply to current TEI check poll received.  A previous poll got a reply. */
+	Q921_TEI_CHECK_DEAD_REPLY,
+};
+
 /*! \brief Q.921 link controller structure */
 struct q921_link {
 	/*! Next Q.921 link in the chain. */
@@ -201,6 +218,9 @@ struct q921_link {
 
 	/*! Q.921 State */
 	enum q921_state state;
+
+	/*! TEI identity check procedure state. */
+	enum q921_tei_check_state tei_check;
 
 	/*! Service Access Profile Identifier (SAPI) of this link */
 	int sapi;
@@ -230,7 +250,6 @@ struct q921_link {
 	/* MDL variables */
 	int mdl_timer;
 	int mdl_error;
-	enum q921_state mdl_error_state;
 	unsigned int mdl_free_me:1;
 
 	unsigned int peer_rx_busy:1;

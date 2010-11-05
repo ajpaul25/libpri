@@ -57,7 +57,38 @@ static void q921_dump_pri(struct q921_link *link, char direction_tag);
 static void q921_establish_data_link(struct q921_link *link);
 static void q921_mdl_error(struct q921_link *link, char error);
 static void q921_mdl_remove(struct q921_link *link);
+static void q921_mdl_destroy(struct q921_link *link);
 static void q921_restart_ptp_link_if_needed(struct q921_link *link);
+
+/*!
+ * \internal
+ * \brief Convert Q.921 TEI management message type to a string.
+ *
+ * \param message Q.921 TEI management message type to convert.
+ *
+ * \return TEI management message type name string
+ */
+static const char *q921_tei_mgmt2str(enum q921_tei_identity message)
+{
+	switch (message) {
+	case Q921_TEI_IDENTITY_REQUEST:
+		return "TEI Identity Request";
+	case Q921_TEI_IDENTITY_ASSIGNED:
+		return "TEI Identity Assigned";
+	case Q921_TEI_IDENTITY_CHECK_REQUEST:
+		return "TEI Identity Check Request";
+	case Q921_TEI_IDENTITY_REMOVE:
+		return "TEI Identity Remove";
+	case Q921_TEI_IDENTITY_DENIED:
+		return "TEI Identity Denied";
+	case Q921_TEI_IDENTITY_CHECK_RESPONSE:
+		return "TEI Identity Check Response";
+	case Q921_TEI_IDENTITY_VERIFY:
+		return "TEI Identity Verify";
+	}
+
+	return "Unknown";
+}
 
 /*!
  * \internal
@@ -168,7 +199,7 @@ static int q921_transmit(struct pri *ctrl, q921_h *h, int len)
 	return 0;
 }
 
-static void q921_send_tei(struct pri *ctrl, int message, int ri, int ai, int iscommand)
+static void q921_send_tei(struct pri *ctrl, enum q921_tei_identity message, int ri, int ai, int iscommand)
 {
 	q921_u *f;
 	struct q921_link *link;
@@ -187,7 +218,9 @@ static void q921_send_tei(struct pri *ctrl, int message, int ri, int ai, int isc
 	f->data[3] = message;
 	f->data[4] = (ai << 1) | 1;
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-		pri_message(ctrl, "Sending TEI management message %d, TEI=%d\n", message, ai);
+		pri_message(ctrl,
+			"Sending TEI management message %d(%s), TEI=%d\n",
+			message, q921_tei_mgmt2str(message), ai);
 	}
 	q921_transmit(ctrl, (q921_h *)f, 8);
 	free(f);
@@ -239,6 +272,16 @@ static void q921_tei_request(struct q921_link *link)
 {
 	link->n202_counter = 0;
 	t202_expire(link);
+}
+
+static void q921_tei_remove(struct pri *ctrl, int tei)
+{
+	/*
+	 * Q.921 Section 5.3.2 says we should send the remove message
+	 * twice, in case of message loss.
+	 */
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, tei, 1);
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, tei, 1);
 }
 
 static void q921_send_dm(struct q921_link *link, int fbit)
@@ -962,7 +1005,7 @@ static void q921_dump_pri_by_h(struct pri *ctrl, char direction_tag, q921_h *h);
 void q921_dump(struct pri *ctrl, q921_h *h, int len, int showraw, int txrx)
 {
 	int x;
-	char *type;
+	const char *type;
 	char direction_tag;
 	
 	direction_tag = txrx ? '>' : '<';
@@ -1096,40 +1139,18 @@ void q921_dump(struct pri *ctrl, q921_h *h, int len, int showraw, int txrx)
 
 	if ((h->u.ft == 3) && (h->u.m3 == 0) && (h->u.m2 == 0) && (h->u.data[0] == 0x0f)) {
 		int ri;
-		int tei;
+		u_int8_t *action;
 
+		/* TEI management related */
+		type = q921_tei_mgmt2str(h->u.data[3]);
+		pri_message(ctrl, "%c MDL Message: %d(%s)\n", direction_tag, h->u.data[3], type);
 		ri = (h->u.data[1] << 8) | h->u.data[2];
-		tei = (h->u.data[4] >> 1);
-		/* TEI assignment related */
-		switch (h->u.data[3]) {
-		case Q921_TEI_IDENTITY_REQUEST:
-			type = "TEI Identity Request";
-			break;
-		case Q921_TEI_IDENTITY_ASSIGNED:
-			type = "TEI Identity Assigned";
-			break;
-		case Q921_TEI_IDENTITY_CHECK_REQUEST:
-			type = "TEI Identity Check Request";
-			break;
-		case Q921_TEI_IDENTITY_REMOVE:
-			type = "TEI Identity Remove";
-			break;
-		case Q921_TEI_IDENTITY_DENIED:
-			type = "TEI Identity Denied";
-			break;
-		case Q921_TEI_IDENTITY_CHECK_RESPONSE:
-			type = "TEI Identity Check Response";
-			break;
-		case Q921_TEI_IDENTITY_VERIFY:
-			type = "TEI Identity Verify";
-			break;
-		default:
-			type = "Unknown";
-			break;
+		pri_message(ctrl, "%c Ri: %d\n", direction_tag, ri);
+		action = &h->u.data[4];
+		for (x = len - (action - (u_int8_t *) h); 0 < x; --x, ++action) {
+			pri_message(ctrl, "%c Ai: %d E:%d\n",
+				direction_tag, (*action >> 1) & 0x7f, *action & 0x01);
 		}
-		pri_message(ctrl, "%c MDL Message: %s (%d)\n", direction_tag, type, h->u.data[3]);
-		pri_message(ctrl, "%c RI: %d\n", direction_tag, ri);
-		pri_message(ctrl, "%c Ai: %d E:%d\n", direction_tag, (h->u.data[4] >> 1) & 0x7f, h->u.data[4] & 1);
 	}
 }
 
@@ -1174,12 +1195,103 @@ static void q921_dump_pri_by_h(struct pri *ctrl, char direction_tag, q921_h *h)
 	}
 }
 
+#define Q921_TEI_CHECK_MAX_POLLS	2
+
+static void t201_expire(void *vctrl)
+{
+	struct pri *ctrl;
+	struct q921_link *link;
+	struct q921_link *link_next;
+
+	ctrl = vctrl;
+
+	if (!ctrl->link.next) {
+		/* No TEI links remain. */
+		ctrl->t201_timer = 0;
+		return;
+	}
+
+	/* Start the TEI check timer. */
+	ctrl->t201_timer =
+		pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T201], t201_expire, ctrl);
+
+	++ctrl->t201_expirycnt;
+	if (Q921_TEI_CHECK_MAX_POLLS < ctrl->t201_expirycnt) {
+		pri_schedule_del(ctrl, ctrl->t201_timer);
+		ctrl->t201_timer = 0;
+
+		/* Reclaim any dead TEI links. */
+		for (link = ctrl->link.next; link; link = link_next) {
+			link_next = link->next;
+
+			switch (link->tei_check) {
+			case Q921_TEI_CHECK_DEAD:
+				link->tei_check = Q921_TEI_CHECK_NONE;
+				q921_tei_remove(ctrl, link->tei);
+				q921_mdl_destroy(link);
+				break;
+			default:
+				link->tei_check = Q921_TEI_CHECK_NONE;
+				break;
+			}
+		}
+		return;
+	}
+
+	if (!ctrl->t201_timer) {
+		pri_error(ctrl, "Could not start T201 timer.");
+
+		/* Abort the remaining TEI check. */
+		for (link = ctrl->link.next; link; link = link->next) {
+			link->tei_check = Q921_TEI_CHECK_NONE;
+		}
+		return;
+	}
+
+	if (ctrl->t201_expirycnt == 1) {
+		/* First poll.  Setup TEI check state. */
+		for (link = ctrl->link.next; link; link = link->next) {
+			if (link->state < Q921_TEI_ASSIGNED) {
+				/* We do not have a TEI. */
+				link->tei_check = Q921_TEI_CHECK_NONE;
+			} else {
+				/* Mark TEI as dead until proved otherwise. */
+				link->tei_check = Q921_TEI_CHECK_DEAD;
+			}
+		}
+	} else {
+		/* Subsequent polls.  Setup for new TEI check poll. */
+		for (link = ctrl->link.next; link; link = link->next) {
+			switch (link->tei_check) {
+			case Q921_TEI_CHECK_REPLY:
+				link->tei_check = Q921_TEI_CHECK_DEAD_REPLY;
+				break;
+			default:
+				break;
+			}
+		}
+	}
+	q921_send_tei(ctrl, Q921_TEI_IDENTITY_CHECK_REQUEST, 0, Q921_TEI_GROUP, 1);
+}
+
+static void q921_tei_check(struct pri *ctrl)
+{
+	if (ctrl->t201_timer) {
+		/* TEI check procedure already in progress.  Do not disturb it. */
+		return;
+	}
+	ctrl->t201_expirycnt = 0;
+	t201_expire(ctrl);
+}
+
 static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 {
 	int ri;
 	struct q921_link *sub;
 	struct q921_link *link;
 	pri_event *res = NULL;
+	u_int8_t *action;
+	int count;
 	int tei;
 
 	if (!BRI_NT_PTMP(ctrl) && !BRI_TE_PTMP(ctrl)) {
@@ -1190,12 +1302,22 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
 		pri_message(ctrl, "Received MDL message\n");
 	}
+	if (len <= &h->data[0] - (u_int8_t *) h) {
+		pri_error(ctrl, "Received short frame\n");
+		return NULL;
+	}
 	if (h->data[0] != 0x0f) {
 		pri_error(ctrl, "Received MDL with unsupported management entity %02x\n", h->data[0]);
 		return NULL;
 	}
-	if (!(h->data[4] & 0x01)) {
-		pri_error(ctrl, "Received MDL with multibyte TEI identifier\n");
+	if (len <= &h->data[4] - (u_int8_t *) h) {
+		pri_error(ctrl, "Received short MDL message\n");
+		return NULL;
+	}
+	if (h->data[3] != Q921_TEI_IDENTITY_CHECK_RESPONSE
+		&& !(h->data[4] & 0x01)) {
+		pri_error(ctrl, "Received %d(%s) with Ai E bit not set.\n", h->data[3],
+			q921_tei_mgmt2str(h->data[3]));
 		return NULL;
 	}
 	ri = (h->data[1] << 8) | h->data[2];
@@ -1208,23 +1330,25 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		}
 
 		if (tei != Q921_TEI_GROUP) {
-			pri_error(ctrl, "Received TEI identity request with invalid TEI %d\n", tei);
+			pri_error(ctrl, "Received %s with invalid TEI %d\n",
+				q921_tei_mgmt2str(Q921_TEI_IDENTITY_REQUEST), tei);
 			q921_send_tei(ctrl, Q921_TEI_IDENTITY_DENIED, ri, tei, 1);
 			return NULL;
 		}
 
 		/* Find a TEI that is not allocated. */
-		tei = 64;
+		tei = Q921_TEI_AUTO_FIRST;
 		do {
 			for (sub = &ctrl->link; sub->next; sub = sub->next) {
 				if (sub->next->tei == tei) {
 					/* This TEI is already assigned, try next one. */
 					++tei;
-					if (tei < Q921_TEI_GROUP) {
+					if (tei <= Q921_TEI_AUTO_LAST) {
 						break;
 					}
-					/* XXX : TODO later sometime: Implement the TEI check procedure to reclaim some dead TEIs. */
-					pri_error(ctrl, "Reached maximum TEI quota, cannot assign new TEI\n");
+					pri_error(ctrl, "TEI pool exhausted.  Reclaiming dead TEIs.\n");
+					q921_send_tei(ctrl, Q921_TEI_IDENTITY_DENIED, ri, Q921_TEI_GROUP, 1);
+					q921_tei_check(ctrl);
 					return NULL;
 				}
 			}
@@ -1240,6 +1364,79 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		}
 		q921_setstate(sub->next, Q921_TEI_ASSIGNED);
 		q921_send_tei(ctrl, Q921_TEI_IDENTITY_ASSIGNED, ri, tei, 1);
+
+		count = 0;
+		for (sub = ctrl->link.next; sub; sub = sub->next) {
+			++count;
+		}
+		if (Q921_TEI_AUTO_LAST - Q921_TEI_AUTO_FIRST + 1 <= count) {
+			/*
+			 * We just allocated the last TEI.  Try to reclaim dead TEIs
+			 * before another is requested.
+			 */
+			if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+				pri_message(ctrl, "Allocated last TEI.  Reclaiming dead TEIs.\n");
+			}
+			q921_tei_check(ctrl);
+		}
+		break;
+	case Q921_TEI_IDENTITY_CHECK_RESPONSE:
+		if (!BRI_NT_PTMP(ctrl)) {
+			return NULL;
+		}
+
+		/* For each TEI listed in the message */
+		action = &h->data[4];
+		len -= (action - (u_int8_t *) h);
+		for (; len; --len, ++action) {
+			if (*action & 0x01) {
+				/* This is the last TEI in the list because the Ai E bit is set. */
+				len = 1;
+			}
+			tei = (*action >> 1);
+
+			if (tei == Q921_TEI_GROUP) {
+				pri_error(ctrl, "Received %s with invalid TEI %d\n",
+					q921_tei_mgmt2str(Q921_TEI_IDENTITY_CHECK_RESPONSE), tei);
+				continue;
+			}
+
+			for (sub = ctrl->link.next; sub; sub = sub->next) {
+				if (sub->tei == tei) {
+					/* Found the TEI. */
+					switch (sub->tei_check) {
+					case Q921_TEI_CHECK_NONE:
+						break;
+					case Q921_TEI_CHECK_DEAD:
+					case Q921_TEI_CHECK_DEAD_REPLY:
+						sub->tei_check = Q921_TEI_CHECK_REPLY;
+						break;
+					case Q921_TEI_CHECK_REPLY:
+						/* Duplicate TEI detected. */
+						sub->tei_check = Q921_TEI_CHECK_NONE;
+						q921_tei_remove(ctrl, tei);
+						q921_mdl_destroy(sub);
+						break;
+					}
+					break;
+				}
+			}
+			if (!sub) {
+				/* TEI not found. */
+				q921_tei_remove(ctrl, tei);
+			}
+		}
+		break;
+	case Q921_TEI_IDENTITY_VERIFY:
+		if (!BRI_NT_PTMP(ctrl)) {
+			return NULL;
+		}
+		if (tei == Q921_TEI_GROUP) {
+			pri_error(ctrl, "Received %s with invalid TEI %d\n",
+				q921_tei_mgmt2str(Q921_TEI_IDENTITY_VERIFY), tei);
+			return NULL;
+		}
+		q921_tei_check(ctrl);
 		break;
 	case Q921_TEI_IDENTITY_ASSIGNED:
 		if (!BRI_TE_PTMP(ctrl)) {
@@ -1250,18 +1447,35 @@ static pri_event *q921_receive_MDL(struct pri *ctrl, q921_u *h, int len)
 		link = ctrl->link.next;
 		
 		switch (link->state) {
+		case Q921_TEI_UNASSIGNED:
+			/* We do not have a TEI and we are not asking for one. */
+			return NULL;
 		case Q921_ASSIGN_AWAITING_TEI:
 		case Q921_ESTABLISH_AWAITING_TEI:
+			/* We do not have a TEI and we want one. */
 			break;
 		default:
-			pri_message(ctrl, "Ignoring unrequested TEI assign message\n");
+			/* We already have a TEI. */
+			if (tei == link->tei) {
+				/*
+				 * The TEI assignment conflicts with ours.  Our TEI is the
+				 * duplicate so we should remove it.  Q.921 Section 5.3.4.2
+				 * condition c.
+				 */
+				pri_error(ctrl, "TEI=%d Conflicting TEI assignment.  Removing our TEI.\n",
+					tei);
+				q921_mdl_remove(link);
+				q921_start(link);
+			}
 			return NULL;
 		}
 
 		if (ri != link->ri) {
-			pri_message(ctrl,
-				"TEI assignment received for another Ri %02x (ours is %02x)\n",
-				ri, link->ri);
+			if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+				pri_message(ctrl,
+					"TEI assignment received for another Ri %02x (ours is %02x)\n",
+					ri, link->ri);
+			}
 			return NULL;
 		}
 
@@ -1527,6 +1741,42 @@ static void q921_mdl_remove(struct q921_link *link)
 	link->mdl_free_me = mdl_free_me;
 }
 
+static void q921_mdl_link_destroy(struct q921_link *link)
+{
+	struct pri *ctrl;
+	struct q921_link *freep;
+	struct q921_link *prev;
+
+	ctrl = link->ctrl;
+
+	freep = NULL;
+	for (prev = &ctrl->link; prev->next; prev = prev->next) {
+		if (prev->next == link) {
+			prev->next = link->next;
+			freep = link;
+			break;
+		}
+	}
+	if (freep == NULL) {
+		pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", -link->tei);
+		return;
+	}
+
+	if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
+		pri_message(ctrl, "Freeing TEI of %d\n", -freep->tei);
+	}
+
+	pri_link_destroy(freep);
+}
+
+static void q921_mdl_destroy(struct q921_link *link)
+{
+	q921_mdl_remove(link);
+	if (link->mdl_free_me) {
+		q921_mdl_link_destroy(link);
+	}
+}
+
 static int q921_mdl_handle_network_error(struct q921_link *link, char error)
 {
 	int handled = 0;
@@ -1642,7 +1892,7 @@ static void q921_restart_ptp_link_if_needed(struct q921_link *link)
 	}
 }
 
-static void q921_mdl_handle_error(struct q921_link *link, char error, int errored_state)
+static void q921_mdl_handle_error(struct q921_link *link, char error)
 {
 	struct pri *ctrl;
 
@@ -1663,36 +1913,13 @@ static void q921_mdl_handle_error_callback(void *vlink)
 {
 	struct q921_link *link = vlink;
 
-	q921_mdl_handle_error(link, link->mdl_error, link->mdl_error_state);
+	q921_mdl_handle_error(link, link->mdl_error);
 
 	link->mdl_error = 0;
 	link->mdl_timer = 0;
 
 	if (link->mdl_free_me) {
-		struct pri *ctrl;
-		struct q921_link *freep;
-		struct q921_link *prev;
-
-		ctrl = link->ctrl;
-
-		freep = NULL;
-		for (prev = &ctrl->link; prev->next; prev = prev->next) {
-			if (prev->next == link) {
-				prev->next = link->next;
-				freep = link;
-				break;
-			}
-		}
-		if (freep == NULL) {
-			pri_error(ctrl, "Huh!? no match found in list for TEI %d\n", -link->tei);
-			return;
-		}
-
-		if (ctrl->debug & PRI_DEBUG_Q921_STATE) {
-			pri_message(ctrl, "Freeing TEI of %d\n", -freep->tei);
-		}
-
-		pri_link_destroy(freep);
+		q921_mdl_link_destroy(link);
 	}
 }
 
@@ -1803,7 +2030,6 @@ static void q921_mdl_error(struct q921_link *link, char error)
 		return;
 	}
 	link->mdl_error = error;
-	link->mdl_error_state = link->state;
 	link->mdl_timer = pri_schedule_event(ctrl, 0, q921_mdl_handle_error_callback, link);
 }
 
@@ -2588,9 +2814,7 @@ static pri_event *q921_handle_unmatched_frame(struct pri *ctrl, q921_h *h, int l
 			pri_message(ctrl, "Sending TEI release, in order to re-establish TEI state\n");
 		}
 	
-		/* Q.921 says we should send the remove message twice, in case of link corruption */
-		q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
-		q921_send_tei(ctrl, Q921_TEI_IDENTITY_REMOVE, 0, h->h.tei, 1);
+		q921_tei_remove(ctrl, h->h.tei);
 	}
 
 	return NULL;
@@ -2694,6 +2918,15 @@ void q921_start(struct q921_link *link)
 		} else {
 			q921_setstate(link, Q921_TEI_UNASSIGNED);
 			pri_schedule_event(ctrl, 0, nt_ptmp_dchannel_up, ctrl);
+			if (!ctrl->link.next) {
+				/*
+				 * We do not have any TEI's so make sure there are no devices
+				 * that think they have a TEI.  A device may think it has a TEI
+				 * if the upper layer program is restarted or the system
+				 * reboots.
+				 */
+				q921_tei_remove(ctrl, Q921_TEI_GROUP);
+			}
 		}
 	} else {
 		/* PTP mode, no need for TEI management junk */
