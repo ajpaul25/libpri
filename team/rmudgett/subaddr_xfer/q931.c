@@ -936,6 +936,31 @@ int q931_party_id_presentation(const struct q931_party_id *id)
 }
 
 /*!
+ * \brief Find the winning subcall if it exists or current call if not outboundbroadcast.
+ *
+ * \param call Starting Q.931 call record of search.
+ *
+ * \retval winning-call or given call if not outboundbroadcast.
+ * \retval NULL if no winning call yet.
+ */
+struct q931_call *q931_find_winning_call(struct q931_call *call)
+{
+	struct q931_call *master;
+
+	master = call->master_call;
+	if (master->outboundbroadcast) {
+		/* We have potential subcalls.  Now get the winning call if declared yet. */
+		if (master->pri_winner < 0) {
+			/* Winner not declared yet.*/
+			call = NULL;
+		} else {
+			call = master->subcalls[master->pri_winner];
+		}
+	}
+	return call;
+}
+
+/*!
  * \internal
  * \brief Append the given ie contents to the save ie location.
  *
@@ -4733,6 +4758,88 @@ int q931_facility(struct pri*ctrl, q931_call *c)
 	return send_message(ctrl, c, Q931_FACILITY, facility_ies);
 }
 
+static int facility_notify_ies[] = {
+	Q931_IE_FACILITY,
+	Q931_IE_NOTIFY_IND,
+	Q931_IE_REDIRECTION_NUMBER,
+	-1
+};
+
+/*!
+ * \brief Send a FACILITY RequestSubaddress with optional redirection number.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param notify Notification indicator
+ * \param number Redirection number to send if not NULL.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int q931_request_subaddress(struct pri *ctrl, struct q931_call *call, int notify, const struct q931_party_number *number)
+{
+	struct q931_call *winner;
+
+	winner = q931_find_winning_call(call);
+	if (!winner) {
+		return -1;
+	}
+	if (number) {
+		winner->redirection_number = *number;
+	} else {
+		q931_party_number_init(&winner->redirection_number);
+	}
+	winner->notify = notify;
+	if (rose_request_subaddress_encode(ctrl, winner)
+		|| send_message(ctrl, winner, Q931_FACILITY, facility_notify_ies)) {
+		pri_message(ctrl,
+			"Could not schedule facility message for request subaddress.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+/*!
+ * \brief Send a FACILITY SubaddressTransfer to all parties.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int q931_subaddress_transfer(struct pri *ctrl, struct q931_call *call)
+{
+	int status;
+	unsigned idx;
+	struct q931_call *subcall;
+
+	if (call->outboundbroadcast && call->master_call == call) {
+		status = 0;
+		for (idx = 0; idx < ARRAY_LEN(call->subcalls); ++idx) {
+			subcall = call->subcalls[idx];
+			if (subcall) {
+				/* Send to all subcalls that have given a positive response. */
+				switch (subcall->ourcallstate) {
+				case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
+				case Q931_CALL_STATE_CALL_DELIVERED:
+				case Q931_CALL_STATE_ACTIVE:
+					if (send_subaddress_transfer(ctrl, subcall)) {
+						status = -1;
+					}
+					break;
+				default:
+					break;
+				}
+			}
+		}
+	} else {
+		status = send_subaddress_transfer(ctrl, call);
+	}
+	return status;
+}
+
 static int notify_ies[] = { Q931_IE_NOTIFY_IND, Q931_IE_REDIRECTION_NUMBER, -1 };
 
 /*!
@@ -5485,31 +5592,6 @@ static int q931_release_complete(struct pri *ctrl, q931_call *c, int cause)
 	/* release the structure */
 	res += pri_hangup(ctrl, c, cause);
 	return res;
-}
-
-/*!
- * \brief Find the winning subcall if it exists or current call if not outboundbroadcast.
- *
- * \param call Starting Q.931 call record of search.
- *
- * \retval winning-call or given call if not outboundbroadcast.
- * \retval NULL if no winning call yet.
- */
-struct q931_call *q931_find_winning_call(struct q931_call *call)
-{
-	struct q931_call *master;
-
-	master = call->master_call;
-	if (master->outboundbroadcast) {
-		/* We have potential subcalls.  Now get the winning call if declared yet. */
-		if (master->pri_winner < 0) {
-			/* Winner not declared yet.*/
-			call = NULL;
-		} else {
-			call = master->subcalls[master->pri_winner];
-		}
-	}
-	return call;
 }
 
 static int connect_ack_ies[] = { -1 };
