@@ -3565,6 +3565,87 @@ int send_subaddress_transfer(struct pri *ctrl, struct q931_call *call)
 
 /*!
  * \internal
+ * \brief Handle the received RequestSubaddress facility.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ *
+ * \return Nothing
+ */
+static void etsi_request_subaddress(struct pri *ctrl, struct q931_call *call)
+{
+	int changed = 0;
+
+	switch (call->notify) {
+	case PRI_NOTIFY_TRANSFER_ACTIVE:
+		if (q931_party_number_cmp(&call->remote_id.number, &call->redirection_number)) {
+			/* The remote party number information changed. */
+			call->remote_id.number = call->redirection_number;
+			changed = 1;
+		}
+		/* Fall through */
+	case PRI_NOTIFY_TRANSFER_ALERTING:
+		if (call->redirection_number.valid
+			&& q931_party_number_cmp(&call->remote_id.number, &call->redirection_number)) {
+			/* The remote party number information changed. */
+			call->remote_id.number = call->redirection_number;
+			changed = 1;
+		}
+		if (call->remote_id.subaddress.valid) {
+			/*
+			 * Clear the subaddress as the remote party has been changed.
+			 * Any new subaddress will arrive later.
+			 */
+			q931_party_subaddress_init(&call->remote_id.subaddress);
+			changed = 1;
+		}
+		if (changed) {
+			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
+		}
+		break;
+	default:
+		break;
+	}
+
+	if (call->local_id.subaddress.valid) {
+		send_subaddress_transfer(ctrl, call);
+	}
+}
+
+/*!
+ * \internal
+ * \brief Handle the received SubaddressTransfer facility subaddress.
+ *
+ * \param ctrl D channel controller.
+ * \param call Q.931 call leg
+ * \param subaddr Received subaddress of remote party.
+ *
+ * \return Nothing
+ */
+static void handle_subaddress_transfer(struct pri *ctrl, struct q931_call *call, const struct rosePartySubaddress *subaddr)
+{
+	int changed = 0;
+	struct q931_party_subaddress q931_subaddress;
+
+	q931_party_subaddress_init(&q931_subaddress);
+	rose_copy_subaddress_to_q931(ctrl, &q931_subaddress, subaddr);
+	if (q931_party_subaddress_cmp(&call->remote_id.subaddress, &q931_subaddress)) {
+		call->remote_id.subaddress = q931_subaddress;
+		changed = 1;
+	}
+	if (call->redirection_number.valid
+		&& q931_party_number_cmp(&call->remote_id.number, &call->redirection_number)) {
+		/* The remote party number information changed. */
+		call->remote_id.number = call->redirection_number;
+		changed = 1;
+	}
+	if (changed) {
+		call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
+	}
+}
+
+/*!
+ * \internal
  * \brief Encode a plain facility ETSI error code.
  *
  * \param ctrl D channel controller for diagnostic messages or global options.
@@ -4580,12 +4661,12 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		}
 		break;
 	case ROSE_ETSI_RequestSubaddress:
-		/* Ignore since we are not handling subaddresses yet. */
+		etsi_request_subaddress(ctrl, call);
 		break;
-#if 0	/* Not handled yet */
 	case ROSE_ETSI_SubaddressTransfer:
+		handle_subaddress_transfer(ctrl, call,
+			&invoke->args.etsi.SubaddressTransfer.subaddress);
 		break;
-#endif	/* Not handled yet */
 	case ROSE_ETSI_EctLinkIdRequest:
 		if (!ctrl->transfer_support) {
 			send_facility_error(ctrl, call, invoke->invoke_id,
@@ -5030,6 +5111,11 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 		} else {
 			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
 		}
+
+		/* Send our subaddress back if we have one. */
+		if (call->local_id.subaddress.valid) {
+			send_subaddress_transfer(ctrl, call);
+		}
 		break;
 	case ROSE_QSIG_CallTransferUpdate:
 		party_id = call->remote_id;
@@ -5056,10 +5142,10 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			}
 		}
 		break;
-#if 0	/* Not handled yet */
 	case ROSE_QSIG_SubaddressTransfer:
+		handle_subaddress_transfer(ctrl, call,
+			&invoke->args.qsig.SubaddressTransfer.redirection_subaddress);
 		break;
-#endif	/* Not handled yet */
 	case ROSE_QSIG_PathReplacement:
 		anfpr_pathreplacement_respond(ctrl, call, ie);
 		break;
