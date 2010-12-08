@@ -4689,11 +4689,23 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			rose_copy_presented_number_unscreened_to_q931(ctrl,
 				&call->remote_id.number, &invoke->args.etsi.EctInform.redirection);
 		}
+
+		/*
+		 * Clear the subaddress as the remote party has been changed.
+		 * Any new subaddress will arrive later.
+		 */
+		q931_party_subaddress_init(&call->remote_id.subaddress);
+
 		if (!invoke->args.etsi.EctInform.status) {
 			/* The remote party for the transfer has not answered yet. */
 			call->incoming_ct_state = INCOMING_CT_STATE_EXPECT_CT_ACTIVE;
 		} else {
 			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
+		}
+
+		/* Send our subaddress back if we have one. */
+		if (call->local_id.subaddress.valid) {
+			send_subaddress_transfer(ctrl, call);
 		}
 		break;
 	case ROSE_ETSI_EctLoopTest:
