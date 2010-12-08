@@ -3607,6 +3607,7 @@ static void etsi_request_subaddress(struct pri *ctrl, struct q931_call *call)
 		break;
 	}
 
+	/* Send our subaddress back if we have one. */
 	if (call->local_id.subaddress.valid) {
 		send_subaddress_transfer(ctrl, call);
 	}
