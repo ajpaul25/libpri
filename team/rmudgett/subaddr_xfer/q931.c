@@ -6375,6 +6375,8 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 		c->ri = -1;
 		break;
 	case Q931_FACILITY:
+		c->notify = -1;
+		q931_party_number_init(&c->redirection_number);
 		if (q931_is_dummy_call(c)) {
 			q931_party_address_init(&c->called);
 		}
@@ -6475,6 +6477,7 @@ static int prepare_to_handle_q931_message(struct pri *ctrl, q931_mh *mh, q931_ca
 	case Q931_SETUP_ACKNOWLEDGE:
 		break;
 	case Q931_NOTIFY:
+		c->notify = -1;
 		q931_party_number_init(&c->redirection_number);
 		break;
 	case Q931_HOLD:
@@ -7606,6 +7609,7 @@ static struct q931_call *q931_find_held_call(struct pri *ctrl, struct q931_call 
 static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct q931_call *c, int missingmand)
 {
 	int res;
+	int changed;
 	struct apdu_event *cur = NULL;
 	struct pri_subcommand *subcmd;
 	struct q931_call *master_call;
@@ -8182,6 +8186,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		return Q931_RES_HAVEEVENT;
 	case Q931_NOTIFY:
 		res = 0;
+		changed = 0;
 		switch (c->notify) {
 		case PRI_NOTIFY_CALL_DIVERTING:
 			if (c->redirection_number.valid) {
@@ -8214,13 +8219,29 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 				res = Q931_RES_HAVEEVENT;
 			}
 			break;
-		case PRI_NOTIFY_TRANSFER_ALERTING:
 		case PRI_NOTIFY_TRANSFER_ACTIVE:
+			if (q931_party_number_cmp(&c->remote_id.number, &c->redirection_number)) {
+				/* The remote party number information changed. */
+				c->remote_id.number = c->redirection_number;
+				changed = 1;
+			}
+			/* Fall through */
+		case PRI_NOTIFY_TRANSFER_ALERTING:
 			if (c->redirection_number.valid
 				&& q931_party_number_cmp(&c->remote_id.number, &c->redirection_number)) {
-				/* The remote party information changed. */
+				/* The remote party number information changed. */
 				c->remote_id.number = c->redirection_number;
-
+				changed = 1;
+			}
+			if (c->remote_id.subaddress.valid) {
+				/*
+				 * Clear the subaddress as the remote party has been changed.
+				 * Any new subaddress will arrive later.
+				 */
+				q931_party_subaddress_init(&c->remote_id.subaddress);
+				changed = 1;
+			}
+			if (changed) {
 				/* Setup connected line subcommand */
 				subcmd = q931_alloc_subcommand(ctrl);
 				if (subcmd) {
