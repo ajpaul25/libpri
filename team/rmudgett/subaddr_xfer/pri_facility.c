@@ -5105,6 +5105,12 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 				&invoke->args.qsig.CallTransferComplete.redirection_name);
 		}
 
+		/*
+		 * Clear the subaddress as the remote party has been changed.
+		 * Any new subaddress will arrive later.
+		 */
+		q931_party_subaddress_init(&call->remote_id.subaddress);
+
 		if (invoke->args.qsig.CallTransferComplete.call_status == 1) {
 			/* The remote party for the transfer has not answered yet. */
 			call->incoming_ct_state = INCOMING_CT_STATE_EXPECT_CT_ACTIVE;
