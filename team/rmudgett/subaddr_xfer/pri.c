@@ -1044,8 +1044,18 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 				 * someone else a transfer then how is the network to know?
 				 */
 				if (new_number) {
+#if defined(USE_NOTIFY_FOR_ECT)
+					/*
+					 * Some ISDN phones only handle the NOTIFY message that the
+					 * EN 300-369 spec says should be sent only if the call has not
+					 * connected yet.
+					 */
+					q931_notify_redirection(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
+						&party_id.number);
+#else
 					q931_request_subaddress(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
 						&party_id.number);
+#endif	/* defined(USE_NOTIFY_FOR_ECT) */
 				}
 				if (new_subaddress || (party_id.subaddress.valid && new_number)) {
 					q931_subaddress_transfer(ctrl, call);
