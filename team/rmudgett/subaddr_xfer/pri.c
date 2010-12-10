@@ -963,8 +963,8 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 
 	new_name = q931_party_name_cmp(&party_id.name, &call->local_id.name);
 	new_number = q931_party_number_cmp(&party_id.number, &call->local_id.number);
-	new_subaddress =
-		q931_party_subaddress_cmp(&party_id.subaddress, &call->local_id.subaddress);
+	new_subaddress = party_id.subaddress.valid
+		&& q931_party_subaddress_cmp(&party_id.subaddress, &call->local_id.subaddress);
 
 	/* Update the call and all subcalls with new local_id. */
 	call->local_id = party_id;
@@ -1002,8 +1002,7 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 					q931_notify_redirection(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
 						&party_id.number);
 				}
-				if ((new_number || new_subaddress)
-					&& q931_party_id_is_subaddress_presentable(&party_id)) {
+				if (new_subaddress || (party_id.subaddress.valid && new_number)) {
 					q931_subaddress_transfer(ctrl, call);
 				}
 			} else if (PTP_MODE(ctrl)) {
@@ -1012,8 +1011,7 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 					/* Immediately send EctInform APDU, callStatus=answered(0) */
 					send_call_transfer_complete(ctrl, call, 0);
 				}
-				if ((new_number || new_subaddress)
-					&& q931_party_id_is_subaddress_presentable(&party_id)) {
+				if (new_subaddress || (party_id.subaddress.valid && new_number)) {
 					q931_subaddress_transfer(ctrl, call);
 				}
 			}
@@ -1023,8 +1021,8 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 				/* Immediately send CallTransferComplete APDU, callStatus=answered(0) */
 				send_call_transfer_complete(ctrl, call, 0);
 			}
-			if ((new_name || new_number || new_subaddress)
-				&& q931_party_id_is_subaddress_presentable(&party_id)) {
+			if (new_subaddress
+				|| (party_id.subaddress.valid && (new_name || new_number))) {
 				q931_subaddress_transfer(ctrl, call);
 			}
 			break;
@@ -1049,8 +1047,7 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 					q931_request_subaddress(ctrl, call, PRI_NOTIFY_TRANSFER_ACTIVE,
 						&party_id.number);
 				}
-				if ((new_number || new_subaddress)
-					&& q931_party_id_is_subaddress_presentable(&party_id)) {
+				if (new_subaddress || (party_id.subaddress.valid && new_number)) {
 					q931_subaddress_transfer(ctrl, call);
 				}
 			} else if (PTP_MODE(ctrl)) {
@@ -1059,8 +1056,7 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 					/* Immediately send EctInform APDU, callStatus=answered(0) */
 					send_call_transfer_complete(ctrl, call, 0);
 				}
-				if ((new_number || new_subaddress)
-					&& q931_party_id_is_subaddress_presentable(&party_id)) {
+				if (new_subaddress || (party_id.subaddress.valid && new_number)) {
 					q931_subaddress_transfer(ctrl, call);
 				}
 			}
@@ -1070,8 +1066,8 @@ int pri_connected_line_update(struct pri *ctrl, q931_call *call, const struct pr
 				/* Immediately send CallTransferComplete APDU, callStatus=answered(0) */
 				send_call_transfer_complete(ctrl, call, 0);
 			}
-			if ((new_name || new_number || new_subaddress)
-				&& q931_party_id_is_subaddress_presentable(&party_id)) {
+			if (new_subaddress
+				|| (party_id.subaddress.valid && (new_name || new_number))) {
 				q931_subaddress_transfer(ctrl, call);
 			}
 			break;

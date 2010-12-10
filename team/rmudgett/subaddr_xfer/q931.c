@@ -864,63 +864,6 @@ void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id)
 }
 
 /*!
- * \internal
- * \brief Determine if the subaddress is presentable.
- *
- * \param number Party number associated with subaddress.
- * \param subaddr Subaddress to determine if presentable.
- *
- * \retval TRUE if the subaddress is presentable.
- * \retval FALSE if the subaddress is not presentable.
- */
-static int is_number_subaddress_presentable(const struct q931_party_number *number, const struct q931_party_subaddress *subaddr)
-{
-	/* If unsure about the presentation, we will restrict it. */
-	if (!subaddr->valid) {
-		return 0;
-	}
-	if (!number->valid) {
-		return 0;
-	}
-	switch (number->presentation & PRI_PRES_RESTRICTION) {
-	case PRI_PRES_ALLOWED:
-	case PRI_PRES_UNAVAILABLE:
-		break;
-	default:
-	case PRI_PRES_RESTRICTED:
-		return 0;
-	}
-	return 1;
-}
-
-/*!
- * \internal
- * \brief Determine if the subaddress in the party address is presentable.
- *
- * \param addr Party address to check.
- *
- * \retval TRUE if the subaddress is presentable.
- * \retval FALSE if the subaddress is not presentable.
- */
-static int q931_party_address_is_subaddress_presentable(const struct q931_party_address *addr)
-{
-	return is_number_subaddress_presentable(&addr->number, &addr->subaddress);
-}
-
-/*!
- * \brief Determine if the subaddress in the party id is presentable.
- *
- * \param id Party ID to check.
- *
- * \retval TRUE if the subaddress is presentable.
- * \retval FALSE if the subaddress is not presentable.
- */
-int q931_party_id_is_subaddress_presentable(const struct q931_party_id *id)
-{
-	return is_number_subaddress_presentable(&id->number, &id->subaddress);
-}
-
-/*!
  * \brief Determine the overall presentation value for the given party.
  *
  * \param id Party to determine the overall presentation value.
@@ -2110,9 +2053,6 @@ static int receive_connected_subaddr(int full_ie, struct pri *ctrl, q931_call *c
 
 static int transmit_connected_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
 {
-	if (!q931_party_id_is_subaddress_presentable(&call->local_id)) {
-		return 0;
-	}
 	return transmit_subaddr_helper(full_ie, ctrl, &call->local_id.subaddress, msgtype, ie,
 		1, len, order);
 }
@@ -2236,9 +2176,6 @@ static int receive_calling_party_subaddr(int full_ie, struct pri *ctrl, q931_cal
 
 static int transmit_calling_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
 {
-	if (!q931_party_id_is_subaddress_presentable(&call->local_id)) {
-		return 0;
-	}
 	return transmit_subaddr_helper(full_ie, ctrl, &call->local_id.subaddress, msgtype, ie,
 		1, len, order);
 }
@@ -2254,9 +2191,6 @@ static int receive_called_party_subaddr(int full_ie, struct pri *ctrl, q931_call
 
 static int transmit_called_party_subaddr(int full_ie, struct pri *ctrl, q931_call *call, int msgtype, q931_ie *ie, int len, int order)
 {
-	if (!q931_party_address_is_subaddress_presentable(&call->called)) {
-		return 0;
-	}
 	return transmit_subaddr_helper(full_ie, ctrl, &call->called.subaddress, msgtype, ie,
 		1, len, order);
 }
