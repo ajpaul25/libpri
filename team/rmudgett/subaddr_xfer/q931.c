@@ -864,6 +864,34 @@ void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id)
 }
 
 /*!
+ * \brief Determine if the subaddress in the party id is presentable.
+ *
+ * \param id Party ID to check.
+ *
+ * \retval TRUE if the subaddress is presentable.
+ * \retval FALSE if the subaddress is not presentable.
+ */
+int q931_party_id_is_subaddress_presentable(const struct q931_party_id *id)
+{
+	/* If unsure about the presentation, we will restrict it. */
+	if (!id->subaddress.valid) {
+		return 0;
+	}
+	if (!id->number.valid) {
+		return 0;
+	}
+	switch (id->number.presentation & PRI_PRES_RESTRICTION) {
+	case PRI_PRES_ALLOWED:
+	case PRI_PRES_UNAVAILABLE:
+		break;
+	default:
+	case PRI_PRES_RESTRICTED:
+		return 0;
+	}
+	return 1;
+}
+
+/*!
  * \brief Determine the overall presentation value for the given party.
  *
  * \param id Party to determine the overall presentation value.

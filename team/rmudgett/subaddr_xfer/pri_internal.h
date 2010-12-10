@@ -938,6 +938,7 @@ void pri_copy_party_subaddress_to_q931(struct q931_party_subaddress *q931_subadd
 void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struct pri_party_id *pri_id);
 
 void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id);
+int q931_party_id_is_subaddress_presentable(const struct q931_party_id *id);
 int q931_party_id_presentation(const struct q931_party_id *id);
 
 const char *q931_call_state_str(enum Q931_CALL_STATE callstate);
