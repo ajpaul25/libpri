@@ -3607,8 +3607,8 @@ static void etsi_request_subaddress(struct pri *ctrl, struct q931_call *call)
 		break;
 	}
 
-	/* Send our subaddress back if we have one. */
-	if (call->local_id.subaddress.valid) {
+	/* Send our subaddress back if we can. */
+	if (q931_party_id_is_subaddress_presentable(&call->local_id)) {
 		send_subaddress_transfer(ctrl, call);
 	}
 }
@@ -4703,8 +4703,8 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
 		}
 
-		/* Send our subaddress back if we have one. */
-		if (call->local_id.subaddress.valid) {
+		/* Send our subaddress back if we can. */
+		if (q931_party_id_is_subaddress_presentable(&call->local_id)) {
 			send_subaddress_transfer(ctrl, call);
 		}
 		break;
@@ -5131,8 +5131,8 @@ void rose_handle_invoke(struct pri *ctrl, q931_call *call, int msgtype, q931_ie 
 			call->incoming_ct_state = INCOMING_CT_STATE_POST_CONNECTED_LINE;
 		}
 
-		/* Send our subaddress back if we have one. */
-		if (call->local_id.subaddress.valid) {
+		/* Send our subaddress back if we can. */
+		if (q931_party_id_is_subaddress_presentable(&call->local_id)) {
 			send_subaddress_transfer(ctrl, call);
 		}
 		break;
