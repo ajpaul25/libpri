@@ -2101,6 +2101,23 @@ static int transmit_redirecting_number(int full_ie, struct pri *ctrl, q931_call 
 	if (!call->redirecting.from.number.valid) {
 		return 0;
 	}
+	if (BRI_TE_PTMP(ctrl)) {
+		/*
+		 * We should not send this ie to the network if we are the TE
+		 * PTMP side since phones do not redirect calls within
+		 * themselves.  Well... If you consider someone else dialing the
+		 * handset a redirection then how is the network to know?
+		 */
+		return 0;
+	}
+	if (call->redirecting.state != Q931_REDIRECTING_STATE_IDLE) {
+		/*
+		 * There was a DivertingLegInformation2 in the message so the
+		 * Q931_REDIRECTING_NUMBER ie is redundant.  Some networks
+		 * (Deutsche Telekom) complain about it.
+		 */
+		return 0;
+	}
 
 	datalen = strlen(call->redirecting.from.number.str);
 	ie->data[0] = call->redirecting.from.number.plan;
@@ -5408,16 +5425,17 @@ static void t303_expiry(void *data)
 	c->t303_expirycnt++;
 	c->t303_timer = 0;
 
-	/*!
-	 * \todo XXX Resending the SETUP message loses all facility ies
-	 * that the original may have had.  Actually any message Q.931
-	 * retransmits will lose the facility ies.
-	 */
-
 	if (c->cause != -1) {
 		/* We got a DISCONNECT, RELEASE, or RELEASE_COMPLETE and no other responses. */
 		pri_fake_clearing(c);
 	} else if (c->t303_expirycnt < 2) {
+		/*!
+		 * \todo XXX Resending the SETUP message loses any facility ies
+		 * that the original may have had that were not added by
+		 * pri_call_add_standard_apdus().  Actually any message Q.931
+		 * retransmits will lose the facility ies.
+		 */
+		pri_call_add_standard_apdus(ctrl, c);
 		c->cc.saved_ie_contents.length = 0;
 		c->cc.saved_ie_flags = 0;
 		if (ctrl->link.next && !ctrl->bri)
