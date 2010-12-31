@@ -809,6 +809,7 @@ int pri_hangup(struct pri *pri, q931_call *call, int cause);
 
 #define PRI_DESTROYCALL
 void pri_destroycall(struct pri *pri, q931_call *call);
+void pri_passive_destroycall(struct pri *pri, q931_call *call);
 
 #define PRI_RESTART
 int pri_restart(struct pri *pri);
