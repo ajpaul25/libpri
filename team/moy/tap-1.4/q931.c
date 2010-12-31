@@ -3056,6 +3056,10 @@ static q931_call *q931_getcall(struct pri *ctrl, int cr)
 	if (!cur) {
 		return NULL;
 	}
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "-- Created new call %p for cr %d\n", cur, cr);
+		cur->magic = 0xDEADBEEF;
+	}
 
 	/* Initialize call structure. */
 	cur->cr = cr;
@@ -3143,17 +3147,28 @@ static void q931_destroy(struct pri *ctrl, int cr, q931_call *c)
 	cur = *ctrl->callpool;
 	while(cur) {
 		if ((c && (cur == c)) || (!c && (cur->cr == cr))) {
+
+			if (cur->magic != 0xDEADDEAD) {
+				pri_message(ctrl,
+					"NEW_HANGUP DEBUG: NOT Destroying the call %d (%p), ourstate %s, peerstate %s with magic %d\n",
+					cr, cur, q931_call_state_str(cur->ourcallstate),
+					q931_call_state_str(cur->peercallstate), cur->magic);
+				return;
+			}
+
 			if (prev)
 				prev->next = cur->next;
 			else
 				*ctrl->callpool = cur->next;
-			if (ctrl->debug & PRI_DEBUG_Q931_STATE)
+			if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 				pri_message(ctrl,
-					"NEW_HANGUP DEBUG: Destroying the call, ourstate %s, peerstate %s\n",
-					q931_call_state_str(cur->ourcallstate),
+					"NEW_HANGUP DEBUG: Destroying the call %d (%p), ourstate %s, peerstate %s\n",
+					cr, cur, q931_call_state_str(cur->ourcallstate),
 					q931_call_state_str(cur->peercallstate));
+			}
 			pri_schedule_del(ctrl, cur->retranstimer);
 			pri_call_apdu_queue_cleanup(cur);
+			cur->magic = 0x0;
 			free(cur);
 			return;
 		}
@@ -5033,10 +5048,10 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.hangup.aoc_units = c->aoc_units;
 		libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 		c->useruserinfo[0] = '\0';
-		if (c->alive)
+		//if (c->alive)
 			return Q931_RES_HAVEEVENT;
-		else
-			q931_hangup(ctrl,c,c->cause);
+		//else
+		//	q931_hangup(ctrl,c,c->cause);
 		break;
 	case Q931_RESTART_ACKNOWLEDGE:
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);

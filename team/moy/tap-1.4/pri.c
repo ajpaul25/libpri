@@ -582,6 +582,15 @@ void pri_destroycall(struct pri *pri, q931_call *call)
 	return;
 }
 
+void pri_passive_destroycall(struct pri *pri, q931_call *call)
+{
+	if (pri && call) {
+		call->magic = 0xDEADDEAD;
+		__q931_destroycall(pri, call);
+	}
+	return;
+}
+
 int pri_need_more_info(struct pri *pri, q931_call *call, int channel, int nonisdn)
 {
 	if (!pri || !call)

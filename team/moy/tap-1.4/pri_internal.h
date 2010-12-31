@@ -335,6 +335,7 @@ enum INCOMING_CT_STATE {
 
 /* q931_call datastructure */
 struct q931_call {
+	int magic;
 	struct pri *pri;	/* PRI */
 	int cr;				/* Call Reference */
 	q931_call *next;
