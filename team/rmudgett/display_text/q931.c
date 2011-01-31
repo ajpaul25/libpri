@@ -949,13 +949,14 @@ static void q931_display_clear(struct q931_call *call)
 }
 
 /*!
+ * \internal
  * \brief Set the display text for the party name.
  *
  * \param call Q.931 call to set display text to the party name.
  *
  * \return Nothing
  */
-void q931_display_name_send(struct q931_call *call, const struct q931_party_name *name)
+static void q931_display_name_send(struct q931_call *call, const struct q931_party_name *name)
 {
 	if (name->valid) {
 		switch (name->presentation & PRI_PRES_RESTRICTION) {

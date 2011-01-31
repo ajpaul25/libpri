@@ -973,7 +973,6 @@ void pri_copy_party_id_to_q931(struct q931_party_id *q931_id, const struct pri_p
 void q931_party_id_fixup(const struct pri *ctrl, struct q931_party_id *id);
 int q931_party_id_presentation(const struct q931_party_id *id);
 
-void q931_display_name_send(struct q931_call *call, const struct q931_party_name *name);
 int q931_display_name_get(struct q931_call *call, struct q931_party_name *name);
 int q931_display_text(struct pri *ctrl, struct q931_call *call, const struct pri_subcmd_display_txt *display);
 
