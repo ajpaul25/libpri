@@ -1040,9 +1040,12 @@ static void q931_display_subcmd(struct pri *ctrl, struct q931_call *call)
 			if (call->display.length < sizeof(subcmd->u.display.text)) {
 				subcmd->u.display.length = call->display.length;
 			} else {
+				/* Truncate display text and leave room for a null terminator. */
 				subcmd->u.display.length = sizeof(subcmd->u.display.text) - 1;
 			}
 			memcpy(subcmd->u.display.text, call->display.text, subcmd->u.display.length);
+
+			/* Make sure display text is null terminated. */
 			subcmd->u.display.text[subcmd->u.display.length] = '\0';
 		}
 	}

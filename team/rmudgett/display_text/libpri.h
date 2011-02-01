@@ -984,9 +984,16 @@ struct pri_subcmd_display_txt {
 	 * iso10646-utf-8String(9)
 	 */
 	int char_set;
-	/*! Number of octets in the display message */
+	/*!
+	 * \brief Number of octets in the display message.
+	 * \note Not including any added null terminator.
+	 */
 	int length;
-	/*! Display text data. */
+	/*!
+	 * \brief Display text data.
+	 * \note Null terminated on receive.
+	 * \note Does not need to be null terminated on send.
+	 */
 	char text[128];
 };
 
