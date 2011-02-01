@@ -4879,9 +4879,14 @@ static int q931_display_text_helper(struct pri *ctrl, struct q931_call *call, co
 	};
 
 	switch (call->ourcallstate) {
+	case Q931_CALL_STATE_OVERLAP_SENDING:
 	case Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING:
 	case Q931_CALL_STATE_CALL_DELIVERED:
+	case Q931_CALL_STATE_CALL_RECEIVED:
+	case Q931_CALL_STATE_CONNECT_REQUEST:
+	case Q931_CALL_STATE_INCOMING_CALL_PROCEEDING:
 	case Q931_CALL_STATE_ACTIVE:
+	case Q931_CALL_STATE_OVERLAP_RECEIVING:
 		call->display.text = display->text;
 		call->display.length = display->length;
 		call->display.char_set = display->char_set;
