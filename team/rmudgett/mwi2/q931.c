@@ -4990,6 +4990,33 @@ int q931_facility(struct pri *ctrl, struct q931_call *call)
 	return send_message(ctrl, call, Q931_FACILITY, facility_ies);
 }
 
+/*!
+ * \brief Send a FACILITY message with the called party number and subaddress ies.
+ *
+ * \param ctrl D channel controller.
+ * \param call Call leg to send message over.
+ * \param called Called party information to send.
+ *
+ * \note
+ * This function can only be used by the dummy call because the call's called
+ * structure is used by normal calls to contain persistent information.
+ *
+ * \retval 0 on success.
+ * \retval -1 on error.
+ */
+int q931_facility_called(struct pri *ctrl, struct q931_call *call, const struct q931_party_id *called)
+{
+	static int facility_called_ies[] = {
+		Q931_IE_FACILITY,
+		Q931_CALLED_PARTY_NUMBER,
+		Q931_CALLED_PARTY_SUBADDR,
+		-1
+	};
+
+	q931_party_id_copy_to_address(&call->called, called);
+	return send_message(ctrl, call, Q931_FACILITY, facility_called_ies);
+}
+
 int q931_facility_display_name(struct pri *ctrl, struct q931_call *call, const struct q931_party_name *name)
 {
 	int status;
