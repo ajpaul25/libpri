@@ -2344,7 +2344,7 @@ static int receive_called_party_number(int full_ie, struct pri *ctrl, q931_call 
 
 	switch (msgtype) {
 	case Q931_FACILITY:
-		if (!q931_is_dummy_call(call) {
+		if (!q931_is_dummy_call(call)) {
 			/* Discard the number. */
 			return 0;
 		}
