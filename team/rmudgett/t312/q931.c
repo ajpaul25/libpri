@@ -6938,7 +6938,7 @@ static void initiate_hangup_if_needed(struct q931_call *master, int idx, int cau
 			/* The subcall was not destroyed. */
 			subcall->alive = 0;
 		}
-		else pri_error(ctrl, "%s BUGBUG prevented write to freed memory.\n", __FUNCTION__);
+		else pri_error(ctrl, DBGHEAD "BUGBUG prevented write to freed memory.\n", DBGINFO);
 	} else {
 		switch (subcall->ourcallstate) {
 		case Q931_CALL_STATE_NULL:
@@ -6949,7 +6949,7 @@ static void initiate_hangup_if_needed(struct q931_call *master, int idx, int cau
 				 * this point.
 				 */
 /* BUGBUG may still be needed for T309 processing. */
-pri_error(ctrl, "%s BUGBUG Dead subcall hangup is still needed.\n", __FUNCTION__);
+pri_error(ctrl, DBGHEAD "BUGBUG Dead subcall hangup is still needed.\n", DBGINFO);
 				q931_hangup(ctrl, subcall, cause);
 				break;
 			default:
@@ -9078,7 +9078,7 @@ static int pri_internal_clear(struct q931_call *c)
 		&& c == q931_find_winning_call(c)) {
 		/* Pass the hangup cause to the master_call. */
 		c->master_call->cause = c->cause;
-/* BUGBUG must test this case again.  T309 processing. */
+pri_error(ctrl, "BUGBUG must test this case again.  T309 processing winning call.\n");
 	}
 
 	q931_clr_subcommands(ctrl);
@@ -9093,7 +9093,8 @@ static int pri_internal_clear(struct q931_call *c)
 	libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "clearing, alive %d, hangupack %d\n", c->alive, c->sendhangupack);
+		pri_message(ctrl, DBGHEAD "clearing, alive %d, hangupack %d\n", DBGINFO, c->alive,
+			c->sendhangupack);
 	}
 
 	if (c->cc.record) {
