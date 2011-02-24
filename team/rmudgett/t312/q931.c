@@ -6476,7 +6476,7 @@ static int __q931_hangup(struct pri *ctrl, q931_call *c, int cause)
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 		pri_message(ctrl,
-			"NEW_HANGUP DEBUG: Calling q931_hangup, ourstate %s, peerstate %s, hold-state %s\n",
+			DBGHEAD "ourstate %s, peerstate %s, hold-state %s\n", DBGINFO,
 			q931_call_state_str(c->ourcallstate),
 			q931_call_state_str(c->peercallstate),
 			q931_hold_state_str(c->master_call->hold_state));
