@@ -7269,6 +7269,7 @@ int q931_receive(struct q921_link *link, q931_h *h, int len)
 	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_1:
 	case MAINTENANCE_PROTOCOL_DISCRIMINATOR_2:
 		res = post_handle_maintenance_message(ctrl, h->pd, mh, c);
+		q931_display_clear(c);
 		break;
 	default:
 		allow_event = 1;
@@ -7287,12 +7288,11 @@ int q931_receive(struct q921_link *link, q931_h *h, int len)
 				res = 0;
 			}
 		} else {
+			q931_display_clear(c);
 			res = 0;
 		}
 		break;
 	}
-	q931_display_subcmd(ctrl, c);
-	q931_display_clear(c);
 	return res;
 }
 
@@ -8120,6 +8120,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 	switch(mh->msg) {
 	case Q931_RESTART:
+		q931_display_subcmd(ctrl, c);
 		if (missingmand) {
 			q931_status(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
 			pri_destroycall(ctrl, c);
@@ -8134,6 +8135,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.restart.channel = q931_encode_channel(c);
 		return Q931_RES_HAVEEVENT;
 	case Q931_REGISTER:
+		q931_display_subcmd(ctrl, c);
+
 		/* Must be new call */
 		if (!c->newcall) {
 			q931_status(ctrl, c, PRI_CAUSE_WRONG_CALL_STATE);
@@ -8163,6 +8166,8 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;
 	case Q931_SETUP:
+		q931_display_subcmd(ctrl, c);
+
 		if (missingmand) {
 			q931_release_complete(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
 			break;
@@ -8206,6 +8211,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		q931_fill_ring_event(ctrl, c);
 		return Q931_RES_HAVEEVENT;
 	case Q931_ALERTING:
+		q931_display_subcmd(ctrl, c);
 		stop_t303(c->master_call);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
@@ -8241,6 +8247,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT:
+		q931_display_subcmd(ctrl, c);
 		stop_t303(c->master_call);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
@@ -8296,6 +8303,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		break;
 	case Q931_FACILITY:
+		q931_display_subcmd(ctrl, c);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
 			break;
@@ -8312,7 +8320,6 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		default:
 			break;
 		}
-		q931_display_subcmd(ctrl, c);
 		if (ctrl->subcmds.counter_subcmd) {
 			q931_fill_facility_event(ctrl, c);
 			return Q931_RES_HAVEEVENT;
@@ -8328,6 +8335,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.proceeding.cause = c->cause;
 		/* Fall through */
 	case Q931_CALL_PROCEEDING:
+		q931_display_subcmd(ctrl, c);
 		stop_t303(c->master_call);
 		ctrl->ev.proceeding.subcmds = &ctrl->subcmds;
 		if (c->newcall) {
@@ -8360,6 +8368,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return Q931_RES_HAVEEVENT;
 	case Q931_CONNECT_ACKNOWLEDGE:
+		q931_display_subcmd(ctrl, c);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
 			break;
@@ -8386,6 +8395,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		break;
 	case Q931_STATUS:
+		q931_display_subcmd(ctrl, c);
 		if (missingmand) {
 			q931_status(ctrl, c, PRI_CAUSE_MANDATORY_IE_MISSING);
 			pri_destroycall(ctrl, c);
@@ -8453,6 +8463,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		break;
 	case Q931_RELEASE_COMPLETE:
+		q931_display_subcmd(ctrl, c);
 		c->hangupinitiated = 1;
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
@@ -8491,6 +8502,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return Q931_RES_HAVEEVENT;
 	case Q931_RELEASE:
+		q931_display_subcmd(ctrl, c);
 		c->hangupinitiated = 1;
 		if (missingmand) {
 			/* Force cause to be mandatory IE missing */
@@ -8536,6 +8548,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return Q931_RES_HAVEEVENT;
 	case Q931_DISCONNECT:
+		q931_display_subcmd(ctrl, c);
 		c->hangupinitiated = 1;
 		if (missingmand) {
 			/* Still let user call release */
@@ -8640,6 +8653,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		break;
 	case Q931_RESTART_ACKNOWLEDGE:
+		q931_display_subcmd(ctrl, c);
 		UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 		c->peercallstate = Q931_CALL_STATE_NULL;
 		ctrl->ev.e = PRI_EVENT_RESTART_ACK;
@@ -8650,6 +8664,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		       overlap dialing received digit
 		       +  the "Complete" msg which is basically an EOF on further digits
 		   XXX */
+		q931_display_subcmd(ctrl, c);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
 			break;
@@ -8679,12 +8694,14 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		ctrl->ev.ring.complete = c->complete;	/* this covers IE 33 (Sending Complete) */
 		return Q931_RES_HAVEEVENT;
 	case Q931_STATUS_ENQUIRY:
+		q931_display_clear(c);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
 		} else
 			q931_status(ctrl,c, PRI_CAUSE_RESPONSE_TO_STATUS_ENQUIRY);
 		break;
 	case Q931_SETUP_ACKNOWLEDGE:
+		q931_display_subcmd(ctrl, c);
 		stop_t303(c->master_call);
 		if (c->newcall) {
 			q931_release_complete(ctrl, c, newcall_rel_comp_cause(c));
@@ -8799,8 +8816,10 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 			res = Q931_RES_HAVEEVENT;
 			break;
 		}
+		q931_display_subcmd(ctrl, c);
 		return res;
 	case Q931_HOLD:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		if (!ctrl->hold_support) {
 			/*
@@ -8866,6 +8885,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_HOLD_ACKNOWLEDGE:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		master_call = c->master_call;
 		switch (master_call->hold_state) {
@@ -8894,6 +8914,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_HOLD_REJECT:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		master_call = c->master_call;
 		switch (master_call->hold_state) {
@@ -8921,6 +8942,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_RETRIEVE:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		switch (c->ourcallstate) {
 		case Q931_CALL_STATE_CALL_RECEIVED:
@@ -8979,6 +9001,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_RETRIEVE_ACKNOWLEDGE:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		master_call = c->master_call;
 		switch (master_call->hold_state) {
@@ -9001,6 +9024,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		}
 		return res;
 	case Q931_RETRIEVE_REJECT:
+		q931_display_subcmd(ctrl, c);
 		res = 0;
 		master_call = c->master_call;
 		switch (master_call->hold_state) {
@@ -9050,6 +9074,7 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 	default:
 		pri_error(ctrl, "!! Don't know how to post-handle message type %s (0x%X)\n",
 			msg2str(mh->msg), mh->msg);
+		q931_display_clear(c);
 		q931_status(ctrl,c, PRI_CAUSE_MESSAGE_TYPE_NONEXIST);
 		if (c->newcall) {
 			pri_destroycall(ctrl, c);
