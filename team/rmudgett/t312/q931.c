@@ -9078,7 +9078,6 @@ static int pri_internal_clear(struct q931_call *c)
 		&& c == q931_find_winning_call(c)) {
 		/* Pass the hangup cause to the master_call. */
 		c->master_call->cause = c->cause;
-pri_error(ctrl, "BUGBUG must test this case again.  T309 processing winning call.\n");
 	}
 
 	q931_clr_subcommands(ctrl);
@@ -9093,7 +9092,7 @@ pri_error(ctrl, "BUGBUG must test this case again.  T309 processing winning call
 	libpri_copy_string(ctrl->ev.hangup.useruserinfo, c->useruserinfo, sizeof(ctrl->ev.hangup.useruserinfo));
 
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, DBGHEAD "clearing, alive %d, hangupack %d\n", DBGINFO, c->alive,
+		pri_message(ctrl, DBGHEAD "alive %d, hangupack %d\n", DBGINFO, c->alive,
 			c->sendhangupack);
 	}
 
