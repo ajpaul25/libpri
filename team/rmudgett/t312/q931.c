@@ -4324,7 +4324,7 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 				/* No slaves left.  We can safely destroy the master. */
 				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 					pri_message(ctrl,
-						"Since we already had a winner, we should be able to kill the call.\n");
+						"Since we already had a winner, we should be able to destroy the master.\n");
 				}
 			} else {
 				/* Destroy any slaves that may be present as well. */
@@ -4342,7 +4342,8 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 				*ctrl->callpool = cur->next;
 			if (ctrl->debug & PRI_DEBUG_Q931_STATE)
 				pri_message(ctrl,
-					"Destroying the call, ourstate %s, peerstate %s, hold-state %s\n",
+					"Destroying call %p, ourstate %s, peerstate %s, hold-state %s\n",
+					cur,
 					q931_call_state_str(cur->ourcallstate),
 					q931_call_state_str(cur->peercallstate),
 					q931_hold_state_str(cur->hold_state));
