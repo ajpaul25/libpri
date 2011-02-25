@@ -6455,7 +6455,7 @@ static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
 	master->retranstimer = pri_schedule_event(ctrl, 0, pri_fake_clearing, master);
 }
 
-static int q931_get_subcall_count(struct q931_call *master)
+int q931_get_subcall_count(struct q931_call *master)
 {
 	int count = 0;
 	int idx;

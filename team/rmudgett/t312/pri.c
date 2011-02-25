@@ -1744,14 +1744,6 @@ char *pri_dump_info_str(struct pri *ctrl)
 		used = pri_snprintf(buf, used, buf_size, "Q921 Outstanding: %u (TEI=%d)\n",
 			q921outstanding, link->tei);
 	}
-#if 0
-	used = pri_snprintf(buf, used, buf_size, "Window Length: %d/%d\n",
-		ctrl->timers[PRI_TIMER_K], ctrl->window);
-	used = pri_snprintf(buf, used, buf_size, "Sentrej: %d\n", ctrl->sentrej);
-	used = pri_snprintf(buf, used, buf_size, "SolicitFbit: %d\n", ctrl->solicitfbit);
-	used = pri_snprintf(buf, used, buf_size, "Retrans: %d\n", ctrl->retrans);
-	used = pri_snprintf(buf, used, buf_size, "Busy: %d\n", ctrl->busy);
-#endif
 	used = pri_snprintf(buf, used, buf_size, "Overlap Dial: %d\n", ctrl->overlapdial);
 	used = pri_snprintf(buf, used, buf_size, "Logical Channel Mapping: %d\n",
 		ctrl->chan_mapping_logical);
@@ -1768,6 +1760,38 @@ char *pri_dump_info_str(struct pri *ctrl)
 			}
 		}
 	}
+#define DEBUG_CALL_RECORDS
+#if defined(DEBUG_CALL_RECORDS)
+	{
+		struct q931_call *call;
+		int num_calls;
+
+		num_calls = 0;
+		for (call = *ctrl->callpool; call; call = call->next) {
+			++num_calls;
+			if (call->outboundbroadcast) {
+				used = pri_snprintf(buf, used, buf_size,
+					"Master call subcall count: %d\n", q931_get_subcall_count(call));
+			}
+		}
+		used = pri_snprintf(buf, used, buf_size, "Total call records: %d\n", num_calls);
+	}
+#endif	/* defined(DEBUG_CALL_RECORDS) */
+#define DEBUG_CC_RECORDS
+#if defined(DEBUG_CC_RECORDS)
+	{
+		struct pri_cc_record *cc_record;
+
+		used = pri_snprintf(buf, used, buf_size, "CC records:\n");
+		for (cc_record = ctrl->cc.pool; cc_record; cc_record = cc_record->next) {
+			used = pri_snprintf(buf, used, buf_size,
+				"  %ld A:%s B:%s state:%s\n", cc_record->record_id,
+				cc_record->party_a.number.valid ? cc_record->party_a.number.str : "",
+				cc_record->party_b.number.valid ? cc_record->party_b.number.str : "",
+				pri_cc_fsm_state_str(cc_record->state));
+		}
+	}
+#endif	/* defined(DEBUG_CC_RECORDS) */
 
 	if (buf_size < used) {
 		pri_message(ctrl,
