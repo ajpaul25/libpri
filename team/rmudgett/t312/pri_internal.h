@@ -579,6 +579,7 @@ struct q931_call {
 	int t303_timer;
 	int t303_expirycnt;
 	int t312_timer;
+	int fake_clearing_timer;
 
 	int hangupinitiated;
 	/*! \brief TRUE if we broadcast this call's SETUP message. */

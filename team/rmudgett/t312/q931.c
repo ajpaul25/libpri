@@ -4193,9 +4193,14 @@ static void stop_t312(struct q931_call *call)
 
 static void cleanup_and_free_call(struct q931_call *cur)
 {
+	struct pri *ctrl;
+
+	ctrl = cur->pri;
+	pri_schedule_del(ctrl, cur->retranstimer);
+	pri_schedule_del(ctrl, cur->hold_timer);
+	pri_schedule_del(ctrl, cur->fake_clearing_timer);
 	stop_t303(cur);
 	stop_t312(cur);
-	pri_schedule_del(cur->pri, cur->retranstimer);
 	pri_call_apdu_queue_cleanup(cur);
 	if (cur->cc.record) {
 		/* Unlink CC associations. */
@@ -4342,6 +4347,12 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 				}
 			}
 
+			if (cur->fake_clearing_timer) {
+				/* Ooops!  Upper layer likely just lost a B channel.  Must fix! */
+				pri_error(ctrl, "BAD! Fake clearing timer was still running.  cref:%d\n",
+					cur->cr);
+			}
+
 			/* Master call or normal call destruction. */
 			if (prev)
 				prev->next = cur->next;
@@ -4354,7 +4365,6 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 					q931_call_state_str(cur->ourcallstate),
 					q931_call_state_str(cur->peercallstate),
 					q931_hold_state_str(cur->hold_state));
-			pri_schedule_del(ctrl, cur->hold_timer);
 			cleanup_and_free_call(cur);
 			return;
 		}
@@ -5723,31 +5733,40 @@ static void start_t303(struct q931_call *call)
 
 static int pri_internal_clear(struct q931_call *c);
 
-/* Fake RELEASE for NT-PTMP initiated SETUPs w/o response */
-static void pri_fake_clearing(void *data)
+/*!
+ * \brief Fake RELEASE for NT-PTMP initiated SETUPs w/o response
+ *
+ * \param param call Call is not a subcall call record.
+ */
+static void pri_fake_clearing(struct q931_call *call)
 {
-	struct q931_call *c = data;/* Call is not a subcall call record. */
 	struct pri *ctrl;
 
-	ctrl = c->pri;
+	ctrl = call->pri;
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "Fake clearing.  cref:%d\n", c->cr);
+		pri_message(ctrl, "Fake clearing.  cref:%d\n", call->cr);
 	}
-	/*
-	 * We cannot clear the retranstimer id because we are called by t303_expiry also.
-	 * Fortunately, it doesn't matter because pri_internal_clear() will stop it if
-	 * it was actually running.
-	 */
-	//c->retranstimer = 0;
-	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT) {
+	if (pri_internal_clear(call) == Q931_RES_HAVEEVENT) {
 		ctrl->schedev = 1;
 	}
 }
 
+static void pri_fake_clearing_expiry(void *data)
+{
+	struct q931_call *call = data;/* Call is not a subcall call record. */
+
+	call->fake_clearing_timer = 0;
+	pri_fake_clearing(call);
+}
+
 static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
 {
-	pri_schedule_del(ctrl, master->retranstimer);
-	master->retranstimer = pri_schedule_event(ctrl, 0, pri_fake_clearing, master);
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "Requesting fake clearing.  cref:%d\n", master->cr);
+	}
+	pri_schedule_del(ctrl, master->fake_clearing_timer);
+	master->fake_clearing_timer = pri_schedule_event(ctrl, 0, pri_fake_clearing_expiry,
+		master);
 }
 
 static void t303_expiry(void *data)
@@ -7028,6 +7047,7 @@ static struct q931_call *q931_get_subcall(struct q921_link *link, struct q931_ca
 	}
 	cur->t303_timer = 0;/* T303 should only be on on the master call */
 	cur->t312_timer = 0;/* T312 should only be on on the master call */
+	cur->fake_clearing_timer = 0;/* Fake clearing should only be on on the master call */
 	cur->hold_timer = 0;
 	cur->retranstimer = 0;
 
