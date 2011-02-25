@@ -4348,9 +4348,11 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 			}
 
 			if (cur->fake_clearing_timer) {
-				/* Ooops!  Upper layer likely just lost a B channel.  Must fix! */
-				pri_error(ctrl, "BAD! Fake clearing timer was still running.  cref:%d\n",
-					cur->cr);
+				/*
+				 * Must wait for the fake clearing to complete before destroying
+				 * the master call record.
+				 */
+				return;
 			}
 
 			/* Master call or normal call destruction. */
@@ -5753,10 +5755,17 @@ static void pri_fake_clearing(struct q931_call *call)
 
 static void pri_fake_clearing_expiry(void *data)
 {
-	struct q931_call *call = data;/* Call is not a subcall call record. */
+	struct q931_call *master = data;
 
-	call->fake_clearing_timer = 0;
-	pri_fake_clearing(call);
+	master->fake_clearing_timer = 0;
+	pri_fake_clearing(master);
+	if (!master->t312_timer && !q931_get_subcall_count(master)) {
+		/*
+		 * T312 has expired and no slaves are left so we can
+		 * destroy the master.
+		 */
+		q931_destroycall(master->pri, master);
+	}
 }
 
 static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
