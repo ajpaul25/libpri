@@ -1731,19 +1731,6 @@ char *pri_dump_info_str(struct pri *ctrl)
 	used = pri_snprintf(buf, used, buf_size, "Switchtype: %s\n",
 		pri_switch2str(ctrl->switchtype));
 	used = pri_snprintf(buf, used, buf_size, "Type: %s\n", pri_node2str(ctrl->localtype));
-	/* Remember that Q921 Counters include Q931 packets (and any retransmissions) */
-	used = pri_snprintf(buf, used, buf_size, "Q931 RX: %d\n", ctrl->q931_rxcount);
-	used = pri_snprintf(buf, used, buf_size, "Q931 TX: %d\n", ctrl->q931_txcount);
-	used = pri_snprintf(buf, used, buf_size, "Q921 RX: %d\n", ctrl->q921_rxcount);
-	used = pri_snprintf(buf, used, buf_size, "Q921 TX: %d\n", ctrl->q921_txcount);
-	for (link = &ctrl->link; link; link = link->next) {
-		q921outstanding = 0;
-		for (f = link->tx_queue; f; f = f->next) {
-			++q921outstanding;
-		}
-		used = pri_snprintf(buf, used, buf_size, "Q921 Outstanding: %u (TEI=%d)\n",
-			q921outstanding, link->tei);
-	}
 	used = pri_snprintf(buf, used, buf_size, "Overlap Dial: %d\n", ctrl->overlapdial);
 	used = pri_snprintf(buf, used, buf_size, "Logical Channel Mapping: %d\n",
 		ctrl->chan_mapping_logical);
@@ -1759,6 +1746,19 @@ char *pri_dump_info_str(struct pri *ctrl)
 					pri_timer[idx].name, ctrl->timers[tmr]);
 			}
 		}
+	}
+	/* Remember that Q921 Counters include Q931 packets (and any retransmissions) */
+	used = pri_snprintf(buf, used, buf_size, "Q931 RX: %d\n", ctrl->q931_rxcount);
+	used = pri_snprintf(buf, used, buf_size, "Q931 TX: %d\n", ctrl->q931_txcount);
+	used = pri_snprintf(buf, used, buf_size, "Q921 RX: %d\n", ctrl->q921_rxcount);
+	used = pri_snprintf(buf, used, buf_size, "Q921 TX: %d\n", ctrl->q921_txcount);
+	for (link = &ctrl->link; link; link = link->next) {
+		q921outstanding = 0;
+		for (f = link->tx_queue; f; f = f->next) {
+			++q921outstanding;
+		}
+		used = pri_snprintf(buf, used, buf_size, "Q921 Outstanding: %u (TEI=%d)\n",
+			q921outstanding, link->tei);
 	}
 #define DEBUG_CALL_RECORDS
 #if defined(DEBUG_CALL_RECORDS)

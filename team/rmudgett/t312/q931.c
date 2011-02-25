@@ -6695,6 +6695,7 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 				pri_message(ctrl, DBGHEAD "Remaining slaves %d\n", DBGINFO, slaves);
 			}
 
+/* BUGBUG T312 active, winning subcall exists, master call state rank */
 			if (call->t303_timer) {
 				/* Abort master call. */
 				__q931_hangup(ctrl, call, cause);
@@ -7622,7 +7623,9 @@ process_hangup:
 			if (subcall == winner) {
 				/* .. and we're it: */
 				*allow_event = 1;
-				UPDATE_OURCALLSTATE(ctrl, master, newstate);
+				if (master_rank != Q931_RANKED_CALL_STATE_ABORT) {
+					UPDATE_OURCALLSTATE(ctrl, master, newstate);
+				}
 			}
 		}
 		break;
@@ -8082,6 +8085,8 @@ static int newcall_rel_comp_cause(struct q931_call *call)
 	struct q931_call *master;
 	int cause;
 
+/* BUGBUG more conditions are needed to correctly determine which cause to use. */
+/* BUGBUG T312 active, winning subcall exists, master call state rank */
 	cause = PRI_CAUSE_INVALID_CALL_REFERENCE;
 	master = call->master_call;
 	if (master != call && master->t312_timer) {
@@ -8105,6 +8110,10 @@ static int newcall_rel_comp_cause(struct q931_call *call)
  * \param mh Q.931 message header.
  * \param c Q.931 call leg.
  * \param missingmand Number of missing mandatory ie's.
+ *
+ * \note
+ * When this function returns c may be destroyed so you can no
+ * longer dereference it.
  *
  * \retval 0 if no error or event.
  * \retval Q931_RES_HAVEEVENT if have an event.
