@@ -5759,19 +5759,12 @@ static void pri_fake_clearing_expiry(void *data)
 
 	master->fake_clearing_timer = 0;
 	pri_fake_clearing(master);
-	if (!master->t312_timer && !q931_get_subcall_count(master)) {
-		/*
-		 * T312 has expired and no slaves are left so we can
-		 * destroy the master.
-		 */
-		q931_destroycall(master->pri, master);
-	}
 }
 
 static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
 {
 	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "Requesting fake clearing.  cref:%d\n", master->cr);
+		pri_message(ctrl, "Fake clearing requested.  cref:%d\n", master->cr);
 	}
 	pri_schedule_del(ctrl, master->fake_clearing_timer);
 	master->fake_clearing_timer = pri_schedule_event(ctrl, 0, pri_fake_clearing_expiry,
@@ -6699,6 +6692,17 @@ int q931_hangup(struct pri *ctrl, q931_call *call, int cause)
 				 * layer.
 				 */
 				pri_create_fake_clearing(ctrl, call);
+			} else if (call->fake_clearing_timer) {
+				/*
+				 * No need for fake clearing to be running anymore.
+				 * Will this actually happen?
+				 */
+				if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+					pri_message(ctrl, "Fake clearing request cancelled.  cref:%d\n",
+						call->cr);
+				}
+				pri_schedule_del(ctrl, call->fake_clearing_timer);
+				call->fake_clearing_timer = 0;
 			}
 
 			/* Initiate hangup of slaves */
