@@ -4228,6 +4228,56 @@ int q931_get_subcall_count(struct q931_call *master)
 	return count;
 }
 
+static int pri_internal_clear(struct q931_call *call);
+
+/*!
+ * \brief Fake RELEASE for NT-PTMP initiated SETUPs w/o response
+ *
+ * \param param call Call is not a subcall call record.
+ */
+static void pri_fake_clearing(struct q931_call *call)
+{
+	struct pri *ctrl;
+
+	ctrl = call->pri;
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "Fake clearing.  cref:%d\n", call->cr);
+	}
+
+	/*
+	 * This does not need to be running since this is what we are
+	 * doing right now anyway.
+	 */
+	pri_schedule_del(ctrl, call->fake_clearing_timer);
+	call->fake_clearing_timer = 0;
+
+	if (call->cause == -1) {
+		/* Ensure that there is a resonable cause code. */
+		call->cause = PRI_CAUSE_NO_USER_RESPONSE;
+	}
+	if (pri_internal_clear(call) == Q931_RES_HAVEEVENT) {
+		ctrl->schedev = 1;
+	}
+}
+
+static void pri_fake_clearing_expiry(void *data)
+{
+	struct q931_call *master = data;
+
+	master->fake_clearing_timer = 0;
+	pri_fake_clearing(master);
+}
+
+static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
+{
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
+		pri_message(ctrl, "Fake clearing requested.  cref:%d\n", master->cr);
+	}
+	pri_schedule_del(ctrl, master->fake_clearing_timer);
+	master->fake_clearing_timer = pri_schedule_event(ctrl, 0, pri_fake_clearing_expiry,
+		master);
+}
+
 static void t312_expiry(void *data)
 {
 	struct q931_call *master = data;
@@ -4239,18 +4289,19 @@ static void t312_expiry(void *data)
 	}
 
 	master->t312_timer = 0;
-	switch (master->ourcallstate) {
-	case Q931_CALL_STATE_CALL_ABORT:
-		if (!q931_get_subcall_count(master)) {
-			/*
-			 * T312 has expired and no slaves are left so we can
-			 * destroy the master.
-			 */
+	if (!q931_get_subcall_count(master)) {
+		/* No subcalls remain. */
+		switch (master->ourcallstate) {
+		case Q931_CALL_STATE_CALL_ABORT:
+			/* We can destroy the master. */
 			q931_destroycall(ctrl, master);
+			break;
+		default:
+			/* Let the upper layer know about the lack of call prospects. */
+			UPDATE_OURCALLSTATE(ctrl, master, Q931_CALL_STATE_CALL_ABORT);
+			pri_fake_clearing(master);
+			break;
 		}
-		break;
-	default:
-		break;
 	}
 }
 
@@ -4337,10 +4388,23 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 					return;
 				}
 
-				/* No slaves left.  We can safely destroy the master. */
+				/* No slaves left. */
+				switch (cur->ourcallstate) {
+				case Q931_CALL_STATE_CALL_ABORT:
+					break;
+				default:
+					/* Let the upper layer know about the call clearing. */
+					UPDATE_OURCALLSTATE(ctrl, cur, Q931_CALL_STATE_CALL_ABORT);
+					pri_create_fake_clearing(ctrl, cur);
+					return;
+				}
+
+				/* We can try to destroy the master now. */
 			} else {
 				/* Destroy any slaves that may be present as well. */
+				slavesleft = 0;
 				for (i = 0; i < ARRAY_LEN(cur->subcalls); ++i) {
+					++slavesleft;
 					if (cur->subcalls[i]) {
 						q931_destroy_subcall(cur, i);
 					}
@@ -4353,6 +4417,12 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 				 * the master call record.
 				 */
 				return;
+			}
+			if (slavesleft) {
+				/* This is likely not good. */
+				pri_error(ctrl,
+					"Destroyed %d subcalls unconditionally with the master.  cref:%d\n",
+					slavesleft, cur->cr);
 			}
 
 			/* Master call or normal call destruction. */
@@ -5731,44 +5801,6 @@ static void start_t303(struct q931_call *call)
 	pri_schedule_del(ctrl, call->t303_timer);
 	call->t303_timer = pri_schedule_event(ctrl, ctrl->timers[PRI_TIMER_T303], t303_expiry,
 		call);
-}
-
-static int pri_internal_clear(struct q931_call *c);
-
-/*!
- * \brief Fake RELEASE for NT-PTMP initiated SETUPs w/o response
- *
- * \param param call Call is not a subcall call record.
- */
-static void pri_fake_clearing(struct q931_call *call)
-{
-	struct pri *ctrl;
-
-	ctrl = call->pri;
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "Fake clearing.  cref:%d\n", call->cr);
-	}
-	if (pri_internal_clear(call) == Q931_RES_HAVEEVENT) {
-		ctrl->schedev = 1;
-	}
-}
-
-static void pri_fake_clearing_expiry(void *data)
-{
-	struct q931_call *master = data;
-
-	master->fake_clearing_timer = 0;
-	pri_fake_clearing(master);
-}
-
-static void pri_create_fake_clearing(struct pri *ctrl, struct q931_call *master)
-{
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
-		pri_message(ctrl, "Fake clearing requested.  cref:%d\n", master->cr);
-	}
-	pri_schedule_del(ctrl, master->fake_clearing_timer);
-	master->fake_clearing_timer = pri_schedule_event(ctrl, 0, pri_fake_clearing_expiry,
-		master);
 }
 
 static void t303_expiry(void *data)
@@ -9263,6 +9295,7 @@ static const char *q931_dl_event2str(enum Q931_DL_EVENT event)
 void q931_dl_event(struct q921_link *link, enum Q931_DL_EVENT event)
 {
 	struct q931_call *cur;
+	struct q931_call *cur_next;
 	struct q931_call *call;
 	struct pri *ctrl;
 	int idx;
@@ -9341,7 +9374,10 @@ void q931_dl_event(struct q921_link *link, enum Q931_DL_EVENT event)
 		break;
 	case Q931_DL_EVENT_DL_RELEASE_IND:
 	case Q931_DL_EVENT_DL_RELEASE_CONFIRM:
-		for (cur = *ctrl->callpool; cur; cur = cur->next) {
+		for (cur = *ctrl->callpool; cur; cur = cur_next) {
+			/* The master call could get destroyed if the last subcall dies. */
+			cur_next = cur->next;
+
 			if (!(cur->cr & ~Q931_CALL_REFERENCE_FLAG)) {
 				/* Don't do anything on the global call reference call record. */
 				continue;
