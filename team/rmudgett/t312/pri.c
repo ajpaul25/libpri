@@ -1767,7 +1767,7 @@ char *pri_dump_info_str(struct pri *ctrl)
 			q921outstanding, link->tei);
 	}
 
-	/* Count the call records in existance. */
+	/* Count the call records in existance.  Useful to check for unreleased calls. */
 	num_calls = 0;
 	num_globals = 0;
 	for (call = *ctrl->callpool; call; call = call->next) {
@@ -1781,8 +1781,8 @@ char *pri_dump_info_str(struct pri *ctrl)
 				"Master call subcall count: %d\n", q931_get_subcall_count(call));
 		}
 	}
-	used = pri_snprintf(buf, used, buf_size, "Total calls:%u global:%u\n", num_calls,
-		num_globals);
+	used = pri_snprintf(buf, used, buf_size, "Total active-calls:%u global:%u\n",
+		num_calls, num_globals);
 
 	/*
 	 * List simplified call completion records.
