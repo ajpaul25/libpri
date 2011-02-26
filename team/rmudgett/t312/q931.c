@@ -4404,8 +4404,8 @@ void q931_destroycall(struct pri *ctrl, q931_call *c)
 				/* Destroy any slaves that may be present as well. */
 				slavesleft = 0;
 				for (i = 0; i < ARRAY_LEN(cur->subcalls); ++i) {
-					++slavesleft;
 					if (cur->subcalls[i]) {
+						++slavesleft;
 						q931_destroy_subcall(cur, i);
 					}
 				}
