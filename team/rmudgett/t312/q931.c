@@ -7000,27 +7000,6 @@ static void initiate_hangup_if_needed(struct q931_call *master, int idx, int cau
 			/* The subcall was not destroyed. */
 			subcall->alive = 0;
 		}
-		else pri_error(ctrl, DBGHEAD "BUGBUG prevented write to freed memory.\n", DBGINFO);
-	} else {
-		switch (subcall->ourcallstate) {
-		case Q931_CALL_STATE_NULL:
-			switch (subcall->peercallstate) {
-			case Q931_CALL_STATE_NULL:
-				/*
-				 * Complete the hangup of the dead subcall.  Noone else will at
-				 * this point.
-				 */
-/* BUGBUG may still be needed for T309 processing. */
-pri_error(ctrl, DBGHEAD "BUGBUG Dead subcall hangup is still needed.\n", DBGINFO);
-				q931_hangup(ctrl, subcall, cause);
-				break;
-			default:
-				break;
-			}
-			break;
-		default:
-			break;
-		}
 	}
 }
 
