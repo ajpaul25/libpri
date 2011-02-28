@@ -1734,8 +1734,10 @@ char *pri_dump_info_str(struct pri *ctrl)
 	used = 0;
 	used = pri_snprintf(buf, used, buf_size, "Switchtype: %s\n",
 		pri_switch2str(ctrl->switchtype));
-	used = pri_snprintf(buf, used, buf_size, "Type: %s%s\n",
-		pri_node2str(ctrl->localtype), PTMP_MODE(ctrl) ? " PTMP" : "");
+	used = pri_snprintf(buf, used, buf_size, "Type: %s%s%s\n",
+		ctrl->bri ? "BRI " : "",
+		pri_node2str(ctrl->localtype),
+		PTMP_MODE(ctrl) ? " PTMP" : "");
 	used = pri_snprintf(buf, used, buf_size, "Remote type: %s\n",
 		pri_node2str(ctrl->remotetype));
 	used = pri_snprintf(buf, used, buf_size, "Overlap Dial: %d\n", ctrl->overlapdial);
