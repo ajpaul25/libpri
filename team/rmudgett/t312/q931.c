@@ -9206,8 +9206,9 @@ static void pri_dl_down_timeout(void *data)
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 	c->peercallstate = Q931_CALL_STATE_NULL;
-	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
+	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT) {
 		ctrl->schedev = 1;
+	}
 }
 
 /* Handle Layer 2 down event for a non active call. */
@@ -9216,15 +9217,17 @@ static void pri_dl_down_cancelcall(void *data)
 	struct q931_call *c = data;
 	struct pri *ctrl = c->pri;
 
-	if (ctrl->debug & PRI_DEBUG_Q931_STATE)
+	if (ctrl->debug & PRI_DEBUG_Q931_STATE) {
 		pri_message(ctrl, "Cancel call after data link failure\n");
+	}
 
 	c->retranstimer = 0;
 	c->cause = PRI_CAUSE_DESTINATION_OUT_OF_ORDER;
 	UPDATE_OURCALLSTATE(ctrl, c, Q931_CALL_STATE_NULL);
 	c->peercallstate = Q931_CALL_STATE_NULL;
-	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT)
+	if (pri_internal_clear(c) == Q931_RES_HAVEEVENT) {
 		ctrl->schedev = 1;
+	}
 }
 
 /*!
