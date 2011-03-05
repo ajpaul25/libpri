@@ -47,6 +47,7 @@ STATIC_OBJS= \
 	pri_aoc.o \
 	pri_cc.o \
 	pri_facility.o \
+	pri_fsm.o \
 	asn1_primitive.o \
 	rose.o \
 	rose_address.o \
@@ -73,6 +74,7 @@ DYNAMIC_OBJS= \
 	pri_aoc.lo \
 	pri_cc.lo \
 	pri_facility.lo \
+	pri_fsm.lo \
 	asn1_primitive.lo \
 	rose.lo \
 	rose_address.lo \
