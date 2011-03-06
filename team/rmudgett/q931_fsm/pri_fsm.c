@@ -58,8 +58,6 @@ const char *fsm_ev2str(enum fsm_ev event)
 		return "FSM_EV_GET_EV_NAME";
 	case FSM_EV_GET_DEBUG:
 		return "FSM_EV_GET_DEBUG";
-	case FSM_EV_INIT:
-		return "FSM_EV_INIT";
 	case FSM_EV_PROLOG:
 		return "FSM_EV_PROLOG";
 	case FSM_EV_EPILOG:
@@ -88,7 +86,7 @@ void fsm_event_push(struct pri *ctrl, struct fsm_event *event)
 
 	state = event->fsm->state;
 
-	//dbg_event.fsm = event->fsm;
+	dbg_event.fsm = event->fsm;
 	dbg_event.code = FSM_EV_GET_DEBUG;
 	if (state(ctrl, &dbg_event)) {
 		dbg_event.code = FSM_EV_GET_EV_NAME;
@@ -132,7 +130,7 @@ void fsm_event_post(struct pri *ctrl, struct fsm_event *event)
 
 	state = event->fsm->state;
 
-	//dbg_event.fsm = event->fsm;
+	dbg_event.fsm = event->fsm;
 	dbg_event.code = FSM_EV_GET_DEBUG;
 	if (state(ctrl, &dbg_event)) {
 		dbg_event.code = FSM_EV_GET_EV_NAME;
@@ -166,25 +164,27 @@ void fsm_event_post(struct pri *ctrl, struct fsm_event *event)
  *
  * \return The value has various meanings depending upon what
  * event was passed in.
- * \see enum fsm_ev event descriptions.
- *
- * \retval NULL For normal events: The state handled the event.
- *
- * \retval non-NULL For normal events: The superstate to pass
- * the event to next.
+ * \see enum fsm_ev event descriptions for return value.
  */
 void *fsm_top_state(struct pri *ctrl, struct fsm_event *event)
 {
 	switch (event->code) {
+	case FSM_EV_GET_SUPERSTATE:
+		break;
 	case FSM_EV_GET_STATE_NAME:
 		return (void *) __PRETTY_FUNCTION__;
 	case FSM_EV_GET_EV_NAME:
+		/* This is not the best state to use to get an event name. */
 		return (void *) fsm_ev2str(event->parms.num);
 	case FSM_EV_GET_DEBUG:
 		/* Noone should be doing this since how are we to know? */
 		pri_error(ctrl, DBGHEAD "Asking for FSM debug output enable!\n", DBGINFO);
 		return (void *) 1;
+	case FSM_EV_PROLOG:
+	case FSM_EV_EPILOG:
 	default:
+		pri_error(ctrl, DBGHEAD "%s: Unhandled event: %s(%d)!\n", DBGINFO,
+			event->fsm->name, fsm_ev2str(event->code), event->code);
 		break;
 	}
 	return NULL;
@@ -196,21 +196,20 @@ void *fsm_top_state(struct pri *ctrl, struct fsm_event *event)
  * \param ctrl D channel controller.
  * \param debug TRUE if FSM debug output enabled.
  * \param fsm FSM that is transitioning states.
- * \param from Transitioning from state. (NULL if initial)
- * \param to Transitioning to state. (NULL if terminal)
+ * \param dest Transitioning to state. (NULL if terminal)
+ * \param src Transitioning from state. (NULL if initial)
  *
  * \return Nothing
  */
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state from, fsm_state to)
+void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest, fsm_state src)
 {
 	struct fsm_event local_event;
 	fsm_state epilog_state[FSM_MAX_SUPERSTATE_NESTING];
 	fsm_state prolog_state[FSM_MAX_SUPERSTATE_NESTING];
 	const char *epilog_name;
 	const char *prolog_name;
-	const char *init_name;
-	const char *from_name;
-	const char *to_name;
+	const char *src_name;
+	const char *dest_name;
 	int epilog_index;
 	int prolog_index;
 	int idx;
@@ -219,48 +218,52 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 
 	/* Get original state names. */
 	local_event.code = FSM_EV_GET_STATE_NAME;
-	if (from) {
-		from_name = from(ctrl, &local_event);
+	if (src && src != fsm_top_state) {
+		src_name = src(ctrl, &local_event);
 	} else {
+		/* This is the initial transition to start the FSM. */
 		fsm->state = fsm_top_state;
-		from_name = "*";
+		src_name = fsm_top_state(ctrl, &local_event);
+		src = NULL;
 	}
-	if (to) {
-		to_name = to(ctrl, &local_event);
+	if (dest && dest != fsm_top_state) {
+		dest_name = dest(ctrl, &local_event);
 	} else {
-		to_name = "*";
+		/* This is the terminal transition to end the FSM. */
+		dest_name = fsm_top_state(ctrl, &local_event);
+		dest = NULL;
 	}
 
 	if (debug) {
-		pri_message(ctrl, "%s:  Next-state %s\n", fsm->name, to_name);
+		pri_message(ctrl, "%s:  Next-state %s\n", fsm->name, dest_name);
 	}
 
 	local_event.code = FSM_EV_GET_SUPERSTATE;
 
-	/* Build from superstate nesting stack. */
+	/* Build src superstate nesting stack. */
 	epilog_index = 0;
-	epilog_state[epilog_index++] = from;
-	while (from) {
+	epilog_state[epilog_index++] = src;
+	while (src && src != fsm_top_state) {
 		if (FSM_MAX_SUPERSTATE_NESTING <= epilog_index) {
-			pri_error(ctrl, "%s: FSM 'from' state %s nested too deep!\n", fsm->name,
-				from_name);
+			pri_error(ctrl, "%s: FSM source state %s nested too deep!\n", fsm->name,
+				src_name);
 			return;
 		}
-		from = from(ctrl, &local_event);
-		epilog_state[epilog_index++] = from;
+		src = src(ctrl, &local_event);
+		epilog_state[epilog_index++] = src;
 	}
 
-	/* Build to superstate nesting stack. */
+	/* Build dest superstate nesting stack. */
 	prolog_index = 0;
-	prolog_state[prolog_index++] = to;
-	while (to) {
+	prolog_state[prolog_index++] = dest;
+	while (dest && dest != fsm_top_state) {
 		if (FSM_MAX_SUPERSTATE_NESTING <= prolog_index) {
-			pri_error(ctrl, "%s: FSM 'to' state %s nested too deep!\n", fsm->name,
-				to_name);
+			pri_error(ctrl, "%s: FSM destination state %s nested too deep!\n", fsm->name,
+				dest_name);
 			return;
 		}
-		to = to(ctrl, &local_event);
-		prolog_state[prolog_index++] = to;
+		dest = dest(ctrl, &local_event);
+		prolog_state[prolog_index++] = dest;
 	}
 
 	/* Find first non-common superstate level. */
@@ -281,16 +284,16 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 		epilog_name = fsm_ev2str(FSM_EV_EPILOG);
 
 		for (idx = 0; idx <= epilog_index; ++idx) {
-			from = epilog_state[idx];
+			src = epilog_state[idx];
 			if (debug) {
 				local_event.code = FSM_EV_GET_STATE_NAME;
-				from_name = (const char *) from(ctrl, &local_event);
+				src_name = (const char *) src(ctrl, &local_event);
 
 				pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, epilog_name,
-					from_name);
+					src_name);
 			}
 			local_event.code = FSM_EV_EPILOG;
-			from(ctrl, &local_event);
+			src(ctrl, &local_event);
 		}
 	}
 
@@ -299,16 +302,16 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 		prolog_name = fsm_ev2str(FSM_EV_PROLOG);
 
 		for (idx = prolog_index; 0 <= idx; --idx) {
-			to = prolog_state[idx];
+			dest = prolog_state[idx];
 			if (debug) {
 				local_event.code = FSM_EV_GET_STATE_NAME;
-				to_name = (const char *) to(ctrl, &local_event);
+				dest_name = (const char *) dest(ctrl, &local_event);
 
 				pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, prolog_name,
-					to_name);
+					dest_name);
 			}
 			local_event.code = FSM_EV_PROLOG;
-			to(ctrl, &local_event);
+			dest = dest(ctrl, &local_event);
 		}
 	} else {
 		/* Termination transition. */
@@ -321,35 +324,28 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 		return;
 	}
 
-	/* Drill down into possible further nested states. */
-	init_name = fsm_ev2str(FSM_EV_INIT);
-	to = prolog_state[0];
-	for (;;) {
-		if (debug) {
-			local_event.code = FSM_EV_GET_STATE_NAME;
-			to_name = (const char *) to(ctrl, &local_event);
+	if (!dest) {
+		/* The original dest state is a leaf state. */
+		fsm->state = prolog_state[0];
+		return;
+	}
 
-			pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, init_name,
-				to_name);
-		}
-		local_event.code = FSM_EV_INIT;
-		to = to(ctrl, &local_event);
-		if (!to) {
-			/* We made it to a leaf state. */
-			fsm->state = prolog_state[0];
-			break;
-		}
-		prolog_state[0] = to;
+	/* Drill into nested states for the final destination state. */
+	do {
+		src = dest;
 		if (debug) {
 			local_event.code = FSM_EV_GET_STATE_NAME;
-			to_name = (const char *) to(ctrl, &local_event);
+			dest_name = (const char *) dest(ctrl, &local_event);
 
 			pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, prolog_name,
-				to_name);
+				dest_name);
 		}
 		local_event.code = FSM_EV_PROLOG;
-		to(ctrl, &local_event);
-	}
+		dest = dest(ctrl, &local_event);
+	} while (dest);
+
+	/* We made it to a leaf state. */
+	fsm->state = src;
 }
 
 /*!
@@ -370,7 +366,7 @@ static void fsm_event_process(struct pri *ctrl, struct fsm_event *event)
 
 	state = event->fsm->state;
 
-	//local_event.fsm = event->fsm;
+	local_event.fsm = event->fsm;
 	local_event.code = FSM_EV_GET_DEBUG;
 	if (state(ctrl, &local_event)) {
 		debug = 1;
@@ -446,7 +442,7 @@ void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm)
 	if (debug) {
 		pri_message(ctrl, "%s: Initial transition\n", fsm->name);
 	}
-	fsm_transition(ctrl, debug, fsm, NULL, fsm->state);
+	fsm_transition(ctrl, debug, fsm, fsm->state, NULL);
 }
 
 /* ------------------------------------------------------------------- */
