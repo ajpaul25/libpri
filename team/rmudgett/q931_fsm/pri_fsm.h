@@ -57,28 +57,38 @@ enum fsm_ev {
 	 * \note
 	 * Used to determine which PROLOG/EPILOG events need to run in a
 	 * state transition.
+	 *
+	 * \return The superstate of the current state.
 	 */
 	FSM_EV_GET_SUPERSTATE,
 	/*! \brief Event to get the __PRETTY_FUNCTION__ string of the FSM state. */
 	FSM_EV_GET_STATE_NAME,
-	/*! \brief Event to get the event name string. */
-	FSM_EV_GET_EV_NAME,
-	/*! \brief Event to get the FSM debug output enable flag. */
-	FSM_EV_GET_DEBUG,
 	/*!
-	 * \brief Event to get the initial sub-state of the FSM state.
+	 * \brief Event to get the event name string.
 	 *
-	 * \note
-	 * Used to drill down into the FSM to find the initial FSM leaf
-	 * state.
+	 * \note This event takes an event code parameter: event.parms.num
 	 */
-	FSM_EV_INIT,
+	FSM_EV_GET_EV_NAME,
+	/*!
+	 * \brief Event to get the FSM debug output enable flag.
+	 *
+	 * \retval NULL if debug output is disabled.
+	 */
+	FSM_EV_GET_DEBUG,
 	/*!
 	 * \brief Event to construct the FSM state.
 	 *
 	 * \note
 	 * Used to construct the FSM state when an event causes a
 	 * transition into the state.
+	 *
+	 * \note
+	 * The return value is used to drill down into the FSM to find
+	 * the initial FSM leaf state.
+	 *
+	 * \retval NULL The state is a leaf state.  There is no default substate.
+	 *
+	 * \retval substate The default substate to drill down into the FSM.
 	 */
 	FSM_EV_PROLOG,
 	/*!
@@ -87,13 +97,20 @@ enum fsm_ev {
 	 * \note
 	 * Used to destroy the FSM state when an event causes a
 	 * transition from the state.
+	 *
+	 * \return The superstate of the current state.
 	 */
 	FSM_EV_EPILOG,
 
 	/*!
-	 * \brief First event code value available for a user defined FSM.
+	 * \brief First normal event code value available for a user defined FSM.
 	 *
 	 * \note MUST be last in the enum.
+	 *
+	 * \retval NULL The state handled the event.
+	 *
+	 * \retval superstate The superstate of the current state to
+	 * pass the event to next.
 	 */
 	FSM_EV_FIRST_USER_EV
 };
@@ -106,12 +123,7 @@ enum fsm_ev {
  *
  * \return The value has various meanings depending upon what
  * event was passed in.
- * \see enum fsm_ev event descriptions.
- *
- * \retval NULL For normal events: The state handled the event.
- *
- * \retval non-NULL For normal events: The superstate to pass
- * the event to next.
+ * \see enum fsm_ev event descriptions for return value.
  */
 typedef void *(*fsm_state)(struct pri *ctrl, struct fsm_event *event);
 
@@ -189,7 +201,7 @@ const char *fsm_ev2str(enum fsm_ev event);
 void fsm_event_push(struct pri *ctrl, struct fsm_event *event);
 void fsm_event_post(struct pri *ctrl, struct fsm_event *event);
 void *fsm_top_state(struct pri *ctrl, struct fsm_event *event);
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state from, fsm_state to);
+void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest, fsm_state src);
 void fsm_run(struct pri *ctrl, struct fsm_queue *que);
 void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm);
 
