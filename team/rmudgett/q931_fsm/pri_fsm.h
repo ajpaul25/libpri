@@ -46,6 +46,7 @@ struct pri;
 #define FSM_MAX_Q_EVENTS			10		/*!< Max number of events the common Q can contain. */
 #define FSM_MAX_SUPERSTATE_NESTING	10		/*!< Max number of nested superstates. */
 
+struct fsm_ctrl;
 struct fsm_event;
 struct fsm_queue;
 
@@ -71,10 +72,24 @@ enum fsm_ev {
 	FSM_EV_GET_EV_NAME,
 	/*!
 	 * \brief Event to get the FSM debug output enable flag.
+	 * 
+	 * \note Return the FSM_IS_DEBUG() value.
 	 *
 	 * \retval NULL if debug output is disabled.
 	 */
 	FSM_EV_GET_DEBUG,
+	/*!
+	 * \brief Event to get the initial sub-state of the FSM state.
+	 *
+	 * \note
+	 * Used to drill down into the FSM to find the initial FSM leaf
+	 * state.
+	 *
+	 * \retval NULL The state is a leaf state.  There is no default substate.
+	 *
+	 * \retval substate The default substate to drill down into the FSM.
+	 */
+	FSM_EV_INIT,
 	/*!
 	 * \brief Event to construct the FSM state.
 	 *
@@ -82,13 +97,7 @@ enum fsm_ev {
 	 * Used to construct the FSM state when an event causes a
 	 * transition into the state.
 	 *
-	 * \note
-	 * The return value is used to drill down into the FSM to find
-	 * the initial FSM leaf state.
-	 *
-	 * \retval NULL The state is a leaf state.  There is no default substate.
-	 *
-	 * \retval substate The default substate to drill down into the FSM.
+	 * \return The superstate of the current state.
 	 */
 	FSM_EV_PROLOG,
 	/*!
@@ -119,26 +128,28 @@ enum fsm_ev {
  * \brief Pass an event to a state.
  *
  * \param ctrl D channel controller.
+ * \param fsm FSM controller.
  * \param event Event to process.
  *
  * \return The value has various meanings depending upon what
  * event was passed in.
  * \see enum fsm_ev event descriptions for return value.
  */
-typedef void *(*fsm_state)(struct pri *ctrl, struct fsm_event *event);
+typedef void *(*fsm_state)(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 
 /*!
  * \brief Do what is necessary to clean up after a FSM terminates.
  *
  * \param ctrl D channel controller.
+ * \param fsm FSM controller.
  * \param parms Struct containing the instance of the FSM that terminated.
  *
  * \note
- * The destructor may destroy the parms structure.
+ * The destructor may destroy the fsm and parms structures.
  *
  * \return Nothing
  */
-typedef void (*fsm_destructor)(struct pri *ctrl, void *parms);
+typedef void (*fsm_destructor)(struct pri *ctrl, struct fsm_ctrl *fsm, void *parms);
 
 /*! FSM control block. */
 struct fsm_ctrl {
@@ -161,14 +172,10 @@ struct fsm_ctrl {
 };
 
 struct fsm_event {
-	/* The following elements are common to all events. */
-
 	/*! FSM event code. */
 	int code;
-	/*! Which FSM is to receive the event. */
-	struct fsm_ctrl *fsm;
 
-	/* Any following elements are optional. */
+	/* Any following parms elements are optional. */
 
 	/*!
 	 * \brief Event parameters if needed.
@@ -183,6 +190,13 @@ struct fsm_event {
 	} parms;
 };
 
+struct fsm_event_q {
+	/*! Which FSM is to receive the event. */
+	struct fsm_ctrl *fsm;
+	/*! Event sent to FSM. */
+	struct fsm_event event;
+};
+
 /*!
  * Q of FSM events so the main FSM driver can determine when it
  * is done processing events.
@@ -192,18 +206,20 @@ struct fsm_queue {
 	unsigned head;
 	/*! Next index to put and event on the Q. */
 	unsigned tail;
-	struct fsm_event events[FSM_MAX_Q_EVENTS];
+	struct fsm_event_q events[FSM_MAX_Q_EVENTS];
 };
 
 /* ------------------------------------------------------------------- */
 
+#define FSM_IS_DEBUG(is_debug)	((is_debug) ? (void *) 1 : (void *) 0)
+
 const char *fsm_ev2str(enum fsm_ev event);
-void fsm_event_push(struct pri *ctrl, struct fsm_event *event);
-void fsm_event_post(struct pri *ctrl, struct fsm_event *event);
-void *fsm_top_state(struct pri *ctrl, struct fsm_event *event);
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest, fsm_state src);
+void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void *fsm_top_state(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest);
 void fsm_run(struct pri *ctrl, struct fsm_queue *que);
-void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm);
+void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm, fsm_state init);
 
 /* ------------------------------------------------------------------- */
 
