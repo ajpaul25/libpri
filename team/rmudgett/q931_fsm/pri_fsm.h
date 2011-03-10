@@ -211,7 +211,7 @@ void fsm_event_post_parms(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_eve
 void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, int code);
 void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, int code);
 void *fsm_top_state(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest);
+void *fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest);
 void fsm_run(struct pri *ctrl, struct fsm_queue *que);
 void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm, fsm_state init);
 

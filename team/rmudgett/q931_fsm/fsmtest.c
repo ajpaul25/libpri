@@ -105,6 +105,60 @@ static const char *tst_ev2str(int event)
 	}
 }
 
+enum tst_state {
+	TST_S1,
+	TST_S1_1,
+	TST_S1_1_1,
+	TST_S1_1_2,
+	TST_S1_2,
+	TST_S1_3,
+	TST_S1_3_1,
+
+	TST_NUM_STATES
+};
+
+/*!
+ * \internal
+ * \brief Convert the given test FSM state to string.
+ *
+ * \param state Test FSM state to convert.
+ *
+ * \return String equivalent of event code.
+ */
+static const char *tst_state2str(enum tst_state state)
+{
+	switch (state) {
+	case TST_S1:
+		return "TST_S1";
+	case TST_S1_1:
+		return "TST_S1_1";
+	case TST_S1_1_1:
+		return "TST_S1_1_1";
+	case TST_S1_1_2:
+		return "TST_S1_1_2";
+	case TST_S1_2:
+		return "TST_S1_2";
+	case TST_S1_3:
+		return "TST_S1_3";
+	case TST_S1_3_1:
+		return "TST_S1_3_1";
+	case TST_NUM_STATES:
+		break;
+	}
+	return "TST_state_unknown";
+}
+
+struct tst_statistics {
+	struct {
+		/*! How many prolog events. */
+		int prolog;
+		/*! How many epilog events. */
+		int epilog;
+	} visit[TST_NUM_STATES];
+	/*! How many times the FSM was destroyed. */
+	int destroyed;
+};
+
 static void *tst_state_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 static void *tst_state_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
@@ -140,11 +194,13 @@ static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1_1].prolog;
 		break;
 	case FSM_EV_INIT:
 		return NULL;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1_1].epilog;
 		break;
 	case TST_EV_A:
 		ACT_DEBUG(ctrl, fsm, event);
@@ -155,17 +211,14 @@ static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		fsm_event_push(ctrl, fsm, TST_EV_D);
 		fsm_event_push(ctrl, fsm, TST_EV_C);
 		fsm_event_post(ctrl, fsm, TST_EV_E);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_1);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_1);
 	case TST_EV_C:
 		ACT_DEBUG(ctrl, fsm, event);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_2);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_2);
 	case TST_EV_E:
 		ACT_DEBUG(ctrl, fsm, event);
 		fsm_event_post(ctrl, fsm, TST_EV_F);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_2);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_2);
 	default:
 		break;
 	}
@@ -196,20 +249,20 @@ static void *tst_state_1_1_2(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1_2].prolog;
 		break;
 	case FSM_EV_INIT:
 		return NULL;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1_2].epilog;
 		break;
 	case TST_EV_D:
 		ACT_DEBUG(ctrl, fsm, event);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1);
 	case TST_EV_H:
 		ACT_DEBUG(ctrl, fsm, event);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, NULL);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, NULL);
 	default:
 		break;
 	}
@@ -240,11 +293,13 @@ static void *tst_state_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_ev
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1].prolog;
 		break;
 	case FSM_EV_INIT:
 		return tst_state_1_1_1;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_1].epilog;
 		break;
 	default:
 		break;
@@ -276,17 +331,18 @@ static void *tst_state_1_2(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_ev
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_2].prolog;
 		break;
 	case FSM_EV_INIT:
 		return NULL;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_2].epilog;
 		break;
 	case TST_EV_F:
 		ACT_DEBUG(ctrl, fsm, event);
 		fsm_event_post(ctrl, fsm, TST_EV_G);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_3);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_3);
 	default:
 		break;
 	}
@@ -317,11 +373,13 @@ static void *tst_state_1_3_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_3_1].prolog;
 		break;
 	case FSM_EV_INIT:
 		return NULL;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_3_1].epilog;
 		break;
 	default:
 		break;
@@ -353,16 +411,17 @@ static void *tst_state_1_3(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_ev
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_3].prolog;
 		break;
 	case FSM_EV_INIT:
 		return tst_state_1_3_1;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1_3].epilog;
 		break;
 	case TST_EV_G:
 		ACT_DEBUG(ctrl, fsm, event);
-		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_2);
-		return NULL;
+		return fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_2);
 	default:
 		break;
 	}
@@ -393,11 +452,13 @@ static void *tst_state_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_even
 		return FSM_IS_DEBUG(ctrl->debug & PRI_DEBUG_Q931_STATE);
 	case FSM_EV_PROLOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1].prolog;
 		break;
 	case FSM_EV_INIT:
 		return tst_state_1_1;
 	case FSM_EV_EPILOG:
 		ACT_DEBUG(ctrl, fsm, event);
+		++((struct tst_statistics *) (fsm->parms))->visit[TST_S1].epilog;
 		break;
 	default:
 		break;
@@ -416,8 +477,11 @@ static void *tst_state_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_even
  */
 static void tst_fsm_destructor(struct pri *ctrl, struct fsm_ctrl *fsm, void *parms)
 {
+	struct tst_statistics *stats;
+
 	pri_message(ctrl, DBGHEAD "\n", DBGINFO);
-	*(int *) parms = *((int *) parms) + 1;
+	stats = parms;
+	++stats->destroyed;
 }
 
 /*!
@@ -434,7 +498,19 @@ int main(int argc, char *argv[])
 	static struct pri dummy_ctrl;
 	static struct fsm_queue ev_q;
 	static struct fsm_ctrl fsm;
-	static int fsm_destroyed;
+	static struct tst_statistics tst_stats;
+
+	static const int expected_visits[TST_NUM_STATES] = {
+		[TST_S1] = 1,
+		[TST_S1_1] = 2,
+		[TST_S1_1_1] = 3,
+		[TST_S1_1_2] = 2,
+		[TST_S1_2] = 1,
+		[TST_S1_3] = 1,
+		[TST_S1_3_1] = 1,
+	};
+
+	int idx;
 
 	pri_set_message(tst_pri_message);
 	pri_set_error(tst_pri_error);
@@ -448,9 +524,9 @@ int main(int argc, char *argv[])
 	/* Setup FSM */
 	fsm.state = NULL;
 	fsm.destructor = tst_fsm_destructor;
-	fsm.name = "Test FSM";
+	fsm.name = "Test";
 	fsm.que = &ev_q;
-	fsm.parms = &fsm_destroyed;
+	fsm.parms = &tst_stats;
 	fsm_init(&dummy_ctrl, &fsm, tst_state_1);
 
 	/* Nothing to do. */
@@ -464,8 +540,27 @@ int main(int argc, char *argv[])
 	fsm_event_post(&dummy_ctrl, &fsm, TST_EV_H);
 	fsm_run(&dummy_ctrl, &ev_q);
 
-	if (fsm_destroyed != 1) {
-		pri_error(&dummy_ctrl, "Test FSM destroyed %d times!\n", fsm_destroyed);
+	/* Display FSM state statistics. */
+	for (idx = 0; idx < ARRAY_LEN(tst_stats.visit); ++idx) {
+		pri_message(&dummy_ctrl, "State %-10s: prologs: %d epilogs: %d\n",
+			tst_state2str(idx),
+			tst_stats.visit[idx].prolog, tst_stats.visit[idx].epilog);
+	}
+
+	/* Check FSM state statistics. */
+	for (idx = 0; idx < ARRAY_LEN(tst_stats.visit); ++idx) {
+		if (tst_stats.visit[idx].prolog != tst_stats.visit[idx].epilog) {
+			pri_error(&dummy_ctrl, "State %s: Prologs do not match epilogs!\n",
+				tst_state2str(idx));
+		}
+		if (tst_stats.visit[idx].prolog != expected_visits[idx]) {
+			pri_error(&dummy_ctrl,
+				"State %s: Did not get the expected number of visits!\n",
+				tst_state2str(idx));
+		}
+	}
+	if (tst_stats.destroyed != 1) {
+		pri_error(&dummy_ctrl, "%s: FSM destroyed %d times!\n", fsm.name, tst_stats.destroyed);
 	}
 
 	return 0;
