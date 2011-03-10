@@ -37,6 +37,8 @@
 #include "pri_internal.h"
 #include "pri_fsm.h"	//BUGBUG
 
+#include <string.h>
+
 
 /* ------------------------------------------------------------------- */
 
@@ -72,15 +74,15 @@ const char *fsm_ev2str(enum fsm_ev event)
 }
 
 /*!
- * \brief Push an event on the head of the event queue.
+ * \brief Push an event with parameters on the head of the event queue.
  *
  * \param ctrl D channel controller.
- * \param fsm FSM controller.
+ * \param fsm Event is sent to this FSM.
  * \param event Event to push.
  *
  * \return Nothing
  */
-void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
+void fsm_event_push_parms(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
 {
 	unsigned next_head;
 	struct fsm_queue *que;
@@ -117,15 +119,33 @@ void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *ev
 }
 
 /*!
- * \brief Post an event on the tail of the event queue.
+ * \brief Push a simple event on the head of the event queue.
  *
  * \param ctrl D channel controller.
- * \param fsm FSM controller.
+ * \param fsm Event is sent to this FSM.
+ * \param code Event code.
+ *
+ * \return Nothing
+ */
+void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, int code)
+{
+	struct fsm_event ev;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.code = code;
+	fsm_event_push_parms(ctrl, fsm, &ev);
+}
+
+/*!
+ * \brief Post an event with parameters on the tail of the event queue.
+ *
+ * \param ctrl D channel controller.
+ * \param fsm Event is sent to this FSM.
  * \param event Event to post.
  *
  * \return Nothing
  */
-void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
+void fsm_event_post_parms(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
 {
 	unsigned next_tail;
 	struct fsm_queue *que;
@@ -158,6 +178,24 @@ void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *ev
 	que->events[que->tail].fsm = fsm;
 	que->events[que->tail].event = *event;
 	que->tail = next_tail;
+}
+
+/*!
+ * \brief Post a simple event on the tail of the event queue.
+ *
+ * \param ctrl D channel controller.
+ * \param fsm Event is sent to this FSM.
+ * \param code Event code.
+ *
+ * \return Nothing
+ */
+void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, int code)
+{
+	struct fsm_event ev;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.code = code;
+	fsm_event_post_parms(ctrl, fsm, &ev);
 }
 
 /*!

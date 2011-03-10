@@ -42,7 +42,6 @@ struct pri;
 
 /* ------------------------------------------------------------------- */
 
-#define FSM_MAX_EV_PARAM_BYTES		100		/*!< Max space available for any event parameters. */
 #define FSM_MAX_Q_EVENTS			10		/*!< Max number of events the common Q can contain. */
 #define FSM_MAX_SUPERSTATE_NESTING	10		/*!< Max number of nested superstates. */
 
@@ -174,19 +173,12 @@ struct fsm_ctrl {
 struct fsm_event {
 	/*! FSM event code. */
 	int code;
-
-	/* Any following parms elements are optional. */
-
-	/*!
-	 * \brief Event parameters if needed.
-	 * \note Union done for alignment purposes.
-	 */
+	/*! \brief Event parameters if needed. */
 	union {
-		/*! Generic pointer to guarantee pointer alignment. */
+		/*! \brief Generic pointer to extra event parameters. */
 		void *ptr;
-		int num;
-		/*! Reserve space for custom event parameters. */
-		char filler[FSM_MAX_EV_PARAM_BYTES];
+		/*! \brief Simple extra numeric event parameter. */
+		long num;
 	} parms;
 };
 
@@ -214,8 +206,10 @@ struct fsm_queue {
 #define FSM_IS_DEBUG(is_debug)	((is_debug) ? (void *) 1 : (void *) 0)
 
 const char *fsm_ev2str(enum fsm_ev event);
-void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
-void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void fsm_event_push_parms(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void fsm_event_post_parms(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
+void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, int code);
+void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, int code);
 void *fsm_top_state(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest);
 void fsm_run(struct pri *ctrl, struct fsm_queue *que);
