@@ -242,9 +242,11 @@ void *fsm_top_state(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *ev
  * \param fsm FSM that is transitioning states.
  * \param dest Transitioning to state. (NULL if terminal)
  *
- * \return Nothing
+ * \return NULL to encourage the use of "return
+ * fsm_transition();".  The expression emphasizes the fact that
+ * the state has completed processing an event.
  */
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest)
+void *fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest)
 {
 	struct fsm_event local_event;
 	fsm_state epilog_state[FSM_MAX_SUPERSTATE_NESTING + 1];/* Plus top state. */
@@ -261,7 +263,7 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 
 	src = fsm->state;
 	if (!src || src == fsm_top_state) {
-		/* This is the initial transition to start the FSM. */
+		/* This is the initial event transition to start the FSM. */
 		fsm->state = fsm_top_state;
 		src = NULL;
 	}
@@ -271,7 +273,7 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 	if (dest && dest != fsm_top_state) {
 		dest_name = dest(ctrl, fsm, &local_event);
 	} else {
-		/* This is the terminal transition to end the FSM. */
+		/* This is the terminal event transition to end the FSM. */
 		dest_name = fsm_top_state(ctrl, fsm, &local_event);
 		dest = NULL;
 	}
@@ -292,7 +294,7 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 
 			pri_error(ctrl, "%s: FSM source state %s nested too deep!\n", fsm->name,
 				src_name);
-			return;
+			return NULL;
 		}
 		src = src(ctrl, fsm, &local_event);
 		if (src == fsm_top_state) {
@@ -308,7 +310,7 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 		if (FSM_MAX_SUPERSTATE_NESTING <= prolog_index) {
 			pri_error(ctrl, "%s: FSM destination state %s nested too deep!\n", fsm->name,
 				dest_name);
-			return;
+			return NULL;
 		}
 		dest = dest(ctrl, fsm, &local_event);
 		if (dest == fsm_top_state) {
@@ -320,7 +322,7 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 	if (!epilog_index && !prolog_index) {
 		pri_error(ctrl, "%s: FSM initial transition is termination transition!\n",
 			fsm->name);
-		return;
+		return NULL;
 	}
 
 	/* Find first non-common superstate level. */
@@ -382,13 +384,13 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 	} else {
 		/* Termination transition. */
 		fsm->state = fsm_top_state;
+		if (debug) {
+			pri_message(ctrl, "%s: Terminated\n", fsm->name);
+		}
 		if (fsm->destructor) {
-			if (debug) {
-				pri_message(ctrl, "%s: Destroying\n", fsm->name);
-			}
 			fsm->destructor(ctrl, fsm, fsm->parms);
 		}
-		return;
+		return NULL;
 	}
 
 	/* We reached the specified destination state. */
@@ -421,6 +423,8 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 		/* We drilled one level deeper. */
 		fsm->state = dest;
 	}
+
+	return NULL;
 }
 
 /*!
@@ -494,7 +498,7 @@ void fsm_run(struct pri *ctrl, struct fsm_queue *que)
 }
 
 /*!
- * \brief Do the initial transition to start the FSM.
+ * \brief Do the initial event transition to start the FSM.
  *
  * \param ctrl D channel controller.
  * \param fsm Filled in FSM control structure set to the initial FSM state.
@@ -515,7 +519,7 @@ void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm, fsm_state init)
 	}
 
 	if (debug) {
-		pri_message(ctrl, "%s: Initial transition\n", fsm->name);
+		pri_message(ctrl, "%s: Initial event\n", fsm->name);
 	}
 	fsm->state = fsm_top_state;
 	fsm_transition(ctrl, debug, fsm, init);
