@@ -105,44 +105,6 @@ static const char *tst_ev2str(int event)
 	}
 }
 
-/*!
- * \internal
- * \brief Simple event posting.
- * 
- * \param ctrl D channel controller. 
- * \param fsm Event is sent to this FSM.
- * \param code Event code.
- *  
- * \return Nothing
- */
-static void tst_simple_post(struct pri *ctrl, struct fsm_ctrl *fsm, int code)
-{
-	struct fsm_event ev;
-
-	memset(&ev, 0, sizeof(ev));
-	ev.code = code;
-	fsm_event_post(ctrl, fsm, &ev);
-}
-
-/*!
- * \internal
- * \brief Simple event pushing.
- * 
- * \param ctrl D channel controller. 
- * \param fsm Event is sent to this FSM.
- * \param code Event code.
- *  
- * \return Nothing
- */
-static void tst_simple_push(struct pri *ctrl, struct fsm_ctrl *fsm, int code)
-{
-	struct fsm_event ev;
-
-	memset(&ev, 0, sizeof(ev));
-	ev.code = code;
-	fsm_event_push(ctrl, fsm, &ev);
-}
-
 static void *tst_state_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 static void *tst_state_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
 static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event);
@@ -186,13 +148,13 @@ static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		break;
 	case TST_EV_A:
 		ACT_DEBUG(ctrl, fsm, event);
-		tst_simple_post(ctrl, fsm, TST_EV_B);
+		fsm_event_post(ctrl, fsm, TST_EV_B);
 		return NULL;
 	case TST_EV_B:
 		ACT_DEBUG(ctrl, fsm, event);
-		tst_simple_push(ctrl, fsm, TST_EV_D);
-		tst_simple_push(ctrl, fsm, TST_EV_C);
-		tst_simple_post(ctrl, fsm, TST_EV_E);
+		fsm_event_push(ctrl, fsm, TST_EV_D);
+		fsm_event_push(ctrl, fsm, TST_EV_C);
+		fsm_event_post(ctrl, fsm, TST_EV_E);
 		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_1_1);
 		return NULL;
 	case TST_EV_C:
@@ -201,7 +163,7 @@ static void *tst_state_1_1_1(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_
 		return NULL;
 	case TST_EV_E:
 		ACT_DEBUG(ctrl, fsm, event);
-		tst_simple_post(ctrl, fsm, TST_EV_F);
+		fsm_event_post(ctrl, fsm, TST_EV_F);
 		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_2);
 		return NULL;
 	default:
@@ -322,7 +284,7 @@ static void *tst_state_1_2(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_ev
 		break;
 	case TST_EV_F:
 		ACT_DEBUG(ctrl, fsm, event);
-		tst_simple_post(ctrl, fsm, TST_EV_G);
+		fsm_event_post(ctrl, fsm, TST_EV_G);
 		fsm_transition(ctrl, ctrl->debug & PRI_DEBUG_Q931_STATE, fsm, tst_state_1_3);
 		return NULL;
 	default:
@@ -495,11 +457,11 @@ int main(int argc, char *argv[])
 	fsm_run(&dummy_ctrl, &ev_q);
 
 	/* Post event. */
-	tst_simple_post(&dummy_ctrl, &fsm, TST_EV_A);
+	fsm_event_post(&dummy_ctrl, &fsm, TST_EV_A);
 	fsm_run(&dummy_ctrl, &ev_q);
 
 	/* Post event. */
-	tst_simple_post(&dummy_ctrl, &fsm, TST_EV_H);
+	fsm_event_post(&dummy_ctrl, &fsm, TST_EV_H);
 	fsm_run(&dummy_ctrl, &ev_q);
 
 	if (fsm_destroyed != 1) {
