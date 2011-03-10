@@ -1,0 +1,198 @@
+/*
+ * FSM pseudo code used in the design/implementation of the
+ * Q.931 net side.
+ *
+ * Q.931 Section 5
+ * Q.931 Annex A Figure A.6
+ */
+FSM q931_net
+{
+	Prolog {
+	}
+	Init {
+		Next_State q931_net_null;
+	}
+	Epilog {
+	}
+	Stimulus Q931_EV_MGMT_DESTROY {
+		/* Terminate the FSM */
+		Next_State *;
+	}
+	Stimulus Q931_EV_MSG_STATUS {
+	}
+	Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+	}
+	Stimulus Q931_EV_MSG_other {
+		Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
+	}
+
+	State q931_net_null {// aka N0
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_NULL);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_call_initiated {// aka N1
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_INITIATED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_overlap_sending {// aka N2
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OVERLAP_SENDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_outgoing_call_proceeding {// aka N3
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_call_delivered {// aka N4
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_DELIVERED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_call_present {// aka N6
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_PRESENT);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_call_received {// aka N7
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_RECEIVED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_connect_request {// aka N8
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CONNECT_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_incoming_call_proceeding {// aka N9
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_INCOMING_CALL_PROCEEDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_active {// aka N10
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_ACTIVE);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_disconnect_request {// aka N11
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_DISCONNECT_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_disconnect_indication {// aka N12
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_DISCONNECT_INDICATION);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_suspend_request {// aka N15
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_SUSPEND_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_resume_request {// aka N17
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_RESUME_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_release_request {// aka N19
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_RELEASE_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_overlap_receiving {// aka N25
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OVERLAP_RECEIVING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_net_call_independent_service {// aka N31
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+}

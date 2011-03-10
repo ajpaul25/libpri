@@ -1,0 +1,90 @@
+/*
+ * FSM pseudo code used in the design/implementation of the
+ * Q.931 NT PTMP side.
+ *
+ * Q.931 Section 5
+ */
+FSM q931_nt_ptmp
+{
+	Prolog {
+	}
+	Init {
+		Next_State q931_nt_ptmp_null;
+	}
+	Epilog {
+	}
+	Stimulus Q931_EV_MGMT_DESTROY {
+		/* Terminate the FSM */
+		Next_State *;
+	}
+
+	State q931_nt_ptmp_null {// aka N0
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_NULL);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_call_present {// aka N6
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_PRESENT);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_call_received {// aka N7
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_RECEIVED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_incoming_call_proceeding {// aka N9
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_INCOMING_CALL_PROCEEDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_active {// aka N10
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_ACTIVE);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_call_abort {// aka N22
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_ABORT);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_nt_ptmp_overlap_receiving {// aka N25
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OVERLAP_RECEIVING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+}
