@@ -1,0 +1,198 @@
+/*
+ * FSM pseudo code used in the design/implementation of the
+ * Q.931 user side.
+ *
+ * Q.931 Section 5
+ * Q.931 Annex A Figure A.3
+ */
+FSM q931_user
+{
+	Prolog {
+	}
+	Init {
+		Next_State q931_user_null;
+	}
+	Epilog {
+	}
+	Stimulus Q931_EV_MGMT_DESTROY {
+		/* Terminate the FSM */
+		Next_State *;
+	}
+	Stimulus Q931_EV_MSG_STATUS {
+	}
+	Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+	}
+	Stimulus Q931_EV_MSG_other {
+		Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
+	}
+
+	State q931_user_null {// aka U0
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_NULL);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_call_initiated {// aka U1
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_INITIATED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_overlap_sending {// aka U2
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OVERLAP_SENDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_outgoing_call_proceeding {// aka U3
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_call_delivered {// aka U4
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_DELIVERED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_call_present {// aka U6
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_PRESENT);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_call_received {// aka U7
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_RECEIVED);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_connect_request {// aka U8
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CONNECT_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_incoming_call_proceeding {// aka U9
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_INCOMING_CALL_PROCEEDING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_active {// aka U10
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_ACTIVE);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_disconnect_request {// aka U11
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_DISCONNECT_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_disconnect_indication {// aka U12
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_DISCONNECT_INDICATION);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_suspend_request {// aka U15
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_SUSPEND_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_resume_request {// aka U17
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_RESUME_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_release_request {// aka U19
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_RELEASE_REQUEST);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_overlap_receiving {// aka U25
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_OVERLAP_RECEIVING);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+
+	State q931_user_call_independent_service {// aka U31
+		Prolog {
+			Action Set_State(Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE);
+		}
+		Init {
+		}
+		Epilog {
+		}
+	}
+}

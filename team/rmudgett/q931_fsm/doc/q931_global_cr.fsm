@@ -1,0 +1,125 @@
+/*
+ * FSM pseudo code used in the design/implementation of the
+ * Q.931 global call reference.
+ *
+ * Q.931 Section 5.5
+ * Q.931 Annex A Figure A.4
+ */
+FSM q931_global_cr
+{
+	Prolog {
+	}
+	Init {
+		Next_State q931_global_null;
+	}
+	Epilog {
+	}
+	Stimulus Q931_EV_MGMT_DESTROY {
+		/* Terminate the FSM */
+		Next_State *;
+	}
+	Stimulus Q931_EV_MSG_STATUS {
+		/* Ignore STATUS messages. */
+	}
+	Stimulus Q931_EV_MSG_other {
+		Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
+	}
+
+	State q931_global_null {
+		Prolog {
+			Action Set_State(Q931_GLOBAL_STATE_NULL);
+		}
+		Init {
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MSG_RESTART {
+			Action Post_Restart_Channels(Channels);
+			Action Start_T317;
+			Next_State q931_global_restart;
+		}
+		Stimulus Q931_EV_MGMT_RESTART_REQ(Channels) {
+			Action Clear_Count;
+			Action Send(RESTART(Channels));
+			Action Start_T316;
+			Action Post_Restart_Channels(Channels);
+			Action Start_T317;
+			Next_State q931_global_restart_req;
+		}
+	}
+	State q931_global_restart_req {
+		Prolog {
+			Action Set_State(Q931_GLOBAL_STATE_RESTART_REQUEST);
+			Action Set_Restart_Rsp(0);
+			Action Set_Restart_Ack(0);
+		}
+		Init {
+		}
+		Epilog {
+			Action Stop_T316;
+			Action Stop_T317;
+		}
+		Stimulus Q931_EV_TIMEOUT_T316 {
+			Action Inc_Count;
+			Test = Get_Count;
+			Test < 2 {
+				Action Send(RESTART(Channels));
+				Action Start_T316;
+			}
+			Test == 2 {
+				Action Maintenance("No response to RESTART");
+			}
+		}
+		Stimulus Q931_EV_TIMEOUT_T317 {
+			Action Maintenance("What's taking so long for us to restart?");
+		}
+		Stimulus Q931_EV_MSG_RESTART_ACKNOWLEDGE {
+			Action Stop_T316;
+			Test = Get_Restart_Rsp;
+			Test != 0 {
+				Next_State q931_global_null;
+			}
+			Action Set_Restart_Rsp(1);
+		}
+		Stimulus Q931_EV_MGMT_RESTARTED(Channel) {
+			Action Accumulate_Restarted_Channels(Channel);
+			Test = Get_All_Channels_Restarted;
+			Test == Yes {
+				Action Stop_T317;
+				Test = Get_Restart_Ack;
+				Test != 0 {
+					Next_State q931_global_null;
+				}
+				Action Set_Restart_Rsp(1);
+			}
+		}
+	}
+	State q931_global_restart {
+		Prolog {
+			Action Set_State(Q931_GLOBAL_STATE_RESTART);
+		}
+		Init {
+		}
+		Epilog {
+			Action Stop_T317;
+		}
+		Stimulus Q931_EV_TIMEOUT_T317 {
+			Action Maintenance("What's taking so long for us to restart?");
+			/*
+			 * Q.931 Section 5.5 says we should send a RESTART_ACKNOWLEDGE
+			 * with the channels restarted so far.
+			 */
+		}
+		Stimulus Q931_EV_MGMT_RESTARTED(Channel) {
+			Action Accumulate_Restarted_Channels(Channel);
+			Test = Get_All_Channels_Restarted;
+			Test == Yes {
+				Action Send(RESTART_ACKNOWLEDGE);
+				Next_State q931_global_null;
+			}
+		}
+		Stimulus Q931_EV_MSG_RESTART {
+			/* Deviation, we'll ignore the repeated message. */
+		}
+	}
+}
