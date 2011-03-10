@@ -58,6 +58,8 @@ const char *fsm_ev2str(enum fsm_ev event)
 		return "FSM_EV_GET_EV_NAME";
 	case FSM_EV_GET_DEBUG:
 		return "FSM_EV_GET_DEBUG";
+	case FSM_EV_INIT:
+		return "FSM_EV_INIT";
 	case FSM_EV_PROLOG:
 		return "FSM_EV_PROLOG";
 	case FSM_EV_EPILOG:
@@ -73,29 +75,29 @@ const char *fsm_ev2str(enum fsm_ev event)
  * \brief Push an event on the head of the event queue.
  *
  * \param ctrl D channel controller.
+ * \param fsm FSM controller.
  * \param event Event to push.
  *
  * \return Nothing
  */
-void fsm_event_push(struct pri *ctrl, struct fsm_event *event)
+void fsm_event_push(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
 {
 	unsigned next_head;
 	struct fsm_queue *que;
 	struct fsm_event dbg_event;
 	fsm_state state;
 
-	state = event->fsm->state;
+	state = fsm->state;
 
-	dbg_event.fsm = event->fsm;
 	dbg_event.code = FSM_EV_GET_DEBUG;
-	if (state(ctrl, &dbg_event)) {
+	if (state(ctrl, fsm, &dbg_event)) {
 		dbg_event.code = FSM_EV_GET_EV_NAME;
 		dbg_event.parms.num = event->code;
-		pri_message(ctrl, "%s: Push event %s\n", event->fsm->name,
-			(char *) state(ctrl, &dbg_event));
+		pri_message(ctrl, "%s: Push event %s\n", fsm->name,
+			(char *) state(ctrl, fsm, &dbg_event));
 	}
 
-	que = event->fsm->que;
+	que = fsm->que;
 
 	/* Determine previous head index. */
 	if (que->head) {
@@ -110,36 +112,37 @@ void fsm_event_push(struct pri *ctrl, struct fsm_event *event)
 
 	/* Put event in the queue. */
 	que->head = next_head;
-	que->events[que->head] = *event;
+	que->events[que->head].fsm = fsm;
+	que->events[que->head].event = *event;
 }
 
 /*!
  * \brief Post an event on the tail of the event queue.
  *
  * \param ctrl D channel controller.
+ * \param fsm FSM controller.
  * \param event Event to post.
  *
  * \return Nothing
  */
-void fsm_event_post(struct pri *ctrl, struct fsm_event *event)
+void fsm_event_post(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
 {
 	unsigned next_tail;
 	struct fsm_queue *que;
 	struct fsm_event dbg_event;
 	fsm_state state;
 
-	state = event->fsm->state;
+	state = fsm->state;
 
-	dbg_event.fsm = event->fsm;
 	dbg_event.code = FSM_EV_GET_DEBUG;
-	if (state(ctrl, &dbg_event)) {
+	if (state(ctrl, fsm, &dbg_event)) {
 		dbg_event.code = FSM_EV_GET_EV_NAME;
 		dbg_event.parms.num = event->code;
-		pri_message(ctrl, "%s: Post event %s\n", event->fsm->name,
-			(char *) state(ctrl, &dbg_event));
+		pri_message(ctrl, "%s: Post event %s\n", fsm->name,
+			(char *) state(ctrl, fsm, &dbg_event));
 	}
 
-	que = event->fsm->que;
+	que = fsm->que;
 
 	/* Determine next tail index. */
 	next_tail = que->tail + 1;
@@ -152,7 +155,8 @@ void fsm_event_post(struct pri *ctrl, struct fsm_event *event)
 	}
 
 	/* Put event in the queue. */
-	que->events[que->tail] = *event;
+	que->events[que->tail].fsm = fsm;
+	que->events[que->tail].event = *event;
 	que->tail = next_tail;
 }
 
@@ -160,13 +164,14 @@ void fsm_event_post(struct pri *ctrl, struct fsm_event *event)
  * \brief Top state of all FSMs.
  *
  * \param ctrl D channel controller.
+ * \param fsm FSM controller.
  * \param event Event to process.
  *
  * \return The value has various meanings depending upon what
  * event was passed in.
  * \see enum fsm_ev event descriptions for return value.
  */
-void *fsm_top_state(struct pri *ctrl, struct fsm_event *event)
+void *fsm_top_state(struct pri *ctrl, struct fsm_ctrl *fsm, struct fsm_event *event)
 {
 	switch (event->code) {
 	case FSM_EV_GET_SUPERSTATE:
@@ -179,12 +184,13 @@ void *fsm_top_state(struct pri *ctrl, struct fsm_event *event)
 	case FSM_EV_GET_DEBUG:
 		/* Noone should be doing this since how are we to know? */
 		pri_error(ctrl, DBGHEAD "Asking for FSM debug output enable!\n", DBGINFO);
-		return (void *) 1;
+		return FSM_IS_DEBUG(1);
 	case FSM_EV_PROLOG:
+	case FSM_EV_INIT:
 	case FSM_EV_EPILOG:
 	default:
 		pri_error(ctrl, DBGHEAD "%s: Unhandled event: %s(%d)!\n", DBGINFO,
-			event->fsm->name, fsm_ev2str(event->code), event->code);
+			fsm->name, fsm_ev2str(event->code), event->code);
 		break;
 	}
 	return NULL;
@@ -197,40 +203,38 @@ void *fsm_top_state(struct pri *ctrl, struct fsm_event *event)
  * \param debug TRUE if FSM debug output enabled.
  * \param fsm FSM that is transitioning states.
  * \param dest Transitioning to state. (NULL if terminal)
- * \param src Transitioning from state. (NULL if initial)
  *
  * \return Nothing
  */
-void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest, fsm_state src)
+void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state dest)
 {
 	struct fsm_event local_event;
-	fsm_state epilog_state[FSM_MAX_SUPERSTATE_NESTING];
-	fsm_state prolog_state[FSM_MAX_SUPERSTATE_NESTING];
+	fsm_state epilog_state[FSM_MAX_SUPERSTATE_NESTING + 1];/* Plus top state. */
+	fsm_state prolog_state[FSM_MAX_SUPERSTATE_NESTING + 1];/* Plus top state. */
+	fsm_state src;
 	const char *epilog_name;
 	const char *prolog_name;
+	const char *init_name;
 	const char *src_name;
 	const char *dest_name;
-	int epilog_index;
-	int prolog_index;
-	int idx;
+	int epilog_index;/* Must be signed. */
+	int prolog_index;/* Must be signed. */
+	int idx;/* Must be signed. */
 
-	local_event.fsm = fsm;
-
-	/* Get original state names. */
-	local_event.code = FSM_EV_GET_STATE_NAME;
-	if (src && src != fsm_top_state) {
-		src_name = src(ctrl, &local_event);
-	} else {
+	src = fsm->state;
+	if (!src || src == fsm_top_state) {
 		/* This is the initial transition to start the FSM. */
 		fsm->state = fsm_top_state;
-		src_name = fsm_top_state(ctrl, &local_event);
 		src = NULL;
 	}
+
+	/* Get original destination state name. */
+	local_event.code = FSM_EV_GET_STATE_NAME;
 	if (dest && dest != fsm_top_state) {
-		dest_name = dest(ctrl, &local_event);
+		dest_name = dest(ctrl, fsm, &local_event);
 	} else {
 		/* This is the terminal transition to end the FSM. */
-		dest_name = fsm_top_state(ctrl, &local_event);
+		dest_name = fsm_top_state(ctrl, fsm, &local_event);
 		dest = NULL;
 	}
 
@@ -242,36 +246,56 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 
 	/* Build src superstate nesting stack. */
 	epilog_index = 0;
-	epilog_state[epilog_index++] = src;
-	while (src && src != fsm_top_state) {
+	epilog_state[epilog_index] = src;
+	while (src) {
 		if (FSM_MAX_SUPERSTATE_NESTING <= epilog_index) {
+			local_event.code = FSM_EV_GET_STATE_NAME;
+			src_name = fsm->state(ctrl, fsm, &local_event);
+
 			pri_error(ctrl, "%s: FSM source state %s nested too deep!\n", fsm->name,
 				src_name);
 			return;
 		}
-		src = src(ctrl, &local_event);
-		epilog_state[epilog_index++] = src;
+		src = src(ctrl, fsm, &local_event);
+		if (src == fsm_top_state) {
+			src = NULL;
+		}
+		epilog_state[++epilog_index] = src;
 	}
 
 	/* Build dest superstate nesting stack. */
 	prolog_index = 0;
-	prolog_state[prolog_index++] = dest;
-	while (dest && dest != fsm_top_state) {
+	prolog_state[prolog_index] = dest;
+	while (dest) {
 		if (FSM_MAX_SUPERSTATE_NESTING <= prolog_index) {
 			pri_error(ctrl, "%s: FSM destination state %s nested too deep!\n", fsm->name,
 				dest_name);
 			return;
 		}
-		dest = dest(ctrl, &local_event);
-		prolog_state[prolog_index++] = dest;
+		dest = dest(ctrl, fsm, &local_event);
+		if (dest == fsm_top_state) {
+			dest = NULL;
+		}
+		prolog_state[++prolog_index] = dest;
+	}
+
+	if (!epilog_index && !prolog_index) {
+		pri_error(ctrl, "%s: FSM initial transition is termination transition!\n",
+			fsm->name);
+		return;
 	}
 
 	/* Find first non-common superstate level. */
 	for (;;) {
 		--epilog_index;
 		--prolog_index;
-		if (!epilog_index || !prolog_index) {
-			/* No more nested superstates. */
+		if (epilog_index < 0 || prolog_index < 0) {
+			/* No more epilogs or prologs in stack. */
+			if (epilog_index == prolog_index) {
+				/* This is a state transition to self. */
+				epilog_index = 0;
+				prolog_index = 0;
+			}
 			break;
 		}
 		if (epilog_state[epilog_index] != prolog_state[prolog_index]) {
@@ -280,72 +304,85 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
 	}
 
 	/* Execute state epilogs */
-	if (epilog_state[epilog_index]) {
+	if (0 <= epilog_index) {
 		epilog_name = fsm_ev2str(FSM_EV_EPILOG);
 
 		for (idx = 0; idx <= epilog_index; ++idx) {
 			src = epilog_state[idx];
 			if (debug) {
 				local_event.code = FSM_EV_GET_STATE_NAME;
-				src_name = (const char *) src(ctrl, &local_event);
+				src_name = src(ctrl, fsm, &local_event);
 
 				pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, epilog_name,
 					src_name);
 			}
 			local_event.code = FSM_EV_EPILOG;
-			src(ctrl, &local_event);
+			src(ctrl, fsm, &local_event);
 		}
 	}
 
 	/* Execute known state prologs */
-	if (prolog_state[prolog_index]) {
+	if (0 <= prolog_index) {
 		prolog_name = fsm_ev2str(FSM_EV_PROLOG);
 
 		for (idx = prolog_index; 0 <= idx; --idx) {
 			dest = prolog_state[idx];
 			if (debug) {
 				local_event.code = FSM_EV_GET_STATE_NAME;
-				dest_name = (const char *) dest(ctrl, &local_event);
+				dest_name = dest(ctrl, fsm, &local_event);
 
 				pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, prolog_name,
 					dest_name);
 			}
 			local_event.code = FSM_EV_PROLOG;
-			dest = dest(ctrl, &local_event);
+			dest(ctrl, fsm, &local_event);
 		}
+	} else if (prolog_state[0]) {
+		/* Transitioned to a state's superstate. */
+		prolog_name = fsm_ev2str(FSM_EV_PROLOG);
+		dest = prolog_state[0];
 	} else {
 		/* Termination transition. */
+		fsm->state = fsm_top_state;
 		if (fsm->destructor) {
 			if (debug) {
 				pri_message(ctrl, "%s: Destroying\n", fsm->name);
 			}
-			fsm->destructor(ctrl, fsm->parms);
+			fsm->destructor(ctrl, fsm, fsm->parms);
 		}
 		return;
 	}
 
-	if (!dest) {
-		/* The original dest state is a leaf state. */
-		fsm->state = prolog_state[0];
-		return;
-	}
+	/* We reached the specified destination state. */
+	fsm->state = dest;
 
-	/* Drill into nested states for the final destination state. */
-	do {
-		src = dest;
+	/* Drill down into possible further nested states. */
+	init_name = fsm_ev2str(FSM_EV_INIT);
+	for (;;) {
+		if (debug) {
+			pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, init_name,
+				dest_name);
+		}
+		local_event.code = FSM_EV_INIT;
+		dest = dest(ctrl, fsm, &local_event);
+		if (!dest) {
+			/* We made it to a leaf state. */
+			break;
+		}
+
 		if (debug) {
 			local_event.code = FSM_EV_GET_STATE_NAME;
-			dest_name = (const char *) dest(ctrl, &local_event);
+			dest_name = dest(ctrl, fsm, &local_event);
 
 			pri_message(ctrl, "%s: Event %s in state %s\n", fsm->name, prolog_name,
 				dest_name);
 		}
 		local_event.code = FSM_EV_PROLOG;
-		dest = dest(ctrl, &local_event);
-	} while (dest);
+		dest(ctrl, fsm, &local_event);
 
-	/* We made it to a leaf state. */
-	fsm->state = src;
+		/* We drilled one level deeper. */
+		fsm->state = dest;
+	}
 }
 
 /*!
@@ -353,43 +390,42 @@ void fsm_transition(struct pri *ctrl, int debug, struct fsm_ctrl *fsm, fsm_state
  * \brief Send a real event to the FSM.
  *
  * \param ctrl D channel controller.
- * \param event Event to process.
+ * \param ev Event Q entry to process.
  *
  * \return Nothing
  */
-static void fsm_event_process(struct pri *ctrl, struct fsm_event *event)
+static void fsm_event_q_process(struct pri *ctrl, struct fsm_event_q *ev)
 {
 	int debug;
 	struct fsm_event local_event;
 	const char *name_event;
 	fsm_state state;
 
-	state = event->fsm->state;
+	state = ev->fsm->state;
 
-	local_event.fsm = event->fsm;
 	local_event.code = FSM_EV_GET_DEBUG;
-	if (state(ctrl, &local_event)) {
+	if (state(ctrl, ev->fsm, &local_event)) {
 		debug = 1;
 	} else {
 		debug = 0;
 	}
 
 	local_event.code = FSM_EV_GET_EV_NAME;
-	local_event.parms.num = event->code;
-	name_event = (const char *) state(ctrl, &local_event);
+	local_event.parms.num = ev->event.code;
+	name_event = (const char *) state(ctrl, ev->fsm, &local_event);
 
 	do {
 		if (debug) {
 			const char *name_state;
 
 			local_event.code = FSM_EV_GET_STATE_NAME;
-			name_state = (const char *) state(ctrl, &local_event);
+			name_state = (const char *) state(ctrl, ev->fsm, &local_event);
 
-			pri_message(ctrl, "%s: Event %s in state %s\n", event->fsm->name, name_event,
+			pri_message(ctrl, "%s: Event %s in state %s\n", ev->fsm->name, name_event,
 				name_state);
 		}
 
-		state = state(ctrl, event);
+		state = state(ctrl, ev->fsm, &ev->event);
 	} while (state);
 }
 
@@ -403,11 +439,11 @@ static void fsm_event_process(struct pri *ctrl, struct fsm_event *event)
  */
 void fsm_run(struct pri *ctrl, struct fsm_queue *que)
 {
-	struct fsm_event event;
+	struct fsm_event_q ev;
 
 	while (que->head != que->tail) {
 		/* Pull the next event off the head of the queue. */
-		event = que->events[que->head];
+		ev = que->events[que->head];
 
 		/* Advance the queue head. */
 		++que->head;
@@ -415,7 +451,7 @@ void fsm_run(struct pri *ctrl, struct fsm_queue *que)
 			que->head = 0;
 		}
 
-		fsm_event_process(ctrl, &event);
+		fsm_event_q_process(ctrl, &ev);
 	}
 }
 
@@ -424,16 +460,17 @@ void fsm_run(struct pri *ctrl, struct fsm_queue *que)
  *
  * \param ctrl D channel controller.
  * \param fsm Filled in FSM control structure set to the initial FSM state.
+ * \param init Initial FSM state.
  *
  * \return Nothing
  */
-void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm)
+void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm, fsm_state init)
 {
 	int debug;
 	struct fsm_event dbg_event;
 
 	dbg_event.code = FSM_EV_GET_DEBUG;
-	if (fsm->state(ctrl, &dbg_event)) {
+	if (init(ctrl, fsm, &dbg_event)) {
 		debug = 1;
 	} else {
 		debug = 0;
@@ -442,7 +479,8 @@ void fsm_init(struct pri *ctrl, struct fsm_ctrl *fsm)
 	if (debug) {
 		pri_message(ctrl, "%s: Initial transition\n", fsm->name);
 	}
-	fsm_transition(ctrl, debug, fsm, fsm->state, NULL);
+	fsm->state = fsm_top_state;
+	fsm_transition(ctrl, debug, fsm, init);
 }
 
 /* ------------------------------------------------------------------- */

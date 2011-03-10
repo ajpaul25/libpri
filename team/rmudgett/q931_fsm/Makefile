@@ -205,6 +205,9 @@ pridump: pridump.o
 rosetest: rosetest.o
 	$(CC) -o rosetest rosetest.o -L. -lpri $(CFLAGS)
 
+fsmtest: fsmtest.o
+	$(CC) -o fsmtest fsmtest.o -L. -lpri $(CFLAGS)
+
 MAKE_DEPS= -MD -MT $@ -MF .$(subst /,_,$@).d -MP
 
 %.o: %.c
