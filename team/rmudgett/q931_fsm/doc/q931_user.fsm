@@ -18,12 +18,20 @@ FSM q931_user
 		/* Terminate the FSM */
 		Next_State *;
 	}
+	Stimulus Q931_EV_MSG_STATUS_ENQUIRY {
+		Action Send(STATUS(Current_state));
+	}
 	Stimulus Q931_EV_MSG_STATUS {
+		if (!Get_STATUS_Call_State) {
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_null;
+		}
 	}
 	Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
 	}
 	Stimulus Q931_EV_MSG_other {
-		Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
+		//Action Send(STATUS(PRI_CAUSE_WRONG_CALL_STATE));
+		//Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
 	}
 
 	State q931_user_null {// aka U0
@@ -33,6 +41,38 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_RESUME_REQ(call_id) {
+			/* Need to pick a new call reference */
+			Action Pick_Call_Reference;
+			Action Send(RESUME(call_id));
+			Action Start_T318;
+			Next_State q931_user_resume_request;
+		}
+		Stimulus Q931_EV_MSG_SETUP {
+			Action Post_Mgmt(SETUP);
+			Next_State q931_user_call_present;
+		}
+		Stimulus Q931_EV_MGMT_SETUP {
+			/* Call reference already selected when call structure created. */
+			//Action Pick_Call_Reference;
+			Action Send(SETUP);
+			Action Start_T303;
+			Next_State q931_user_call_initiated;
+		}
+		Stimulus Q931_EV_MSG_STATUS {
+			if (Get_STATUS_Call_State) {
+				Action Send(RELEASE_COMPLETE(PRI_CAUSE_WRONG_CALL_STATE));
+			}
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Send(RELEASE_COMPLETE(PRI_CAUSE_NORMAL_CLEARING));
+		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			/* Ignore RELEASE_COMPLETE messages. */
+		}
+		Stimulus Q931_EV_MSG_other {
+			Action Send(RELEASE_COMPLETE(PRI_CAUSE_INVALID_CALL_REFERENCE));
 		}
 	}
 
@@ -44,6 +84,57 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MGMT_OVERLAP_DIGIT(digit) {
+			Action Save_Overlap_Digit(digit);
+		}
+		Stimulus Q931_EV_MGMT_DISCONNECT_REQUEST(cause) {
+			Action Send(DISCONNECT(cause));
+			Action Stop_T303;
+			Action Start_T305;
+			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_MSG_SETUP_ACKNOWLEDGE {
+			Action Stop_T303;
+			if (Stored_Overlap_Digits) {
+				Action Send(INFORMATION(Stored_Overlap_Digits));
+			}
+			Action Post_Mgmt(SETUP_ACKNOWLEDGE);
+			Action Start_T304;
+			Next_State q931_user_overlap_sending;
+		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			Action Stop_T303;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_PROCEEDING {
+			Action Stop_T303;
+			Action Start_T310;
+			Action Post_Mgmt(PROCEEDING);
+			Next_State q931_user_outgoing_call_proceeding;
+		}
+		Stimulus Q931_EV_TIMEOUT_T303 {
+			if (First_Time) {
+				Action Send(SETUP);
+				Action Start_T303;
+			} else {
+				Action Post_Mgmt(HANGUP(PRI_CAUSE_NO_USER_RESPONSE));
+				Next_State q931_user_null;
+			}
+		}
+		Stimulus Q931_EV_MSG_ALERTING {
+			Action Stop_T303;
+			Action Post_Mgmt(ALERTING);
+			Next_State q931_user_call_delivered;
+		}
+		Stimulus Q931_EV_MSG_CONNECT {
+			Action Stop_T303;
+			Action Post_Mgmt(CONNECT);
+			if (Connect_Ack_Option) {
+				Action Send(CONNECT_ACKNOWLEDGE);
+			}
+			Next_State q931_user_active;
+		}
 	}
 
 	State q931_user_overlap_sending {// aka U2
@@ -53,6 +144,49 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_OVERLAP_DIGIT(digit) {
+			Action Send(INFORMATION(digit));
+			Action Stop_T304;
+			Action Start_T304;
+		}
+		Stimulus Q931_EV_MSG_PROCEEDING {
+			Action Stop_T304;
+			Action Start_T310;
+			Action Post_Mgmt(PROCEEDING);
+			Next_State q931_user_outgoing_call_proceeding;
+		}
+		Stimulus Q931_EV_MSG_ALERTING {
+			Action Stop_T304;
+			Action Post_Mgmt(ALERTING);
+			Next_State q931_user_call_delivered;
+		}
+		Stimulus Q931_EV_MSG_PROGRESS {
+			/* PROGRESS with interworking or tone code */
+			if (interworking) {
+				Action Stop_T304;
+			}
+			Action Post_Mgmt(PROGRESS);
+		}
+		Stimulus Q931_EV_MSG_CONNECT {
+			Action Stop_T304;
+			Action Post_Mgmt(CONNECT);
+			if (Connect_Ack_Option) {
+				Action Send(CONNECT_ACKNOWLEDGE);
+			}
+			Next_State q931_user_active;
+		}
+		Stimulus Q931_EV_MGMT_RELEASE_REQ {
+			Action Send(RELEASE(PRI_CAUSE_CHANNEL_UNACCEPTABLE));
+			Action Stop_T304;
+			Action Start_T308;
+			Next_State q931_user_release_request;
+		}
+		Stimulus Q931_EV_TIMEOUT_T304 {
+			Action Send(DISCONNECT());
+			Action Start_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_disconnect_request;
 		}
 	}
 
@@ -64,6 +198,36 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MSG_PROGRESS {
+			Action Stop_T310;
+			Action Post_Mgmt(PROGRESS);
+		}
+		Stimulus Q931_EV_MSG_ALERTING {
+			Action Stop_T310;
+			Action Start_T301;
+			Action Post_Mgmt(ALERTING);
+			Next_State q931_user_call_delivered;
+		}
+		Stimulus Q931_EV_MSG_CONNECT {
+			Action Stop_T310;
+			Action Post_Mgmt(CONNECT);
+			if (Connect_Ack_Option) {
+				Action Send(CONNECT_ACKNOWLEDGE);
+			}
+			Next_State q931_user_active;
+		}
+		Stimulus Q931_EV_TIMEOUT_T310 {
+			Action Send(DISCONNECT());
+			Action Start_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_MGMT_RELEASE_REQ {
+			Action Stop_T310;
+			Action Send(RELEASE(PRI_CAUSE_CHANNEL_UNACCEPTABLE));
+			Action Start_T308;
+			Next_State q931_user_release_request;
+		}
 	}
 
 	State q931_user_call_delivered {// aka U4
@@ -73,6 +237,13 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MSG_CONNECT {
+			Action Post_Mgmt(CONNECT);
+			if (Connect_Ack_Option) {
+				Action Send(CONNECT_ACKNOWLEDGE);
+			}
+			Next_State q931_user_active;
 		}
 	}
 
@@ -84,6 +255,42 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MGMT_SETUP_ACKNOWLEDGE {
+			Action Send(SETUP_ACKNOWLEDGE);
+			Action Start_T302;
+			Next_State q931_user_overlap_receiving;
+		}
+		Stimulus Q931_EV_MGMT_ALERTING {
+			Action Send(ALERTING);
+			Action Start_T302;
+			Next_State q931_user_call_delivered;
+		}
+		Stimulus Q931_EV_MGMT_CONNECT {
+			Action Send(CONNECT);
+			Action Start_T313;
+			Next_State q931_user_connect_request;
+		}
+		Stimulus Q931_EV_MGMT_REJECT_REQ(cause) {
+			/* Section 5.2.5.1 */
+			if (Reject_Option) {
+				Send(RELEASE_COMPLETE(PRI_CAUSE_INCOMPATIBLE_DESTINATION))
+			}
+			Action Post_Event(Q931_EV_MGMT_DESTROY);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MGMT_PROCEEDING {
+			Action Send(PROCEEDING);
+			Next_State q931_user_incoming_call_proceeding;
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Post_Mgmt(HANGUP(cause));
+			Action Send(RELEASE_COMPLETE);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_DISCONNECT {
+			Action Post_Mgmt(HANGUP_REQ(cause));
+			Next_State q931_user_disconnect_indication;
+		}
 	}
 
 	State q931_user_call_received {// aka U7
@@ -93,6 +300,11 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_CONNECT {
+			Action Send(CONNECT);
+			Action Start_T313;
+			Next_State q931_user_connect_request;
 		}
 	}
 
@@ -104,6 +316,17 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_TIMEOUT_T313 {
+			Action Send(DISCONNECT);
+			Action Start_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_MSG_CONNECT_ACKNOWLEDGE {
+			Action Stop_T313;
+			Action Post_Mgmt(CONNECT_ACKNOWLEDGE);
+			Next_State q931_user_active;
+		}
 	}
 
 	State q931_user_incoming_call_proceeding {// aka U9
@@ -113,6 +336,18 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_CONNECT {
+			Action Send(CONNECT);
+			Action Start_T313;
+			Next_State q931_user_connect_request;
+		}
+		Stimulus Q931_EV_MGMT_ALERTING {
+			Action Send(ALERTING);
+			Next_State q931_user_call_received;
+		}
+		Stimulus Q931_EV_MGMT_PROGRESS {
+			Action Send(PROGRESS);
 		}
 	}
 
@@ -124,6 +359,17 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MGMT_SUSPEND_REQ(call_id) {
+			Action Send(SUSPEND(call_id));
+			Action Start_T319;
+			Next_State q931_user_suspend_request;
+		}
+		Stimulus Q931_EV_MSG_NOTIFY {
+			Action Post_Mgmt(NOTIFY);
+		}
+		Stimulus Q931_EV_MGMT_NOTIFY {
+			Action Send(NOTIFY);
+		}
 	}
 
 	State q931_user_disconnect_request {// aka U11
@@ -134,6 +380,27 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Stop_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Action Send(RELEASE_COMPLETE(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_DISCONNECT {
+			Action Stop_T305;
+			Action Send(RELEASE(cause));
+			Action Start_T308;
+			Next_State q931_user_release_request;
+		}
+		Stimulus Q931_EV_TIMEOUT_T305 {
+			Action Send(RELEASE(cause));
+			Action Start_T308;
+			Next_State q931_user_release_request;
+		}
+		//Stimulus Q931_EV_MSG_NOTIFY {
+		//	There does not seem to be any reason for
+		//	this being here in the spec.
+		//}
 	}
 
 	State q931_user_disconnect_indication {// aka U12
@@ -143,6 +410,16 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Post_Mgmt(HANGUP(cause));
+			Action Send(RELEASE_COMPLETE(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MGMT_RELEASE_REQ {
+			Action Send(RELEASE(cause));
+			Action Start_T308;
+			Next_State q931_user_release_request;
 		}
 	}
 
@@ -154,6 +431,31 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MSG_SUSPEND_ACKNOWLEDGE {
+			Action Stop_T319;
+			Action Post_Mgmt(SUSPEND_ACKNOWLEDGE);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_SUSPEND_REJECT {
+			Action Stop_T319;
+			Action Post_Mgmt(SUSPEND_REJECT(cause));
+			Next_State q931_user_active;
+		}
+		Stimulus Q931_EV_MSG_DISCONNECT {
+			Action Stop_T319;
+			Action Post_Mgmt(HANGUP_REQ(cause));
+			Next_State q931_user_disconnect_indication;
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Stop_T319;
+			Action Post_Mgmt(HANGUP(cause));
+			Action Send(RELEASE_COMPLETE(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_TIMEOUT_T319 {
+			Action Post_Mgmt(SUSPEND_REJECT(timeout));
+			Next_State q931_user_active;
+		}
 	}
 
 	State q931_user_resume_request {// aka U17
@@ -163,6 +465,23 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MSG_RESUME_ACKNOWLEDGE {
+			Action Stop_T318;
+			Action Post_Mgmt(RESUME_ACKNOWLEDGE);
+			Next_State q931_user_active;
+		}
+		Stimulus Q931_EV_MSG_RESUME_REJECT {
+			Action Stop_T318;
+			Action Post_Mgmt(RESUME_REJECT(cause));
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_TIMEOUT_T318 {
+			Action Post_Mgmt(RESUME_REJECT(timeout));
+			Action Send(RELEASE(cause));
+			Action Start_T308;
+			Next_State q931_user_release_request;
 		}
 	}
 
@@ -174,6 +493,29 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			Action Stop_T308;
+			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
+			Action Post_Event(Q931_EV_MGMT_DESTROY);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Stop_T308;
+			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
+			Action Post_Event(Q931_EV_MGMT_DESTROY);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_TIMEOUT_T308 {
+			if (First_Timeout) {
+				Action Send(RELEASE(cause));
+				Action Start_T308;
+			} else {
+				/* B channel should be placed in maintenance mode */
+				Action Post_Mgmt(HANGUP_ACKNOWLEDGE(timeout));
+				Action Post_Event(Q931_EV_MGMT_DESTROY);
+				Next_State q931_user_null;
+			}
+		}
 	}
 
 	State q931_user_overlap_receiving {// aka U25
@@ -184,6 +526,32 @@ FSM q931_user
 		}
 		Epilog {
 		}
+		Stimulus Q931_EV_MSG_INFORMATION {
+			Action Post_Mgmt(INFORMATION(digits));
+			Action Start_T302;
+		}
+		Stimulus Q931_EV_MGMT_PROCEEDING {
+			Action Stop_T302;
+			Action Send(PROCEEDING);
+			Next_State q931_user_incoming_call_proceeding;
+		}
+		Stimulus Q931_EV_MGMT_ALERTING {
+			Action Stop_T302;
+			Action Send(ALERTING);
+			Next_State q931_user_call_received;
+		}
+		Stimulus Q931_EV_MGMT_CONNECT {
+			Action Stop_T302;
+			Action Send(CONNECT);
+			Action Start_T313;
+			Next_State q931_user_connect_request;
+		}
+		Stimulus Q931_EV_TIMEOUT_T302 {
+			Post_Mgmt(OVERLAP_TIMEOUT);
+		}
+		Stimulus Q931_EV_MGMT_PROGRESS {
+			Action Send(PROGRESS);
+		}
 	}
 
 	State q931_user_call_independent_service {// aka U31
@@ -193,6 +561,21 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MSG_FACILITY {
+			Action Post_Mgmt(FACILITY);
+		}
+		Stimulus Q931_EV_MSG_DISCONNECT {
+			Action Send(RELEASE(PRI_CAUSE_NORMAL_CLEARING));
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Send(RELEASE_COMPLETE(PRI_CAUSE_NORMAL_CLEARING));
+			Action Post_Event(Q931_EV_MGMT_DESTROY);
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			Action Post_Event(Q931_EV_MGMT_DESTROY);
+			Next_State q931_user_null;
 		}
 	}
 }
