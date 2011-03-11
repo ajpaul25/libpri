@@ -18,6 +18,9 @@ FSM q931_global_cr
 		/* Terminate the FSM */
 		Next_State *;
 	}
+	Stimulus Q931_EV_MSG_STATUS_ENQUIRY {
+		Action Send(STATUS(current_state));
+	}
 	Stimulus Q931_EV_MSG_STATUS {
 		/* Ignore STATUS messages. */
 	}
@@ -61,12 +64,10 @@ FSM q931_global_cr
 		}
 		Stimulus Q931_EV_TIMEOUT_T316 {
 			Action Inc_Count;
-			Test = Get_Count;
-			Test < 2 {
+			if (Get_Count < 2) {
 				Action Send(RESTART(Channels));
 				Action Start_T316;
-			}
-			Test == 2 {
+			} else {
 				Action Maintenance("No response to RESTART");
 			}
 		}
@@ -75,19 +76,16 @@ FSM q931_global_cr
 		}
 		Stimulus Q931_EV_MSG_RESTART_ACKNOWLEDGE {
 			Action Stop_T316;
-			Test = Get_Restart_Rsp;
-			Test != 0 {
+			if (Get_Restart_Rsp != 0) {
 				Next_State q931_global_null;
 			}
 			Action Set_Restart_Rsp(1);
 		}
 		Stimulus Q931_EV_MGMT_RESTARTED(Channel) {
 			Action Accumulate_Restarted_Channels(Channel);
-			Test = Get_All_Channels_Restarted;
-			Test == Yes {
+			if (Get_All_Channels_Restarted == Yes) {
 				Action Stop_T317;
-				Test = Get_Restart_Ack;
-				Test != 0 {
+				if (Get_Restart_Ack != 0) {
 					Next_State q931_global_null;
 				}
 				Action Set_Restart_Rsp(1);
@@ -112,8 +110,7 @@ FSM q931_global_cr
 		}
 		Stimulus Q931_EV_MGMT_RESTARTED(Channel) {
 			Action Accumulate_Restarted_Channels(Channel);
-			Test = Get_All_Channels_Restarted;
-			Test == Yes {
+			if (Get_All_Channels_Restarted == Yes) {
 				Action Send(RESTART_ACKNOWLEDGE);
 				Next_State q931_global_null;
 			}
