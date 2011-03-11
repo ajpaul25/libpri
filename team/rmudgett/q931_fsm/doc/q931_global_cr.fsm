@@ -19,6 +19,7 @@ FSM q931_global_cr
 		Next_State *;
 	}
 	Stimulus Q931_EV_MSG_STATUS_ENQUIRY {
+		/* Deviation, we'll handle this anyway. */
 		Action Send(STATUS(current_state));
 	}
 	Stimulus Q931_EV_MSG_STATUS {
@@ -27,6 +28,8 @@ FSM q931_global_cr
 	Stimulus Q931_EV_MSG_other {
 		Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
 	}
+
+/* ******************************************************************** */
 
 	State q931_global_null {
 		Prolog {
@@ -50,6 +53,9 @@ FSM q931_global_cr
 			Next_State q931_global_restart_req;
 		}
 	}
+
+/* ******************************************************************** */
+
 	State q931_global_restart_req {
 		Prolog {
 			Action Set_State(Q931_GLOBAL_STATE_RESTART_REQUEST);
@@ -92,6 +98,9 @@ FSM q931_global_cr
 			}
 		}
 	}
+
+/* ******************************************************************** */
+
 	State q931_global_restart {
 		Prolog {
 			Action Set_State(Q931_GLOBAL_STATE_RESTART);
