@@ -15,24 +15,37 @@ FSM q931_user
 	Epilog {
 	}
 	Stimulus Q931_EV_MGMT_DESTROY {
-		/* Terminate the FSM */
-		Next_State *;
+		Next_State q931_user_null;
 	}
 	Stimulus Q931_EV_MSG_STATUS_ENQUIRY {
-		Action Send(STATUS(Current_state));
+		Action Send(STATUS(current_state));
 	}
+
+#if 0
 	Stimulus Q931_EV_MSG_STATUS {
-		if (!Get_STATUS_Call_State) {
+		if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
 			Action Post_Mgmt(HANGUP(cause));
 			Next_State q931_user_null;
 		}
 	}
+	Stimulus Q931_EV_MSG_RELEASE {
+		/* Ignore RELEASE messages. */
+	}
 	Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+		/* Ignore RELEASE_COMPLETE messages. */
 	}
 	Stimulus Q931_EV_MSG_other {
-		//Action Send(STATUS(PRI_CAUSE_WRONG_CALL_STATE));
-		//Action Send(STATUS(PRI_CAUSE_INVALID_CALL_REFERENCE));
+		if (cause_option) {
+			Action Send(STATUS(PRI_CAUSE_WRONG_MESSAGE));
+		} else if (message_known) {
+			Action Send(STATUS(PRI_CAUSE_WRONG_CALL_STATE));
+		} else {
+			Action Send(STATUS(PRI_CAUSE_MESSAGE_TYPE_NONEXIST));
+		}
 	}
+#endif
+
+/* ******************************************************************** */
 
 	State q931_user_null {// aka U0
 		Prolog {
@@ -41,6 +54,10 @@ FSM q931_user
 		Init {
 		}
 		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_DESTROY {
+			/* Terminate the FSM */
+			Next_State *;
 		}
 		Stimulus Q931_EV_MGMT_RESUME_REQ(call_id) {
 			/* Need to pick a new call reference */
@@ -61,7 +78,7 @@ FSM q931_user
 			Next_State q931_user_call_initiated;
 		}
 		Stimulus Q931_EV_MSG_STATUS {
-			if (Get_STATUS_Call_State) {
+			if (Get_STATUS_Call_State != Q931_CALL_STATE_NULL) {
 				Action Send(RELEASE_COMPLETE(PRI_CAUSE_WRONG_CALL_STATE));
 			}
 		}
@@ -75,6 +92,8 @@ FSM q931_user
 			Action Send(RELEASE_COMPLETE(PRI_CAUSE_INVALID_CALL_REFERENCE));
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_call_initiated {// aka U1
 		Prolog {
@@ -137,6 +156,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_overlap_sending {// aka U2
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_OVERLAP_SENDING);
@@ -190,6 +211,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_outgoing_call_proceeding {// aka U3
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
@@ -230,6 +253,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_call_delivered {// aka U4
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CALL_DELIVERED);
@@ -246,6 +271,8 @@ FSM q931_user
 			Next_State q931_user_active;
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_call_present {// aka U6
 		Prolog {
@@ -275,7 +302,6 @@ FSM q931_user
 			if (Reject_Option) {
 				Send(RELEASE_COMPLETE(PRI_CAUSE_INCOMPATIBLE_DESTINATION))
 			}
-			Action Post_Event(Q931_EV_MGMT_DESTROY);
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MGMT_PROCEEDING {
@@ -293,6 +319,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_call_received {// aka U7
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CALL_RECEIVED);
@@ -307,6 +335,8 @@ FSM q931_user
 			Next_State q931_user_connect_request;
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_connect_request {// aka U8
 		Prolog {
@@ -328,6 +358,8 @@ FSM q931_user
 			Next_State q931_user_active;
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_incoming_call_proceeding {// aka U9
 		Prolog {
@@ -351,6 +383,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_active {// aka U10
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_ACTIVE);
@@ -371,6 +405,8 @@ FSM q931_user
 			Action Send(NOTIFY);
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_disconnect_request {// aka U11
 		Prolog {
@@ -397,11 +433,18 @@ FSM q931_user
 			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
-		//Stimulus Q931_EV_MSG_NOTIFY {
-		//	There does not seem to be any reason for
-		//	this being here in the spec.
-		//}
+		Stimulus Q931_EV_MSG_NOTIFY {
+			/*
+			 * Q.931 Figure A.3 sheet 11 of 25.
+			 * The handling of NOTIFY mesages seems incomplete.
+			 * Ignore NOTIFY messages?
+			 * There does not seem to be any other desireable effect
+			 * possible.
+			 */
+		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_disconnect_indication {// aka U12
 		Prolog {
@@ -422,6 +465,8 @@ FSM q931_user
 			Next_State q931_user_release_request;
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_suspend_request {// aka U15
 		Prolog {
@@ -458,6 +503,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_resume_request {// aka U17
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_RESUME_REQUEST);
@@ -485,6 +532,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_release_request {// aka U19
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_RELEASE_REQUEST);
@@ -496,13 +545,11 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
 			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
-			Action Post_Event(Q931_EV_MGMT_DESTROY);
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
-			Action Post_Event(Q931_EV_MGMT_DESTROY);
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_TIMEOUT_T308 {
@@ -512,11 +559,18 @@ FSM q931_user
 			} else {
 				/* B channel should be placed in maintenance mode */
 				Action Post_Mgmt(HANGUP_ACKNOWLEDGE(timeout));
-				Action Post_Event(Q931_EV_MGMT_DESTROY);
+				Next_State q931_user_null;
+			}
+		}
+		Stimulus Q931_EV_MSG_STATUS {
+			if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
+				Action Post_Mgmt(HANGUP(cause));
 				Next_State q931_user_null;
 			}
 		}
 	}
+
+/* ******************************************************************** */
 
 	State q931_user_overlap_receiving {// aka U25
 		Prolog {
@@ -528,6 +582,9 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MSG_INFORMATION {
 			Action Post_Mgmt(INFORMATION(digits));
+			if (display) {
+				Action Post_Mgmt(INFORMATION(display_text));
+			}
 			Action Start_T302;
 		}
 		Stimulus Q931_EV_MGMT_PROCEEDING {
@@ -554,6 +611,8 @@ FSM q931_user
 		}
 	}
 
+/* ******************************************************************** */
+
 	State q931_user_call_independent_service {// aka U31
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CALL_INDEPENDENT_SERVICE);
@@ -570,12 +629,153 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Send(RELEASE_COMPLETE(PRI_CAUSE_NORMAL_CLEARING));
-			Action Post_Event(Q931_EV_MGMT_DESTROY);
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
-			Action Post_Event(Q931_EV_MGMT_DESTROY);
 			Next_State q931_user_null;
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_alive(All but U0) {
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+			Action Stop_All_Timers;
+			if (!upper_layer_knows_call_reference) {
+				Action Post_Event(Q931_EV_MGMT_DESTROY);
+			}
+		}
+		Stimulus Q931_EV_MSG_SETUP {
+			/* Ignore SETUP messages. */
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			/* Ignore RELEASE messages. */
+		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			/* Ignore RELEASE_COMPLETE messages. */
+		}
+		Stimulus Q931_EV_MSG_other {
+			if (cause_option) {
+				Action Send(STATUS(PRI_CAUSE_WRONG_MESSAGE));
+			} else if (message_known) {
+				Action Send(STATUS(PRI_CAUSE_WRONG_CALL_STATE));
+			} else {
+				Action Send(STATUS(PRI_CAUSE_MESSAGE_TYPE_NONEXIST));
+			}
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_status(All but U0, U19) {/* U0 and U19 already handle STATUS */
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MSG_STATUS {
+			if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
+				Action Post_Mgmt(HANGUP(cause));
+				Next_State q931_user_null;
+			}
+			#if 0
+			/*
+			 * Implementation option to handle incompatible state.
+			 * We choose to do nothing.
+			 */
+			if (cause == PRI_CAUSE_WRONG_CALL_STATE) {
+				Action Post_Mgmt(HANGUP(cause));
+				Action Send(DISCONNECT(cause));
+				Action Start_T305;
+				Next_State q931_user_disconnect_request;
+			}
+			#endif
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_tx_info(All but U0, U1, U6, U17, U19) {
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MGMT_DISPLAY_TEXT(msg) {
+			Action Send(INFORMATION(msg));
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_rx_info(All but U0, U1, U6, U17, U19, U25) {/* U25 already handles */
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MSG_INFORMATION {
+			if (display) {
+				Action Post_Mgmt(INFORMATION(display_text));
+			}
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_rel_comp(All but U0, U1, U19) {/* U1 and U19 already handle */
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			Action Stop_All_Timers;
+			Action Post_Mgmt(HANGUP_ACK(cause));
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
+		}
+	}
+
+/* ******************************************************************** */
+
+	Superstate q931_user_hangup(All but U0, U1, U6, U11, U12, U15, U17, U19) {/* Uxx already handle */
+		Prolog {
+		}
+		Init {
+			Action pri_error("Should never be used.");
+		}
+		Epilog {
+		}
+		Stimulus Q931_EV_MSG_RELEASE {
+			Action Stop_All_Timers;
+			Action Post_Mgmt(HANGUP(cause));
+			Action Send(RELEASE_COMPLETE(cause));
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MSG_DISCONNECT {
+			Action Stop_All_Timers;
+			Action Post_Mgmt(HANGUP_REQ(cause));
+			Next_State q931_user_disconnect_indication;
+		}
+		Stimulus Q931_EV_MGMT_DISCONNECT_REQUEST(cause) {
+			Action Send(DISCONNECT(cause));
+			Action Start_T305;
+			Next_State q931_user_disconnect_request;
 		}
 	}
 }
