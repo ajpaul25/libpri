@@ -1,0 +1,26 @@
+/*
+ * FSM pseudo code used in the design/implementation of the
+ * Q.931 dummy call reference.
+ *
+ * Q.931 Section 4.3
+ */
+FSM q931_dummy_cr
+{
+	Prolog {
+	}
+	Init {
+	}
+	Epilog {
+	}
+	Stimulus Q931_EV_MGMT_DESTROY {
+		/* Terminate the FSM */
+		Next_State *;
+	}
+	Stimulus Q931_EV_MSG_FACILITY {
+		/* Need to handle for supplementary services. */
+		/* BUGBUG */
+	}
+	Stimulus Q931_EV_MSG_other {
+		/* Ignore all other messages. */
+	}
+}
