@@ -50,6 +50,16 @@ FSM q931_user
 			Action Send(RESUME(call_id));
 			Next_State q931_user_resume_request;
 		}
+		Stimulus Q931_EV_MSG_REGISTER {
+			Action Post_Mgmt(REGISTER);
+			Next_State q931_user_call_independent_service;
+		}
+		Stimulus Q931_EV_MGMT_REGISTER {
+			/* Call reference already selected when call structure created. */
+			Action Pick_Call_Reference;
+			Action Send(REGISTER);
+			Next_State q931_user_call_independent_service;
+		}
 		Stimulus Q931_EV_MSG_SETUP {
 			Action Post_Mgmt(SETUP);
 			Next_State q931_user_call_present;
@@ -647,6 +657,21 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MGMT_DISCONNECT_REQ(cause) {
+			Action Send(RELEASE_COMPLETE(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_MGMT_RELEASE_REQ {
+			Action Send(RELEASE_COMPLETE(cause));
+			Next_State q931_user_null;
+		}
+		Stimulus Q931_EV_DL_RELEASE_IND {
+			/* i.e. if T309 is not already running, start it. */
+			if (!Any_Timer_Running) {
+				Action Start_T309;
+			}
+			Action DL_Establish_Request;
 		}
 	}
 
