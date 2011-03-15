@@ -48,7 +48,6 @@ FSM q931_user
 			/* Need to pick a new call reference */
 			Action Pick_Call_Reference;
 			Action Send(RESUME(call_id));
-			Action Start_T318;
 			Next_State q931_user_resume_request;
 		}
 		Stimulus Q931_EV_MSG_SETUP {
@@ -59,7 +58,6 @@ FSM q931_user
 			/* Call reference already selected when call structure created. */
 			Action Pick_Call_Reference;
 			Action Send(SETUP);
-			Action Start_T303;
 			Next_State q931_user_call_initiated;
 		}
 		Stimulus Q931_EV_MSG_STATUS {
@@ -83,38 +81,33 @@ FSM q931_user
 	State q931_user_call_initiated {// aka U1
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CALL_INITIATED);
+			Action Start_T303;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T303;
 		}
 		Stimulus Q931_EV_MGMT_OVERLAP_DIGIT(digit) {
 			Action Save_Overlap_Digit(digit);
 		}
-		Stimulus Q931_EV_MGMT_DISCONNECT_REQUEST(cause) {
+		Stimulus Q931_EV_MGMT_DISCONNECT_REQ(cause) {
 			Action Send(DISCONNECT(cause));
-			Action Stop_T303;
-			Action Start_T305;
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_MSG_SETUP_ACKNOWLEDGE {
-			Action Stop_T303;
 			if (Stored_Overlap_Digits) {
 				Action Send(INFORMATION(Stored_Overlap_Digits));
 			}
 			Action Post_Mgmt(SETUP_ACKNOWLEDGE);
-			Action Start_T304;
 			Next_State q931_user_overlap_sending;
 		}
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
-			Action Stop_T303;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_PROCEEDING {
-			Action Stop_T303;
-			Action Start_T310;
 			Action Post_Mgmt(PROCEEDING);
 			Next_State q931_user_outgoing_call_proceeding;
 		}
@@ -129,12 +122,10 @@ FSM q931_user
 			}
 		}
 		Stimulus Q931_EV_MSG_ALERTING {
-			Action Stop_T303;
 			Action Post_Mgmt(ALERTING);
 			Next_State q931_user_call_delivered;
 		}
 		Stimulus Q931_EV_MSG_CONNECT {
-			Action Stop_T303;
 			Action Post_Mgmt(CONNECT);
 			if (Connect_Ack_Option) {
 				Action Send(CONNECT_ACKNOWLEDGE);
@@ -148,10 +139,16 @@ FSM q931_user
 	State q931_user_overlap_sending {// aka U2
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_OVERLAP_SENDING);
+			/*
+			 * If T304 is -1(default) do not start it because the
+			 * upper layer is to enforce/implement the timer.
+			 */
+			Action Start_T304;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T304;
 		}
 		Stimulus Q931_EV_MGMT_OVERLAP_DIGIT(digit) {
 			Action Send(INFORMATION(digit));
@@ -159,13 +156,10 @@ FSM q931_user
 			Action Start_T304;
 		}
 		Stimulus Q931_EV_MSG_PROCEEDING {
-			Action Stop_T304;
-			Action Start_T310;
 			Action Post_Mgmt(PROCEEDING);
 			Next_State q931_user_outgoing_call_proceeding;
 		}
 		Stimulus Q931_EV_MSG_ALERTING {
-			Action Stop_T304;
 			Action Post_Mgmt(ALERTING);
 			Next_State q931_user_call_delivered;
 		}
@@ -177,7 +171,6 @@ FSM q931_user
 			Action Post_Mgmt(PROGRESS);
 		}
 		Stimulus Q931_EV_MSG_CONNECT {
-			Action Stop_T304;
 			Action Post_Mgmt(CONNECT);
 			if (Connect_Ack_Option) {
 				Action Send(CONNECT_ACKNOWLEDGE);
@@ -186,25 +179,20 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_RELEASE_REQ {
 			Action Send(RELEASE(PRI_CAUSE_CHANNEL_UNACCEPTABLE));
-			Action Stop_T304;
-			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
 		Stimulus Q931_EV_TIMEOUT_T304 {
-			Action Send(DISCONNECT());
-			Action Start_T305;
-			Action Post_Mgmt(HANGUP(cause));
+			Action Send(DISCONNECT(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_DL_ESTABLISH_IND {
 			Action Send(DISCONNECT());
-			Action Start_T305;
 			Action Post_Mgmt(HANGUP(cause));
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_DL_RELEASE_IND {
 			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
-			Action Stop_T304;
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
@@ -215,23 +203,22 @@ FSM q931_user
 	State q931_user_outgoing_call_proceeding {// aka U3
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING);
+			Action Start_T310;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T310;
 		}
 		Stimulus Q931_EV_MSG_PROGRESS {
 			Action Stop_T310;
 			Action Post_Mgmt(PROGRESS);
 		}
 		Stimulus Q931_EV_MSG_ALERTING {
-			Action Stop_T310;
-			Action Start_T301;
 			Action Post_Mgmt(ALERTING);
 			Next_State q931_user_call_delivered;
 		}
 		Stimulus Q931_EV_MSG_CONNECT {
-			Action Stop_T310;
 			Action Post_Mgmt(CONNECT);
 			if (Connect_Ack_Option) {
 				Action Send(CONNECT_ACKNOWLEDGE);
@@ -239,15 +226,12 @@ FSM q931_user
 			Next_State q931_user_active;
 		}
 		Stimulus Q931_EV_TIMEOUT_T310 {
-			Action Send(DISCONNECT());
-			Action Start_T305;
-			Action Post_Mgmt(HANGUP(cause));
+			Action Send(DISCONNECT(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_MGMT_RELEASE_REQ {
-			Action Stop_T310;
 			Action Send(RELEASE(PRI_CAUSE_CHANNEL_UNACCEPTABLE));
-			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
 	}
@@ -257,10 +241,12 @@ FSM q931_user
 	State q931_user_call_delivered {// aka U4
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CALL_DELIVERED);
+			Action Start_T301;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T301;
 		}
 		Stimulus Q931_EV_MSG_CONNECT {
 			Action Post_Mgmt(CONNECT);
@@ -268,6 +254,11 @@ FSM q931_user
 				Action Send(CONNECT_ACKNOWLEDGE);
 			}
 			Next_State q931_user_active;
+		}
+		Stimulus Q931_EV_TIMEOUT_T301 {
+			Action Send(DISCONNECT(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
+			Next_State q931_user_disconnect_request;
 		}
 	}
 
@@ -283,16 +274,14 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_SETUP_ACKNOWLEDGE {
 			Action Send(SETUP_ACKNOWLEDGE);
-			Action Start_T302;
 			Next_State q931_user_overlap_receiving;
 		}
 		Stimulus Q931_EV_MGMT_ALERTING {
 			Action Send(ALERTING);
-			Next_State q931_user_call_delivered;
+			Next_State q931_user_call_received;
 		}
 		Stimulus Q931_EV_MGMT_CONNECT {
 			Action Send(CONNECT);
-			Action Start_T313;
 			Next_State q931_user_connect_request;
 		}
 		Stimulus Q931_EV_MGMT_REJECT_REQ(cause) {
@@ -330,7 +319,6 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_CONNECT {
 			Action Send(CONNECT);
-			Action Start_T313;
 			Next_State q931_user_connect_request;
 		}
 	}
@@ -340,19 +328,19 @@ FSM q931_user
 	State q931_user_connect_request {// aka U8
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_CONNECT_REQUEST);
+			Action Start_T313;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T313;
 		}
 		Stimulus Q931_EV_TIMEOUT_T313 {
-			Action Send(DISCONNECT);
-			Action Start_T305;
-			Action Post_Mgmt(HANGUP(cause));
+			Action Send(DISCONNECT(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_MSG_CONNECT_ACKNOWLEDGE {
-			Action Stop_T313;
 			Action Post_Mgmt(CONNECT_ACKNOWLEDGE);
 			Next_State q931_user_active;
 		}
@@ -370,7 +358,6 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_CONNECT {
 			Action Send(CONNECT);
-			Action Start_T313;
 			Next_State q931_user_connect_request;
 		}
 		Stimulus Q931_EV_MGMT_ALERTING {
@@ -394,7 +381,6 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_SUSPEND_REQ(call_id) {
 			Action Send(SUSPEND(call_id));
-			Action Start_T319;
 			Next_State q931_user_suspend_request;
 		}
 		Stimulus Q931_EV_MSG_NOTIFY {
@@ -403,6 +389,13 @@ FSM q931_user
 		Stimulus Q931_EV_MGMT_NOTIFY {
 			Action Send(NOTIFY);
 		}
+		Stimulus Q931_EV_DL_RELEASE_IND {
+			/* i.e. if T309 is not already running, start it. */
+			if (!Any_Timer_Running) {
+				Action Start_T309;
+			}
+			Action DL_Establish_Request;
+		}
 	}
 
 /* ******************************************************************** */
@@ -410,27 +403,25 @@ FSM q931_user
 	State q931_user_disconnect_request {// aka U11
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_DISCONNECT_REQUEST);
+			Action Start_T305;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T305;
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
-			Action Stop_T305;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_DISCONNECT {
-			Action Stop_T305;
 			Action Send(RELEASE(cause));
-			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
 		Stimulus Q931_EV_TIMEOUT_T305 {
 			Action Send(RELEASE(cause));
-			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
 		Stimulus Q931_EV_MSG_NOTIFY {
@@ -462,7 +453,6 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_RELEASE_REQ {
 			Action Send(RELEASE(cause));
-			Action Start_T308;
 			Next_State q931_user_release_request;
 		}
 	}
@@ -472,29 +462,27 @@ FSM q931_user
 	State q931_user_suspend_request {// aka U15
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_SUSPEND_REQUEST);
+			Action Start_T319;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T319;
 		}
 		Stimulus Q931_EV_MSG_SUSPEND_ACKNOWLEDGE {
-			Action Stop_T319;
 			Action Post_Mgmt(SUSPEND_ACKNOWLEDGE);
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_SUSPEND_REJECT {
-			Action Stop_T319;
 			Action Post_Mgmt(SUSPEND_REJECT(cause));
 			Next_State q931_user_active;
 		}
 		Stimulus Q931_EV_MSG_DISCONNECT {
-			Action Stop_T319;
 			Action Post_Mgmt(HANGUP_REQ(cause));
 			Next_State q931_user_disconnect_indication;
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
-			Action Stop_T319;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
 			Action Release_Call_Reference;
@@ -511,26 +499,25 @@ FSM q931_user
 	State q931_user_resume_request {// aka U17
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_RESUME_REQUEST);
+			Action Start_T318;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T318;
 		}
 		Stimulus Q931_EV_MSG_RESUME_ACKNOWLEDGE {
-			Action Stop_T318;
 			Action Post_Mgmt(RESUME_ACKNOWLEDGE);
 			Next_State q931_user_active;
 		}
 		Stimulus Q931_EV_MSG_RESUME_REJECT {
-			Action Stop_T318;
 			Action Post_Mgmt(RESUME_REJECT(cause));
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_TIMEOUT_T318 {
 			Action Post_Mgmt(RESUME_REJECT(timeout));
-			Action Send(RELEASE(cause));
-			Action Start_T308;
+			Action Send(RELEASE(PRI_CAUSE_RECOVERY_ON_TIMER_EXPIRE));
 			Next_State q931_user_release_request;
 		}
 	}
@@ -540,19 +527,19 @@ FSM q931_user
 	State q931_user_release_request {// aka U19
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_RELEASE_REQUEST);
+			Action Start_T308;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T308;
 		}
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
-			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
-			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
@@ -582,10 +569,16 @@ FSM q931_user
 	State q931_user_overlap_receiving {// aka U25
 		Prolog {
 			Action Set_State(Q931_CALL_STATE_OVERLAP_RECEIVING);
+			/*
+			 * If T302 is -1(default) do not start it because the
+			 * upper layer is to enforce/implement the timer.
+			 */
+			Action Start_T302;
 		}
 		Init {
 		}
 		Epilog {
+			Action Stop_T302;
 		}
 		Stimulus Q931_EV_MSG_INFORMATION {
 			if (keypad_digits) {
@@ -596,40 +589,35 @@ FSM q931_user
 			if (display) {
 				Action Post_Mgmt(INFORMATION(display_text));
 			}
+			Action Stop_T302;
 			Action Start_T302;
 		}
 		Stimulus Q931_EV_MGMT_PROCEEDING {
-			Action Stop_T302;
 			Action Send(PROCEEDING);
 			Next_State q931_user_incoming_call_proceeding;
 		}
 		Stimulus Q931_EV_MGMT_ALERTING {
-			Action Stop_T302;
 			Action Send(ALERTING);
 			Next_State q931_user_call_received;
 		}
 		Stimulus Q931_EV_MGMT_CONNECT {
-			Action Stop_T302;
 			Action Send(CONNECT);
-			Action Start_T313;
 			Next_State q931_user_connect_request;
 		}
 		Stimulus Q931_EV_TIMEOUT_T302 {
+			Action Stop_T302;
 			Post_Mgmt(OVERLAP_TIMEOUT);
 		}
 		Stimulus Q931_EV_MGMT_PROGRESS {
 			Action Send(PROGRESS);
 		}
 		Stimulus Q931_EV_DL_ESTABLISH_IND {
-			Action Stop_T302;
 			Action Send(DISCONNECT());
-			Action Start_T305;
 			Action Post_Mgmt(HANGUP(cause));
 			Next_State q931_user_disconnect_request;
 		}
 		Stimulus Q931_EV_DL_RELEASE_IND {
 			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
-			Action Stop_T302;
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
@@ -671,7 +659,8 @@ FSM q931_user
 			Action pri_error("Should never be used.");
 		}
 		Epilog {
-			Action Stop_All_Timers;
+			Action Stop_T309;
+			//Action Stop_All_Timers;
 			if (!upper_layer_knows_call_reference) {
 				Action Post_Event(Q931_EV_MGMT_DESTROY);
 			}
@@ -695,13 +684,13 @@ FSM q931_user
 			}
 		}
 		Stimulus Q931_EV_DL_RELEASE_IND {
-			if (!Any_Timer_Running) {
-				Action Start_T309;
-			}
-			Action DL_Establish_Request;
+			//Action Stop_All_Timers;
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_DL_ESTABLISH_CONFIRM {
-       			Action Stop_T309;
+			Action Stop_T309;
 			Action Send(STATUS());
 		}
 		Stimulus Q931_EV_TIMEOUT_T309 {
@@ -735,7 +724,6 @@ FSM q931_user
 			if (cause == PRI_CAUSE_WRONG_CALL_STATE) {
 				Action Post_Mgmt(HANGUP(cause));
 				Action Send(DISCONNECT(cause));
-				Action Start_T305;
 				Next_State q931_user_disconnect_request;
 			}
 			#endif
@@ -785,7 +773,7 @@ FSM q931_user
 		Epilog {
 		}
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
-			Action Stop_All_Timers;
+			//Action Stop_All_Timers;
 			Action Post_Mgmt(HANGUP_ACK(cause));
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
@@ -803,20 +791,19 @@ FSM q931_user
 		Epilog {
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
-			Action Stop_All_Timers;
+			//Action Stop_All_Timers;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
 			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_DISCONNECT {
-			Action Stop_All_Timers;
+			//Action Stop_All_Timers;
 			Action Post_Mgmt(HANGUP_REQ(cause));
 			Next_State q931_user_disconnect_indication;
 		}
-		Stimulus Q931_EV_MGMT_DISCONNECT_REQUEST(cause) {
+		Stimulus Q931_EV_MGMT_DISCONNECT_REQ(cause) {
 			Action Send(DISCONNECT(cause));
-			Action Start_T305;
 			Next_State q931_user_disconnect_request;
 		}
 	}
