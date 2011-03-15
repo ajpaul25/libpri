@@ -20,30 +20,15 @@ FSM q931_user
 	Stimulus Q931_EV_MSG_STATUS_ENQUIRY {
 		Action Send(STATUS(current_state));
 	}
-
-#if 0
-	Stimulus Q931_EV_MSG_STATUS {
-		if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
-			Action Post_Mgmt(HANGUP(cause));
-			Next_State q931_user_null;
-		}
+	Stimulus Q931_EV_DL_RELEASE_IND {
+		/* Ignore. */
 	}
-	Stimulus Q931_EV_MSG_RELEASE {
-		/* Ignore RELEASE messages. */
+	Stimulus Q931_EV_DL_ESTABLISH_IND {
+		/* Ignore. */
 	}
-	Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
-		/* Ignore RELEASE_COMPLETE messages. */
+	Stimulus Q931_EV_DL_ESTABLISH_CONFIRM {
+		/* Ignore. */
 	}
-	Stimulus Q931_EV_MSG_other {
-		if (cause_option) {
-			Action Send(STATUS(PRI_CAUSE_WRONG_MESSAGE));
-		} else if (message_known) {
-			Action Send(STATUS(PRI_CAUSE_WRONG_CALL_STATE));
-		} else {
-			Action Send(STATUS(PRI_CAUSE_MESSAGE_TYPE_NONEXIST));
-		}
-	}
-#endif
 
 /* ******************************************************************** */
 
@@ -72,7 +57,7 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_SETUP {
 			/* Call reference already selected when call structure created. */
-			//Action Pick_Call_Reference;
+			Action Pick_Call_Reference;
 			Action Send(SETUP);
 			Action Start_T303;
 			Next_State q931_user_call_initiated;
@@ -124,6 +109,7 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
 			Action Stop_T303;
 			Action Post_Mgmt(HANGUP(cause));
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_PROCEEDING {
@@ -138,6 +124,7 @@ FSM q931_user
 				Action Start_T303;
 			} else {
 				Action Post_Mgmt(HANGUP(PRI_CAUSE_NO_USER_RESPONSE));
+				Action Release_Call_Reference;
 				Next_State q931_user_null;
 			}
 		}
@@ -208,6 +195,18 @@ FSM q931_user
 			Action Start_T305;
 			Action Post_Mgmt(HANGUP(cause));
 			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_DL_ESTABLISH_IND {
+			Action Send(DISCONNECT());
+			Action Start_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_DL_RELEASE_IND {
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
+			Action Stop_T304;
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
 		}
 	}
 
@@ -289,7 +288,6 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MGMT_ALERTING {
 			Action Send(ALERTING);
-			Action Start_T302;
 			Next_State q931_user_call_delivered;
 		}
 		Stimulus Q931_EV_MGMT_CONNECT {
@@ -311,6 +309,7 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE);
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_DISCONNECT {
@@ -420,6 +419,7 @@ FSM q931_user
 			Action Stop_T305;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_DISCONNECT {
@@ -457,6 +457,7 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MGMT_RELEASE_REQ {
@@ -479,6 +480,7 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_SUSPEND_ACKNOWLEDGE {
 			Action Stop_T319;
 			Action Post_Mgmt(SUSPEND_ACKNOWLEDGE);
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_SUSPEND_REJECT {
@@ -495,6 +497,7 @@ FSM q931_user
 			Action Stop_T319;
 			Action Post_Mgmt(HANGUP(cause));
 			Action Send(RELEASE_COMPLETE(cause));
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_TIMEOUT_T319 {
@@ -545,11 +548,13 @@ FSM q931_user
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
 			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Stop_T308;
 			Action Post_Mgmt(HANGUP_ACKNOWLEDGE);
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_TIMEOUT_T308 {
@@ -559,12 +564,14 @@ FSM q931_user
 			} else {
 				/* B channel should be placed in maintenance mode */
 				Action Post_Mgmt(HANGUP_ACKNOWLEDGE(timeout));
+				Action Release_Call_Reference;
 				Next_State q931_user_null;
 			}
 		}
 		Stimulus Q931_EV_MSG_STATUS {
 			if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
 				Action Post_Mgmt(HANGUP(cause));
+				Action Release_Call_Reference;
 				Next_State q931_user_null;
 			}
 		}
@@ -581,7 +588,11 @@ FSM q931_user
 		Epilog {
 		}
 		Stimulus Q931_EV_MSG_INFORMATION {
-			Action Post_Mgmt(INFORMATION(digits));
+			if (keypad_digits) {
+				Action Post_Mgmt(KEYPAD_DIGITS(digits));
+			} else {
+				Action Post_Mgmt(INFORMATION(digits));
+			}
 			if (display) {
 				Action Post_Mgmt(INFORMATION(display_text));
 			}
@@ -609,6 +620,19 @@ FSM q931_user
 		Stimulus Q931_EV_MGMT_PROGRESS {
 			Action Send(PROGRESS);
 		}
+		Stimulus Q931_EV_DL_ESTABLISH_IND {
+			Action Stop_T302;
+			Action Send(DISCONNECT());
+			Action Start_T305;
+			Action Post_Mgmt(HANGUP(cause));
+			Next_State q931_user_disconnect_request;
+		}
+		Stimulus Q931_EV_DL_RELEASE_IND {
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
+			Action Stop_T302;
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
+		}
 	}
 
 /* ******************************************************************** */
@@ -629,9 +653,11 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MSG_RELEASE {
 			Action Send(RELEASE_COMPLETE(PRI_CAUSE_NORMAL_CLEARING));
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 		Stimulus Q931_EV_MSG_RELEASE_COMPLETE {
+			Action Release_Call_Reference;
 			Next_State q931_user_null;
 		}
 	}
@@ -668,6 +694,21 @@ FSM q931_user
 				Action Send(STATUS(PRI_CAUSE_MESSAGE_TYPE_NONEXIST));
 			}
 		}
+		Stimulus Q931_EV_DL_RELEASE_IND {
+			if (!Any_Timer_Running) {
+				Action Start_T309;
+			}
+			Action DL_Establish_Request;
+		}
+		Stimulus Q931_EV_DL_ESTABLISH_CONFIRM {
+       			Action Stop_T309;
+			Action Send(STATUS());
+		}
+		Stimulus Q931_EV_TIMEOUT_T309 {
+			Action Post_Mgmt(HANGUP(PRI_CAUSE_NETWORK_OUT_OF_ORDER));
+			Action Release_Call_Reference;
+			Next_State q931_user_null;
+		}
 	}
 
 /* ******************************************************************** */
@@ -682,6 +723,7 @@ FSM q931_user
 		}
 		Stimulus Q931_EV_MSG_STATUS {
 			if (Get_STATUS_Call_State == Q931_CALL_STATE_NULL) {
+				Action Release_Call_Reference;
 				Action Post_Mgmt(HANGUP(cause));
 				Next_State q931_user_null;
 			}
