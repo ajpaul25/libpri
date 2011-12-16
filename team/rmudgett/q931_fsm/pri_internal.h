@@ -626,7 +626,9 @@ struct q931_call {
 	/*! Display text ie contents. */
 	struct {
 		/*! Display ie text.  NULL if not present or consumed as remote name. */
-		const char *text;
+		const unsigned char *text;
+		/*! Full IE code of received display text */
+		int full_ie;
 		/*! Length of display text. */
 		unsigned char length;
 		/*!
@@ -648,6 +650,19 @@ struct q931_call {
 
 	/* AOC charge requesting on Setup */
 	int aoc_charging_request;
+
+	unsigned int slotmap_size:1;/* TRUE if the slotmap is E1 (32 bits). */
+
+	struct {
+		/*! Timer ID of RESTART notification events to upper layer. */
+		int timer;
+		/*! Current RESTART notification index. */
+		int idx;
+		/*! Number of channels in the channel ID list. */
+		int count;
+		/*! Channel ID list */
+		char chan_no[32];
+	} restart;
 };
 
 enum CC_STATES {
