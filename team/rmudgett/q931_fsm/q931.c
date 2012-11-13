@@ -5574,8 +5574,6 @@ int q931_notify(struct pri *ctrl, q931_call *c, int channel, int info)
 #ifdef ALERTING_NO_PROGRESS
 static int call_progress_ies[] = { -1 };
 #else
-static int call_progress_with_cause_ies[] = { Q931_CAUSE, Q931_PROGRESS_INDICATOR, -1 };
-
 static int call_progress_ies[] = { Q931_PROGRESS_INDICATOR, -1 };
 #endif
 
@@ -5604,6 +5602,12 @@ int q931_call_progress(struct pri *ctrl, q931_call *c, int channel, int info)
 	c->alive = 1;
 	return send_message(ctrl, c, Q931_PROGRESS, call_progress_ies);
 }
+
+#ifdef ALERTING_NO_PROGRESS
+static int call_progress_with_cause_ies[] = { Q931_CAUSE, -1 };
+#else
+static int call_progress_with_cause_ies[] = { Q931_CAUSE, Q931_PROGRESS_INDICATOR, -1 };
+#endif
 
 int q931_call_progress_with_cause(struct pri *ctrl, q931_call *c, int channel, int info, int cause)
 {
@@ -8767,6 +8771,18 @@ static int post_handle_q931_message(struct pri *ctrl, struct q931_mh *mh, struct
 		    (c->ourcallstate != Q931_CALL_STATE_OVERLAP_SENDING) && 
 		    (c->ourcallstate != Q931_CALL_STATE_CALL_DELIVERED) && 
 		    (c->ourcallstate != Q931_CALL_STATE_OUTGOING_CALL_PROCEEDING)) {
+			if (mh->msg == Q931_PROGRESS
+				&& c->ourcallstate == Q931_CALL_STATE_ACTIVE
+				&& ctrl->switchtype == PRI_SWITCH_QSIG) {
+				/*
+				 * Q.SIG is odd to allow PROGRESS when in the Active state since
+				 * the media path is already open.  Ignore it since it doesn't
+				 * convey anything very useful.  Maybe they will stop doing it.
+				 *
+				 * See ECMA-143 Section 10.1.7.2.
+				 */
+				break;
+			}
 			q931_status(ctrl,c,PRI_CAUSE_WRONG_MESSAGE);
 			break;
 		}
